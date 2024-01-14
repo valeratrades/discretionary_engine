@@ -3,12 +3,12 @@ use crate::config::Config;
 use anyhow::Result;
 
 pub async fn compile_total_balance(config: Config) -> Result<f32> {
+	let read_key = config.binance.read_key.clone();
+	let read_secret = config.binance.read_secret.clone();
+
 	let mut handlers = Vec::new();
-	handlers.push(binance_api::get_balance(
-		config.binance.read_key.clone(),
-		config.binance.read_secret.clone(),
-		binance_api::Market::Futures,
-	));
+	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Futures));
+	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Spot));
 	//TODO!: same for spot and margin
 
 	// let balance_bybit_futures = ...
