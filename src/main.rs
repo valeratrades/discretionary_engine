@@ -25,7 +25,7 @@ fn main() {
 	let config = match Config::try_from(cli.config) {
 		Ok(cfg) => cfg,
 		Err(e) => {
-			eprintln!("Error: {}", e);
+			eprintln!("Loading config failed: {}", e);
 			std::process::exit(1);
 		}
 	};
