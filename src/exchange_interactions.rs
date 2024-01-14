@@ -9,9 +9,6 @@ pub async fn compile_total_balance(config: Config) -> Result<f32> {
 	let mut handlers = Vec::new();
 	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Futures));
 	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Spot));
-	//TODO!: same for spot and margin
-
-	// let balance_bybit_futures = ...
 
 	let mut total_balance = 0.0;
 	for handler in handlers {
