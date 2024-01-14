@@ -1,4 +1,6 @@
+pub mod binance_api;
 pub mod config;
+mod exchange_interactions;
 pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
@@ -20,7 +22,8 @@ enum Commands {
 #[derive(Args)]
 struct NoArgs {}
 
-fn main() {
+#[tokio::main]
+async fn main() {
 	let cli = Cli::parse();
 	let config = match Config::try_from(cli.config) {
 		Ok(cfg) => cfg,
@@ -32,7 +35,8 @@ fn main() {
 
 	match cli.command {
 		Commands::Start(_) => {
-			println!("Hello World!");
+			let balance = exchange_interactions::compile_total_balance(config.clone()).await;
+			println!("{:?}", balance);
 		}
 	}
 }
