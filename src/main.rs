@@ -35,8 +35,8 @@ async fn main() {
 
 	match cli.command {
 		Commands::Start(_) => {
-			let balance = exchange_interactions::compile_total_balance(config.clone()).await;
-			println!("{:?}", balance);
+			let _balance = exchange_interactions::compile_total_balance(config.clone()).await;
+			dbg!(&_balance);
 		}
 	}
 }

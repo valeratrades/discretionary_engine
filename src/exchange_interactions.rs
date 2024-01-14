@@ -4,10 +4,10 @@ use anyhow::Result;
 
 pub async fn compile_total_balance(config: Config) -> Result<f32> {
 	let mut handlers = Vec::new();
-	handlers.push(binance_api::signed_request(
-		"https://fapi.binance.com/fapi/TODO".to_owned(),
+	handlers.push(binance_api::get_balance(
 		config.binance.read_key.clone(),
 		config.binance.read_secret.clone(),
+		binance_api::Market::Futures,
 	));
 	//TODO!: same for spot and margin
 
