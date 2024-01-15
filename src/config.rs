@@ -14,14 +14,14 @@ impl TryFrom<ExpandedPath> for Config {
 		let raw_config: RawConfig = toml::from_str(&raw_config_str)
 			.with_context(|| "The config file is not correctly formatted TOML\nand/or\n is missing some of the required fields")?;
 
-		let config: Config = raw_config.apprehend()?;
+		let config: Config = raw_config.process()?;
 
 		Ok(config)
 	}
 }
 
 //-----------------------------------------------------------------------------
-// Apprehended Config
+// Processed Config
 //-----------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -45,9 +45,9 @@ pub struct RawConfig {
 	pub binance: RawBinance,
 }
 impl RawConfig {
-	pub fn apprehend(&self) -> Result<Config> {
+	pub fn process(&self) -> Result<Config> {
 		Ok(Config {
-			binance: self.binance.apprehend()?,
+			binance: self.binance.process()?,
 		})
 	}
 }
@@ -60,12 +60,12 @@ pub struct RawBinance {
 	pub read_secret: PrivateValue,
 }
 impl RawBinance {
-	pub fn apprehend(&self) -> Result<Binance> {
+	pub fn process(&self) -> Result<Binance> {
 		Ok(Binance {
-			full_key: self.full_key.apprehend()?,
-			full_secret: self.full_secret.apprehend()?,
-			read_key: self.read_key.apprehend()?,
-			read_secret: self.read_secret.apprehend()?,
+			full_key: self.full_key.process()?,
+			full_secret: self.full_secret.process()?,
+			read_key: self.read_key.process()?,
+			read_secret: self.read_secret.process()?,
 		})
 	}
 }
@@ -76,7 +76,7 @@ pub enum PrivateValue {
 	Env { env: String },
 }
 impl PrivateValue {
-	pub fn apprehend(&self) -> Result<String> {
+	pub fn process(&self) -> Result<String> {
 		match self {
 			PrivateValue::String(s) => Ok(s.clone()),
 			PrivateValue::Env { env } => std::env::var(env).with_context(|| format!("Environment variable '{}' not found", env)),
