@@ -4,21 +4,36 @@ use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use serde_json::Value;
 use serde_urlencoded;
 use sha2::Sha256;
 use std::collections::HashMap;
 use url::Url;
+use v_utils::trades::Side;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub async fn signed_request(endpoint_str: &str, key: String, secret: String) -> Result<reqwest::Response> {
+#[allow(dead_code)]
+pub enum HttpMethod {
+	GET,
+	POST,
+	PUT,
+	DELETE,
+}
+
+pub async fn signed_request(
+	http_method: HttpMethod,
+	endpoint_str: &str,
+	mut params: HashMap<&'static str, String>,
+	key: String,
+	secret: String,
+) -> Result<reqwest::Response> {
 	let mut headers = HeaderMap::new();
 	headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
 	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(&key).unwrap());
 	let client = reqwest::Client::builder().default_headers(headers).build()?;
 
 	let time_ms = Utc::now().timestamp_millis();
-	let mut params = HashMap::<&str, String>::new();
 	params.insert("timestamp", format!("{}", time_ms));
 
 	let query_string = serde_urlencoded::to_string(&params)?;
@@ -30,7 +45,11 @@ pub async fn signed_request(endpoint_str: &str, key: String, secret: String) -> 
 
 	let url = format!("{}?{}&signature={}", endpoint_str, query_string, signature);
 
-	let r = client.get(&url).send().await?;
+	let r = match http_method {
+		HttpMethod::GET => client.get(&url).send().await?,
+		HttpMethod::POST => client.post(&url).send().await?,
+		_ => panic!("Not implemented"),
+	};
 	Ok(r)
 }
 
@@ -49,13 +68,37 @@ impl Market {
 	}
 }
 
+pub enum OrderType {
+	Market,
+	Limit,
+	StopLoss,
+	StopLossLimit,
+	TakeProfit,
+	TakeProfitLimit,
+	LimitMaker,
+}
+impl ToString for OrderType {
+	fn to_string(&self) -> String {
+		match self {
+			OrderType::Market => "MARKET".to_string(),
+			OrderType::Limit => "LIMIT".to_string(),
+			OrderType::StopLoss => "STOP_LOSS".to_string(),
+			OrderType::StopLossLimit => "STOP_LOSS_LIMIT".to_string(),
+			OrderType::TakeProfit => "TAKE_PROFIT".to_string(),
+			OrderType::TakeProfitLimit => "TAKE_PROFIT_LIMIT".to_string(),
+			OrderType::LimitMaker => "LIMIT_MAKER".to_string(),
+		}
+	}
+}
+
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f32> {
+	let params = HashMap::<&str, String>::new();
 	match market {
 		Market::Futures => {
 			let base_url = market.get_base_url();
 			let url = base_url.join("fapi/v2/balance")?;
 
-			let r = signed_request(url.as_str(), key, secret).await?;
+			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 			let asset_balances: Vec<FuturesBalance> = r.json().await?;
 
 			let mut total_balance = 0.0;
@@ -68,7 +111,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/api/v3/account")?;
 
-			let r = signed_request(url.as_str(), key, secret).await?;
+			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 			let account_details: SpotAccountDetails = r.json().await?;
 			let asset_balances = account_details.balances;
 
@@ -83,13 +126,68 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
-			let r = signed_request(url.as_str(), key, secret).await?;
+			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 			let account_details: MarginAccountDetails = r.json().await?;
 			let total_balance: f32 = account_details.TotalCollateralValueInUSDT.parse()?;
 
 			Ok(total_balance)
 		}
 	}
+}
+
+pub async fn futures_price(symbol: String) -> Result<f32> {
+	let base_url = Market::Futures.get_base_url();
+	let url = base_url.join("/fapi/v2/ticker/price")?;
+
+	let mut params = HashMap::<&str, String>::new();
+	params.insert("symbol", symbol.clone());
+
+	let client = reqwest::Client::new();
+	let r = client.get(url).json(&params).send().await?;
+	//let r_json: serde_json::Value = r.json().await?;
+	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f32>()?;
+	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
+	let prices: Vec<serde_json::Value> = r.json().await?;
+	let price = prices
+		.iter()
+		.find(|x| x.get("symbol").unwrap().as_str().unwrap().to_string() == symbol)
+		.unwrap()
+		.get("price")
+		.unwrap()
+		.as_str()
+		.unwrap()
+		.parse::<f32>()?;
+
+	Ok(price)
+}
+
+pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
+	let base_url = Market::Futures.get_base_url();
+	let url = base_url.join("/fapi/v1/exchangeInfo")?;
+
+	let r = reqwest::get(url).await?;
+	let futures_exchange_info: FuturesExchangeInfo = r.json().await?;
+	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol).unwrap();
+
+	Ok(symbol_info.quantityPrecision)
+}
+
+//TODO!!: make the symbol be from utils \
+pub async fn post_futures_trade(key: String, secret: String, order_type: OrderType, symbol: String, side: Side, quantity: f32) -> Result<()> {
+	let base_url = Market::Futures.get_base_url();
+	let url = base_url.join("/fapi/v1/order")?;
+
+	let mut params = HashMap::<&str, String>::new();
+	params.insert("symbol", symbol);
+	params.insert("side", side.to_string());
+	params.insert("type", order_type.to_string());
+	params.insert("quantity", format!("{}", quantity));
+
+	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
+	let response: serde_json::Value = r.json().await?;
+	println!("{:?}", response);
+
+	Ok(())
 }
 
 //=============================================================================
@@ -169,3 +267,71 @@ struct MarginUserAsset {
 	locked: String,
 	netAsset: String,
 }
+
+// FuturesExchangeInfo structs {{{
+#[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+struct FuturesExchangeInfo {
+	exchangeFilters: Vec<String>,
+	rateLimits: Vec<RateLimit>,
+	serverTime: i64,
+	assets: Vec<Value>,
+	symbols: Vec<FuturesSymbol>,
+	timezone: String,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+struct RateLimit {
+	interval: String,
+	intervalNum: u32,
+	limit: u32,
+	rateLimitType: String,
+}
+
+// the thing with multiplying orders due to weird limits should be here.
+//#[derive(Debug, Deserialize, Serialize)]
+//#[allow(non_snake_case)]
+//struct SymbolFilter {
+//	filterType: String,
+//	maxPrice: String,
+//	minPrice: String,
+//	tickSize: String,
+//	maxQty: String,
+//	minQty: String,
+//	stepSize: String,
+//	limit: u32,
+//	notional: String,
+//	multiplierUp: String,
+//	multiplierDown: String,
+//	multiplierDecimal: u32,
+//}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+struct FuturesSymbol {
+	symbol: String,
+	pair: String,
+	contractType: String,
+	deliveryDate: i64,
+	onboardDate: i64,
+	status: String,
+	maintMarginPercent: String,
+	requiredMarginPercent: String,
+	baseAsset: String,
+	quoteAsset: String,
+	marginAsset: String,
+	pricePrecision: u32,
+	quantityPrecision: usize,
+	baseAssetPrecision: u32,
+	quotePrecision: u32,
+	underlyingType: String,
+	underlyingSubType: Vec<String>,
+	settlePlan: u32,
+	triggerProtect: String,
+	filters: Vec<Value>,
+	OrderType: Option<Vec<String>>,
+	timeInForce: Vec<String>,
+	liquidationFee: String,
+	marketTakeBound: String,
+}
+//,}}}
