@@ -227,7 +227,7 @@ pub struct FuturesPositionResponse {
 impl FuturesPositionResponse {
 	pub fn get_url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
-		base_url.join("/fapi/v1/order/test").unwrap() //TODO!!!!!: remove `/test` when done
+		base_url.join("/fapi/v1/order").unwrap()
 	}
 }
 
