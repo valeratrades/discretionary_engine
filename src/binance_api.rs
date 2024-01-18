@@ -1,3 +1,4 @@
+use crate::exchange_interactions::Market;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -19,6 +20,12 @@ pub enum HttpMethod {
 	POST,
 	PUT,
 	DELETE,
+}
+
+#[allow(dead_code)]
+pub struct Binance {
+	// And so then many calls will be replaced with just finding info here.
+	futures_symbols: HashMap<String, FuturesSymbol>,
 }
 
 pub async fn signed_request(
@@ -53,21 +60,6 @@ pub async fn signed_request(
 	Ok(r)
 }
 
-pub enum Market {
-	Futures,
-	Spot,
-	Margin,
-}
-impl Market {
-	fn get_base_url(&self) -> Url {
-		match self {
-			Market::Futures => Url::parse("https://fapi.binance.com/").unwrap(),
-			Market::Spot => Url::parse("https://api.binance.com/").unwrap(),
-			Market::Margin => Url::parse("https://api.binance.com/").unwrap(),
-		}
-	}
-}
-
 pub enum OrderType {
 	Market,
 	Limit,
@@ -94,7 +86,7 @@ impl ToString for OrderType {
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f32> {
 	let params = HashMap::<&str, String>::new();
 	match market {
-		Market::Futures => {
+		Market::BinanceFutures => {
 			let base_url = market.get_base_url();
 			let url = base_url.join("fapi/v2/balance")?;
 
@@ -107,7 +99,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			}
 			Ok(total_balance)
 		}
-		Market::Spot => {
+		Market::BinanceSpot => {
 			let base_url = market.get_base_url();
 			let url = base_url.join("/api/v3/account")?;
 
@@ -122,7 +114,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			}
 			Ok(total_balance)
 		}
-		Market::Margin => {
+		Market::BinanceMargin => {
 			let base_url = market.get_base_url();
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
@@ -136,7 +128,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 }
 
 pub async fn futures_price(symbol: String) -> Result<f32> {
-	let base_url = Market::Futures.get_base_url();
+	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v2/ticker/price")?;
 
 	let mut params = HashMap::<&str, String>::new();
@@ -162,7 +154,7 @@ pub async fn futures_price(symbol: String) -> Result<f32> {
 }
 
 pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
-	let base_url = Market::Futures.get_base_url();
+	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
 
 	let r = reqwest::get(url).await?;
@@ -173,9 +165,15 @@ pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
 }
 
 //TODO!!: make the symbol be from utils \
-pub async fn post_futures_trade(key: String, secret: String, order_type: OrderType, symbol: String, side: Side, quantity: f32) -> Result<()> {
-	let base_url = Market::Futures.get_base_url();
-	let url = base_url.join("/fapi/v1/order")?;
+pub async fn post_futures_trade(
+	key: String,
+	secret: String,
+	order_type: OrderType,
+	symbol: String,
+	side: Side,
+	quantity: f32,
+) -> Result<FuturesPositionResponse> {
+	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", symbol);
@@ -184,15 +182,54 @@ pub async fn post_futures_trade(key: String, secret: String, order_type: OrderTy
 	params.insert("quantity", format!("{}", quantity));
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
-	let response: serde_json::Value = r.json().await?;
-	println!("{:?}", response);
-
-	Ok(())
+	let response: FuturesPositionResponse = r.json().await?;
+	Ok(response)
 }
 
 //=============================================================================
 // Response structs
 //=============================================================================
+
+//? Should I be doing `impl get_url` on these? Unless we have high degree of shared feilds between the markets, this is a big "YES".
+//? What if in cases when the struct is shared, I just implement market_specific commands to retrieve the url?
+// Trying this out now. So far so good.
+
+#[derive(Serialize, Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct FuturesPositionResponse {
+	clientOrderId: String,
+	cumQty: Option<String>,
+	cumQuote: String,
+	executedQty: String,
+	orderId: i64,
+	avgPrice: Option<String>,
+	origQty: String,
+	price: String,
+	reduceOnly: bool,
+	side: String,
+	positionSide: Option<String>, // only sent when in hedge mode
+	status: String,
+	stopPrice: String,
+	closePosition: bool,
+	symbol: String,
+	timeInForce: String,
+	r#type: String,
+	origType: String,
+	activatePrice: Option<f32>, // only returned on TRAILING_STOP_MARKET order
+	priceRate: Option<f32>,     // only returned on TRAILING_STOP_MARKET order
+	updateTime: i64,
+	workingType: Option<String>, // no clue what this is
+	priceProtect: bool,
+	priceMatch: Option<String>, // huh
+	selfTradePreventionMode: Option<String>,
+	goodTillDate: Option<i64>,
+}
+impl FuturesPositionResponse {
+	pub fn get_url() -> Url {
+		let base_url = Market::BinanceFutures.get_base_url();
+		base_url.join("/fapi/v1/order/test").unwrap() //TODO!!!!!: remove `/test` when done
+	}
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]

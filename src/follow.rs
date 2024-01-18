@@ -1,3 +1,4 @@
+use crate::positions::Position;
 use anyhow::{Error, Result};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -46,8 +47,14 @@ impl FromStr for TrailingStop {
 	}
 }
 
+// I would want to have one centralized place for storing references of all the known positions.
+// But then I also want to prevent having multiples of follow strategies for one position.
+// So who the fuck should own it??
+
+// what if position has one slot for a protocol on it? Then have a centralized container structure for all positions, taking ownership of them, and then starting threads for each, which would do the following, if any protocol is specified.
+
 impl TrailingStop {
-	pub fn trail(&self, position: Position) {
+	pub fn follow(&self, position: &Position) {
 		todo!()
 	}
 }
@@ -60,6 +67,10 @@ pub struct SAR {
 	pub max: f32,
 }
 
+// could make with clap's subcommands, but then would need to implement serialization into string anyways, just a cli-command-like string in that case.
+// So the custom format it is.
+// would need to make a derive macro, that would encode every param by its first letter.
+// for reference: clap's #[arg(short)] and serde docs here https://serde.rs/
 impl FromStr for SAR {
 	type Err = anyhow::Error;
 

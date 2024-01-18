@@ -1,4 +1,5 @@
 use crate::binance_api;
+use url::Url;
 use crate::config::Config;
 use anyhow::Result;
 use v_utils::trades::Side;
@@ -8,8 +9,8 @@ pub async fn compile_total_balance(config: Config) -> Result<f32> {
 	let read_secret = config.binance.read_secret.clone();
 
 	let mut handlers = Vec::new();
-	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Futures));
-	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), binance_api::Market::Spot));
+	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures));
+	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot));
 
 	let mut total_balance = 0.0;
 	for handler in handlers {
@@ -33,6 +34,25 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 	let factor = 10_f32.powi(quantity_precision as i32);
 	let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
-	binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol, side, coin_quantity_adjusted).await?;
+	let futures_trade = binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol, side, coin_quantity_adjusted).await?;
+	dbg!(&futures_trade);
 	Ok(())
 }
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub enum Market {
+	BinanceFutures,
+	BinanceSpot,
+	BinanceMargin,
+}
+impl Market {
+	pub fn get_base_url(&self) -> Url {
+		match self {
+			Market::BinanceFutures => Url::parse("https://fapi.binance.com/").unwrap(),
+			Market::BinanceSpot => Url::parse("https://api.binance.com/").unwrap(),
+			Market::BinanceMargin => Url::parse("https://api.binance.com/").unwrap(),
+		}
+	}
+}
+

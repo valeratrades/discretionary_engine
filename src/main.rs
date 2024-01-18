@@ -1,10 +1,11 @@
 pub mod binance_api;
 pub mod config;
 pub mod exchange_interactions;
-mod trail;
+mod follow;
+pub mod positions;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
-use trail::Protocol;
+use follow::Protocol;
 use v_utils::{
 	expanded_path::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -72,7 +73,6 @@ async fn main() {
 			stdin.read_line(&mut input).expect("Failed to read line");
 			let input = input.trim().to_lowercase();
 			if input == "y" {
-				println!("Proceeding...");
 				exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size)
 					.await
 					.unwrap();
