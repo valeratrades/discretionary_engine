@@ -1,9 +1,9 @@
-use crate::utils::ExpandedPath;
 use anyhow::{Context, Result};
 use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fmt;
+use v_utils::expanded_path::ExpandedPath;
 
 impl TryFrom<ExpandedPath> for Config {
 	type Error = anyhow::Error;

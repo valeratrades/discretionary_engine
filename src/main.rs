@@ -1,11 +1,14 @@
 pub mod binance_api;
 pub mod config;
 pub mod exchange_interactions;
-pub mod utils;
+mod trail;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
-use utils::ExpandedPath;
-use v_utils::trades::{Side, Timeframe};
+use trail::Protocol;
+use v_utils::{
+	expanded_path::ExpandedPath,
+	trades::{Side, Timeframe},
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,6 +35,9 @@ struct PositionArgs {
 	#[arg(long)]
 	/// full ticker of the futures binance symbol
 	symbol: String,
+	#[arg(long)]
+	/// trail parameters, in the format of "<protocol>-<params>", e.g. "trailing-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	trail: Option<Protocol>,
 }
 
 #[derive(Args)]
