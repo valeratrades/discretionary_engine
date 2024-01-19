@@ -8,6 +8,7 @@ use v_utils::trades::Timeframe;
 const PROTOCOL_ARGS_DELIMITER: char = ':';
 
 // de impl on this will split upon a delimiter, then have several ways to define the name, which is the first part and translated directly; while the rest is parsed.
+//TODO!: move away from a vec of protocols, and embrace specification of their functions.
 #[derive(Clone, Debug)]
 pub enum Protocol {
 	TrailingStop(TrailingStop),
