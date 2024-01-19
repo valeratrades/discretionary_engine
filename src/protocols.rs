@@ -92,9 +92,11 @@ impl fmt::Display for $name {
 };}
 //,}}}
 
-my_format!(SAR, [(start, f32), (increment, f32), (max, f32), (timeframe, Timeframe)]);
+my_format!(SAR, [(start, f64), (increment, f64), (max, f64), (timeframe, Timeframe)]);
 
-my_format!(TrailingStop, [(percent, f32)]);
+my_format!(TrailingStop, [(percent, f64)]);
+
+my_format!(TpSl, [(tp, f64), (sl, f64)]);
 
 //TODO!!!: Slap a protocol slot on Position
 impl TrailingStop {

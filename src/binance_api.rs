@@ -83,7 +83,7 @@ impl ToString for OrderType {
 	}
 }
 
-pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f32> {
+pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
 	let params = HashMap::<&str, String>::new();
 	match market {
 		Market::BinanceFutures => {
@@ -95,7 +95,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 
 			let mut total_balance = 0.0;
 			for asset in asset_balances {
-				total_balance += asset.balance.parse::<f32>()?;
+				total_balance += asset.balance.parse::<f64>()?;
 			}
 			Ok(total_balance)
 		}
@@ -109,8 +109,8 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 
 			let mut total_balance = 0.0;
 			for asset in asset_balances {
-				total_balance += asset.free.parse::<f32>()?;
-				total_balance += asset.locked.parse::<f32>()?;
+				total_balance += asset.free.parse::<f64>()?;
+				total_balance += asset.locked.parse::<f64>()?;
 			}
 			Ok(total_balance)
 		}
@@ -120,14 +120,14 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 
 			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 			let account_details: MarginAccountDetails = r.json().await?;
-			let total_balance: f32 = account_details.TotalCollateralValueInUSDT.parse()?;
+			let total_balance: f64 = account_details.TotalCollateralValueInUSDT.parse()?;
 
 			Ok(total_balance)
 		}
 	}
 }
 
-pub async fn futures_price(symbol: String) -> Result<f32> {
+pub async fn futures_price(symbol: String) -> Result<f64> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v2/ticker/price")?;
 
@@ -137,7 +137,7 @@ pub async fn futures_price(symbol: String) -> Result<f32> {
 	let client = reqwest::Client::new();
 	let r = client.get(url).json(&params).send().await?;
 	//let r_json: serde_json::Value = r.json().await?;
-	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f32>()?;
+	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
 	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
 	let prices: Vec<serde_json::Value> = r.json().await?;
 	let price = prices
@@ -148,7 +148,7 @@ pub async fn futures_price(symbol: String) -> Result<f32> {
 		.unwrap()
 		.as_str()
 		.unwrap()
-		.parse::<f32>()?;
+		.parse::<f64>()?;
 
 	Ok(price)
 }
@@ -171,7 +171,7 @@ pub async fn post_futures_trade(
 	order_type: OrderType,
 	symbol: String,
 	side: Side,
-	quantity: f32,
+	quantity: f64,
 ) -> Result<FuturesPositionResponse> {
 	let url = FuturesPositionResponse::get_url();
 
@@ -215,8 +215,8 @@ pub struct FuturesPositionResponse {
 	timeInForce: String,
 	r#type: String,
 	origType: String,
-	activatePrice: Option<f32>, // only returned on TRAILING_STOP_MARKET order
-	priceRate: Option<f32>,     // only returned on TRAILING_STOP_MARKET order
+	activatePrice: Option<f64>, // only returned on TRAILING_STOP_MARKET order
+	priceRate: Option<f64>,     // only returned on TRAILING_STOP_MARKET order
 	updateTime: i64,
 	workingType: Option<String>, // no clue what this is
 	priceProtect: bool,
@@ -248,10 +248,10 @@ struct FuturesBalance {
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct SpotAccountDetails {
-	makerCommission: i32,
-	takerCommission: i32,
-	buyerCommission: i32,
-	sellerCommission: i32,
+	makerCommission: f64,
+	takerCommission: f64,
+	buyerCommission: f64,
+	sellerCommission: f64,
 	commissionRates: CommissionRates,
 	canTrade: bool,
 	canWithdraw: bool,

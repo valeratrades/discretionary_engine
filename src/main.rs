@@ -1,11 +1,11 @@
 pub mod binance_api;
 pub mod config;
 pub mod exchange_interactions;
-mod follow;
 pub mod positions;
+mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
-use follow::Protocol;
+use protocols::Protocol;
 use v_utils::{
 	io::{self, ExpandedPath},
 	trades::{Side, Timeframe},
@@ -28,7 +28,7 @@ enum Commands {
 struct PositionArgs {
 	#[arg(long)]
 	/// percentage of the total balance to use
-	size: f32,
+	size: f64,
 	#[arg(long)]
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
@@ -38,7 +38,7 @@ struct PositionArgs {
 	symbol: String,
 	#[arg(long)]
 	/// trail parameters, in the format of "<protocol>-<params>", e.g. "trailing-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
-	follow: Option<Protocol>,
+	protocols: Vec<Protocol>,
 }
 
 #[derive(Args)]
@@ -57,7 +57,7 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			println!("Protocol: {}", &position_args.follow.unwrap());
+			println!("Protocol: {:?}", &position_args.protocols);
 			let balance = exchange_interactions::compile_total_balance(config.clone()).await.unwrap();
 
 			let (side, target_size) = match position_args.size {
