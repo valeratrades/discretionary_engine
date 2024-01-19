@@ -32,11 +32,11 @@ struct PositionArgs {
 	#[arg(long)]
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
-	tf: Timeframe,
+	tf: Option<Timeframe>,
 	#[arg(long)]
 	/// full ticker of the futures binance symbol
 	symbol: String,
-	#[arg(long)]
+	#[arg(short, long, default_value = "")]
 	/// trail parameters, in the format of "<protocol>-<params>", e.g. "trailing-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	protocols: Vec<Protocol>,
 }
@@ -57,7 +57,6 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			println!("Protocol: {:?}", &position_args.protocols);
 			let balance = exchange_interactions::compile_total_balance(config.clone()).await.unwrap();
 
 			let (side, target_size) = match position_args.size {

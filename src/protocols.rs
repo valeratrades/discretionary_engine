@@ -5,22 +5,26 @@ use std::fmt;
 use std::str::FromStr;
 use v_utils::trades::Timeframe;
 
+const PROTOCOL_ARGS_DELIMITER: char = ':';
+
 // de impl on this will split upon a delimiter, then have several ways to define the name, which is the first part and translated directly; while the rest is parsed.
 #[derive(Clone, Debug)]
 pub enum Protocol {
 	TrailingStop(TrailingStop),
 	SAR(SAR),
+	TpSl(TpSl),
 }
 impl FromStr for Protocol {
 	type Err = anyhow::Error;
 
 	fn from_str(s: &str) -> Result<Self> {
-		let mut parts = s.splitn(2, '-');
+		let mut parts = s.splitn(2, PROTOCOL_ARGS_DELIMITER);
 		let name = parts.next().ok_or_else(|| Error::msg("No protocol name"))?;
 		let params = parts.next().ok_or_else(|| Error::msg("Missing parameter specifications"))?;
 		let protocol: Protocol = match name.to_lowercase().as_str() {
 			"trailing" | "trailing_stop" | "ts" => Protocol::TrailingStop(TrailingStop::from_str(params)?),
 			"sar" => Protocol::SAR(SAR::from_str(params)?),
+			"tpsl" | "take_stop" | "take_profit_stop_loss" => Protocol::TpSl(TpSl::from_str(params)?),
 			_ => return Err(Error::msg("Unknown protocol")),
 		};
 		Ok(protocol)
@@ -31,6 +35,7 @@ impl fmt::Display for Protocol {
 		match self {
 			Protocol::TrailingStop(ts) => ts.fmt(f),
 			Protocol::SAR(sar) => sar.fmt(f),
+			Protocol::TpSl(tpsl) => tpsl.fmt(f),
 		}
 	}
 }
@@ -50,7 +55,7 @@ impl FromStr for $name {
 	type Err = anyhow::Error;
 
 	fn from_str(s: &str) -> Result<Self> {
-		let parts = s.split('-').collect::<Vec<_>>();
+		let parts = s.split(PROTOCOL_ARGS_DELIMITER).collect::<Vec<_>>();
 		let mut fields = Vec::new();
 		$(
 		fields.push(stringify!($field));
@@ -58,7 +63,7 @@ impl FromStr for $name {
 		assert_eq!(parts.len(), fields.len(), "Incorrect number of parameters provided");
 
 		let mut provided_params: HashMap<char, &str> = HashMap::new();
-		for param in s.split('-') {
+		for param in s.split(PROTOCOL_ARGS_DELIMITER) {
 			if let Some(first_char) = param.chars().next() {
 				let value = &param[1..];
 				provided_params.insert(first_char, value);
