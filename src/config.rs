@@ -3,7 +3,7 @@ use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fmt;
-use v_utils::expanded_path::ExpandedPath;
+use v_utils::io::ExpandedPath;
 
 impl TryFrom<ExpandedPath> for Config {
 	type Error = anyhow::Error;

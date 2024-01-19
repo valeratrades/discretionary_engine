@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand};
 use config::Config;
 use follow::Protocol;
 use v_utils::{
-	expanded_path::ExpandedPath,
+	io::{self, ExpandedPath},
 	trades::{Side, Timeframe},
 };
 
@@ -68,17 +68,23 @@ async fn main() {
 					std::process::exit(1);
 				}
 			};
-			let stdin = std::io::stdin();
-			println!("Gonna open a new {}$ {} order on {}. Proceed? [Y/n]", target_size, side, position_args.symbol);
-			let mut input = String::new();
-			stdin.read_line(&mut input).expect("Failed to read line");
-			let input = input.trim().to_lowercase();
-			if input == "y" {
+			//let stdin = std::io::stdin();
+			//println!("Gonna open a new {}$ {} order on {}. Proceed? [Y/n]", target_size, side, position_args.symbol);
+			//let mut input = String::new();
+			//stdin.read_line(&mut input).expect("Failed to read line");
+			//let input = input.trim().to_lowercase();
+			//if input == "y" {
+			//	exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size)
+			//		.await
+			//		.unwrap();
+			//} else {
+			//	println!("Cancelled.");
+			//}
+
+			if io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
 				exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size)
 					.await
 					.unwrap();
-			} else {
-				println!("Cancelled.");
 			}
 		}
 	}
