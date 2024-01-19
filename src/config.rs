@@ -24,6 +24,8 @@ impl TryFrom<ExpandedPath> for Config {
 // Processed Config
 //-----------------------------------------------------------------------------
 
+/// Conifig parses from toml file.
+/// Some of the Values that are best kept private could be specified both as a string and as an environment variable. For example exchange API keys.
 #[derive(Clone, Debug)]
 pub struct Config {
 	pub binance: Binance,
