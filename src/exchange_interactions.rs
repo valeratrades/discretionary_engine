@@ -36,6 +36,8 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 
 	let futures_trade =
 		binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol, side, coin_quantity_adjusted).await?;
+
+	//NB: for now assuming that if we reached this, the position is open. Furthermore, that it is open in its entirety.
 	dbg!(&futures_trade);
 	Ok(())
 }

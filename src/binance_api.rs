@@ -1,4 +1,6 @@
 use crate::exchange_interactions::Market;
+use atomic_float::AtomicF64;
+use crate::positions::Position;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -228,6 +230,17 @@ impl FuturesPositionResponse {
 	pub fn get_url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v1/order").unwrap()
+	}
+	pub fn to_position(&self) -> Position {
+		Position {
+			market: Market::BinanceFutures,
+			side: Side::from_str(&self.side).unwrap(),
+			qty_notional: self.origQty.parse::<AtomicF64>().unwrap(),
+			realised_qty_usdt: AtomicF64,
+			target_qty_usdt: AtomicF64,
+			follow: Vec<Protocol>,
+			timestamp: DateTime<Utc>,
+		}
 	}
 }
 
