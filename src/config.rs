@@ -72,6 +72,7 @@ impl RawBinance {
 	}
 }
 
+//TODO!: either figure out how to do the same with `config` crate, either move PrivateValue into my own.
 #[derive(Clone, Debug)]
 pub enum PrivateValue {
 	String(String),

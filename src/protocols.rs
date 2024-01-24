@@ -1,11 +1,12 @@
 use crate::positions::Position;
 use anyhow::{Error, Result};
-use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 use v_utils::data::compact_format::COMPACT_FORMAT_DELIMITER;
 use v_utils::init_compact_format;
 use v_utils::trades::Timeframe;
+
+// everybody will have owned orders on them too
 
 // de impl on this will split upon a delimiter, then have several ways to define the name, which is the first part and translated directly; while the rest is parsed.
 //TODO!: move away from a vec of protocols, and embrace specification of their functions.
@@ -46,6 +47,9 @@ init_compact_format!(SAR, [(start, f64), (increment, f64), (max, f64), (timefram
 init_compact_format!(TrailingStop, [(percent, f64)]);
 
 init_compact_format!(TpSl, [(tp, f64), (sl, f64)]);
+
+//TODO!: protocol to close position when another asset crosses certain price \
+//init_compact_format!(LeadingCrosses, [(symbol, Symbol), (price, f64)]);
 
 //TODO!!!: Slap a protocol slot on Position
 impl TrailingStop {

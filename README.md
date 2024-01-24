@@ -18,3 +18,16 @@ Currently only working with Binance.
 Config is read from ${HOME}/.config/discretionary_engine.toml by default, but can also be specified via `--config` cli argument.
 
 An example config can be found in ./examples/config.toml
+
+## Current assumptions
+- no two positions are opened on the same symbol
+- execution is only done by market orders
+- no new positions on account are opened outside of the engine
+
+# TODO for next version
+
+- [ ] record positions on open
+
+- [ ] protocols follow
+
+- [ ] implement the darn Symbol and add to v_utils

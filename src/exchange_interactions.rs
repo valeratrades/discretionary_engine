@@ -1,4 +1,6 @@
 use crate::binance_api;
+use tokio::time::{self, Duration};
+use crate::positions::Position;
 use crate::config::Config;
 use anyhow::Result;
 use url::Url;
@@ -35,10 +37,15 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 	let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
 	let futures_trade =
-		binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol, side, coin_quantity_adjusted).await?;
+		binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol.clone(), side.clone(), coin_quantity_adjusted).await?;
 
 	//NB: for now assuming that if we reached this, the position is open. Furthermore, that it is open in its entirety.
+	let position = Position::new(Market::BinanceFutures, side, symbol, usdt_quantity, chrono::Utc::now());
+	futures_trade.write_to_position(&position).unwrap();
+	// ordering is relaxed in writing, so: \
+	time::sleep(Duration::from_millis(100)).await;
 	dbg!(&futures_trade);
+	dbg!(&position);
 	Ok(())
 }
 

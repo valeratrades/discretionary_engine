@@ -16,6 +16,7 @@ pub struct Positions {
 pub struct Position {
 	pub market: Market,
 	pub side: Side,
+	pub symbol: String,
 	pub qty_notional: AtomicF64,
 	pub realised_qty_usdt: AtomicF64,
 	pub target_qty_usdt: AtomicF64,
@@ -23,4 +24,20 @@ pub struct Position {
 	// And then the protocols can have traits indicating their type. Like momentum, preset, fundamental, or what have you. Just need to figure out rules for their interaction amongst themselthes.
 	pub follow: Vec<Protocol>,
 	pub timestamp: DateTime<Utc>,
+}
+
+impl Position {
+	//TODO!!!: implement the darn Symbol
+	pub fn new(market: Market, side: Side, symbol: String, target_qty_usdt: f64, timestamp: DateTime<Utc>) -> Self {
+		Self {
+			market,
+			side,
+			symbol,
+			qty_notional: AtomicF64::new(0.0),
+			realised_qty_usdt: AtomicF64::new(0.0),
+			target_qty_usdt: AtomicF64::from(target_qty_usdt),
+			follow: Vec::new(),
+			timestamp,
+		}
+	}
 }

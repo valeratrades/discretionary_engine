@@ -1,7 +1,7 @@
 use crate::exchange_interactions::Market;
-use atomic_float::AtomicF64;
 use crate::positions::Position;
 use anyhow::Result;
+use atomic_float::AtomicF64;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -11,6 +11,7 @@ use serde_json::Value;
 use serde_urlencoded;
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use url::Url;
 use v_utils::trades::Side;
 
@@ -231,16 +232,17 @@ impl FuturesPositionResponse {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v1/order").unwrap()
 	}
-	pub fn to_position(&self) -> Position {
-		Position {
-			market: Market::BinanceFutures,
-			side: Side::from_str(&self.side).unwrap(),
-			qty_notional: self.origQty.parse::<AtomicF64>().unwrap(),
-			realised_qty_usdt: AtomicF64,
-			target_qty_usdt: AtomicF64,
-			follow: Vec<Protocol>,
-			timestamp: DateTime<Utc>,
-		}
+
+	pub fn write_to_position(&self, position: &Position) -> Result<()> {
+		//NB: using unwrap for now, as we assume all all orders are market, and if successful - are filled.
+		position
+			.qty_notional
+			.store(self.cumQty.clone().unwrap().parse::<f64>().unwrap(), Ordering::SeqCst);
+		//NB: same.
+		position
+			.realised_qty_usdt
+			.store(self.avgPrice.clone().unwrap().parse::<f64>().unwrap(), Ordering::SeqCst);
+		Ok(())
 	}
 }
 
