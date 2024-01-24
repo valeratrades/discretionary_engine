@@ -234,6 +234,7 @@ impl FuturesPositionResponse {
 	}
 
 	pub fn write_to_position(&self, position: &Position) -> Result<()> {
+		//TODO!!!!!!!!!: currently response is empty, as it ascertains only the fact of opening the order. Write separate struct and function for opening the order, then have a loop that calls binance once a second with `orderId`, until it gives fill details. Then do writing to position.
 		let qty_notional = self.origQty.parse::<f64>().unwrap();
 		let realised_qty_usdt = self.cumQuote.parse::<f64>().unwrap() * qty_notional;
 		// for some reason not getting the info on how order is filled. In reality want to use "cumQty" here.
