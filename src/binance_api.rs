@@ -234,14 +234,14 @@ impl FuturesPositionResponse {
 	}
 
 	pub fn write_to_position(&self, position: &Position) -> Result<()> {
+		let qty_notional = self.origQty.parse::<f64>().unwrap();
+		let realised_qty_usdt = self.cumQuote.parse::<f64>().unwrap() * qty_notional;
+		// for some reason not getting the info on how order is filled. In reality want to use "cumQty" here.
+
 		//NB: using unwrap for now, as we assume all all orders are market, and if successful - are filled.
-		position
-			.qty_notional
-			.store(self.cumQty.clone().unwrap().parse::<f64>().unwrap(), Ordering::SeqCst);
+		position.qty_notional.store(qty_notional, Ordering::SeqCst);
 		//NB: same.
-		position
-			.realised_qty_usdt
-			.store(self.avgPrice.clone().unwrap().parse::<f64>().unwrap(), Ordering::SeqCst);
+		position.realised_qty_usdt.store(realised_qty_usdt, Ordering::SeqCst);
 		Ok(())
 	}
 }
