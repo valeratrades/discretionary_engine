@@ -18,6 +18,8 @@ struct Cli {
 	command: Commands,
 	#[arg(long, default_value = "~/.config/discretionary_engine.toml")]
 	config: ExpandedPath,
+	#[arg(short, long, action = clap::ArgAction::SetTrue)]
+	noconfirm: bool,
 }
 #[derive(Subcommand)]
 enum Commands {
@@ -54,6 +56,7 @@ async fn main() {
 			std::process::exit(1);
 		}
 	};
+	let noconfirm = cli.noconfirm;
 
 	match cli.command {
 		Commands::New(position_args) => {
@@ -68,10 +71,14 @@ async fn main() {
 				}
 			};
 
-			if io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
-				exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size)
-					.await
-					.unwrap();
+			if noconfirm || io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
+				match exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size).await {
+					Ok(_) => println!("Order placed successfully"),
+					Err(e) => {
+						eprintln!("Order placement failed: {}", e);
+						std::process::exit(1);
+					}
+				}
 			}
 		}
 	}

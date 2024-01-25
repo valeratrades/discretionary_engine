@@ -1,8 +1,11 @@
+use std::sync::atomic::Ordering;
+
 use crate::binance_api;
-use tokio::time::{self, Duration};
-use crate::positions::Position;
+use crate::binance_api::OrderStatus;
 use crate::config::Config;
+use crate::positions::Position;
 use anyhow::Result;
+use tokio::time::Duration;
 use url::Url;
 use v_utils::trades::Side;
 
@@ -36,15 +39,31 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 	let factor = 10_f64.powi(quantity_precision as i32);
 	let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
-	let futures_trade =
-		binance_api::post_futures_trade(full_key, full_secret, binance_api::OrderType::Market, symbol.clone(), side.clone(), coin_quantity_adjusted).await?;
+	let order_id = binance_api::post_futures_order(
+		full_key.clone(),
+		full_secret.clone(),
+		binance_api::OrderType::Market,
+		symbol.clone(),
+		side.clone(),
+		coin_quantity_adjusted,
+	)
+	.await?;
+	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
+	loop {
+		let order = binance_api::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
+		if order.status == OrderStatus::Filled {
+			dbg!(&order);
+			let order_notional = order.origQty.parse::<f64>()?;
+			let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
+			//NB: currently assuming there is nothing else to the position.
+			position.qty_notional.store(order_notional, Ordering::SeqCst);
+			position.qty_usdt.store(order_usdt, Ordering::SeqCst);
 
-	//NB: for now assuming that if we reached this, the position is open. Furthermore, that it is open in its entirety.
-	let position = Position::new(Market::BinanceFutures, side, symbol, usdt_quantity, chrono::Utc::now());
-	futures_trade.write_to_position(&position).unwrap();
-	// ordering is relaxed in writing, so: \
-	time::sleep(Duration::from_millis(100)).await;
-	dbg!(&futures_trade);
+			break;
+		}
+		tokio::time::sleep(Duration::from_secs(1)).await;
+	}
+
 	dbg!(&position);
 	Ok(())
 }

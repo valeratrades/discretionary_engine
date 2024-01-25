@@ -30,4 +30,6 @@ An example config can be found in ./examples/config.toml
 
 - [ ] protocols follow
 
-- [ ] implement the darn Symbol and add to v_utils
+- [ ] implement the darn Symbol and add to v_utils. Have `from_usdt_pair`, `from_multiple_asset_pair` /*here we just trust the caller*/, then `from_coin` and then `std::str::FromStr`, which we also just trust /*?is this the correct decision?*/
+
+- [ ] lock file

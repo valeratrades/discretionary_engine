@@ -167,15 +167,9 @@ pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
 	Ok(symbol_info.quantityPrecision)
 }
 
+/// submits an order, if successful, returns the order id
 //TODO!!: make the symbol be from utils \
-pub async fn post_futures_trade(
-	key: String,
-	secret: String,
-	order_type: OrderType,
-	symbol: String,
-	side: Side,
-	quantity: f64,
-) -> Result<FuturesPositionResponse> {
+pub async fn post_futures_order(key: String, secret: String, order_type: OrderType, symbol: String, side: Side, quantity: f64) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
@@ -185,6 +179,19 @@ pub async fn post_futures_trade(
 	params.insert("quantity", format!("{}", quantity));
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
+	let response: FuturesPositionResponse = r.json().await?;
+	Ok(response.orderId)
+}
+
+/// Normally, the only cases where the return from this poll is going to be _reacted_ to, is when response.status == OrderStatus::Filled or an error is returned.
+pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symbol: String) -> Result<FuturesPositionResponse> {
+	let url = FuturesPositionResponse::get_url();
+
+	let mut params = HashMap::<&str, String>::new();
+	params.insert("symbol", format!("{}", symbol));
+	params.insert("orderId", format!("{}", order_id));
+
+	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
 	Ok(response)
 }
@@ -197,53 +204,57 @@ pub async fn post_futures_trade(
 //? What if in cases when the struct is shared, I just implement market_specific commands to retrieve the url?
 // Trying this out now. So far so good.
 
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub enum OrderStatus {
+	#[serde(rename = "NEW")]
+	New,
+	#[serde(rename = "PARTIALLY_FILLED")]
+	PartiallyFilled,
+	#[serde(rename = "FILLED")]
+	Filled,
+	#[serde(rename = "CANCELED")]
+	Canceled,
+	#[serde(rename = "EXPIRED")]
+	Expired,
+	#[serde(rename = "EXPIRED_IN_MATCH")]
+	ExpiredInMatch,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
 pub struct FuturesPositionResponse {
-	clientOrderId: String,
-	cumQty: Option<String>,
-	cumQuote: String,
-	executedQty: String,
-	orderId: i64,
-	avgPrice: Option<String>,
-	origQty: String,
-	price: String,
-	reduceOnly: bool,
-	side: String,
-	positionSide: Option<String>, // only sent when in hedge mode
-	status: String,
-	stopPrice: String,
-	closePosition: bool,
-	symbol: String,
-	timeInForce: String,
-	r#type: String,
-	origType: String,
-	activatePrice: Option<f64>, // only returned on TRAILING_STOP_MARKET order
-	priceRate: Option<f64>,     // only returned on TRAILING_STOP_MARKET order
-	updateTime: i64,
-	workingType: Option<String>, // no clue what this is
-	priceProtect: bool,
-	priceMatch: Option<String>, // huh
-	selfTradePreventionMode: Option<String>,
-	goodTillDate: Option<i64>,
+	pub clientOrderId: Option<String>,
+	pub cumQty: Option<String>,
+	pub cumQuote: String,
+	pub executedQty: String,
+	pub orderId: i64,
+	pub avgPrice: Option<String>,
+	pub origQty: String,
+	pub price: String,
+	pub reduceOnly: bool,
+	pub side: String,
+	pub positionSide: Option<String>, // only sent when in hedge mode
+	pub status: OrderStatus,
+	pub stopPrice: String,
+	pub closePosition: bool,
+	pub symbol: String,
+	pub timeInForce: String,
+	pub r#type: String,
+	pub origType: String,
+	pub activatePrice: Option<f64>, // only returned on TRAILING_STOP_MARKET order
+	pub priceRate: Option<f64>,     // only returned on TRAILING_STOP_MARKET order
+	pub updateTime: i64,
+	pub workingType: Option<String>, // no clue what this is
+	pub priceProtect: bool,
+	pub priceMatch: Option<String>, // huh
+	pub selfTradePreventionMode: Option<String>,
+	pub goodTillDate: Option<i64>,
 }
 impl FuturesPositionResponse {
 	pub fn get_url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
+		// the way this works - is we sumbir "New" and "Query" to the same endpoint. The action is then determined by the presence of the orderId parameter.
 		base_url.join("/fapi/v1/order").unwrap()
-	}
-
-	pub fn write_to_position(&self, position: &Position) -> Result<()> {
-		//TODO!!!!!!!!!: currently response is empty, as it ascertains only the fact of opening the order. Write separate struct and function for opening the order, then have a loop that calls binance once a second with `orderId`, until it gives fill details. Then do writing to position.
-		let qty_notional = self.origQty.parse::<f64>().unwrap();
-		let realised_qty_usdt = self.cumQuote.parse::<f64>().unwrap() * qty_notional;
-		// for some reason not getting the info on how order is filled. In reality want to use "cumQty" here.
-
-		//NB: using unwrap for now, as we assume all all orders are market, and if successful - are filled.
-		position.qty_notional.store(qty_notional, Ordering::SeqCst);
-		//NB: same.
-		position.realised_qty_usdt.store(realised_qty_usdt, Ordering::SeqCst);
-		Ok(())
 	}
 }
 
