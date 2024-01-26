@@ -1,7 +1,6 @@
+#![allow(non_snake_case, dead_code)]
 use crate::exchange_interactions::Market;
-use crate::positions::Position;
 use anyhow::Result;
-use atomic_float::AtomicF64;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -11,7 +10,6 @@ use serde_json::Value;
 use serde_urlencoded;
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use url::Url;
 use v_utils::trades::Side;
 
@@ -156,6 +154,21 @@ pub async fn futures_price(symbol: String) -> Result<f64> {
 	Ok(price)
 }
 
+pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
+	let url = FuturesAllPositionsResponse::get_url();
+
+	let r = signed_request(HttpMethod::GET, url.as_str(), HashMap::new(), key, secret).await?;
+	let positions: Vec<FuturesAllPositionsResponse> = r.json().await?;
+
+	let mut positions_map = HashMap::<String, f64>::new();
+	for position in positions {
+		let symbol = position.symbol.clone();
+		let qty = position.positionAmt.parse::<f64>()?;
+		positions_map.entry(symbol).and_modify(|e| *e += qty).or_insert(qty);
+	}
+	Ok(positions_map)
+}
+
 pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
@@ -197,7 +210,7 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 }
 
 //=============================================================================
-// Response structs
+// Response structs {{{
 //=============================================================================
 
 //? Should I be doing `impl get_url` on these? Unless we have high degree of shared feilds between the markets, this is a big "YES".
@@ -221,7 +234,6 @@ pub enum OrderStatus {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
 pub struct FuturesPositionResponse {
 	pub clientOrderId: Option<String>,
 	pub cumQty: Option<String>,
@@ -231,12 +243,12 @@ pub struct FuturesPositionResponse {
 	pub avgPrice: Option<String>,
 	pub origQty: String,
 	pub price: String,
-	pub reduceOnly: bool,
+	pub reduceOnly: Value,
 	pub side: String,
 	pub positionSide: Option<String>, // only sent when in hedge mode
 	pub status: OrderStatus,
 	pub stopPrice: String,
-	pub closePosition: bool,
+	pub closePosition: Value,
 	pub symbol: String,
 	pub timeInForce: String,
 	pub r#type: String,
@@ -259,7 +271,6 @@ impl FuturesPositionResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
 struct FuturesBalance {
 	accountAlias: String,
 	asset: String,
@@ -273,7 +284,6 @@ struct FuturesBalance {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
 struct SpotAccountDetails {
 	makerCommission: f64,
 	takerCommission: f64,
@@ -306,7 +316,6 @@ struct SpotBalance {
 	locked: String,
 }
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
 struct MarginAccountDetails {
 	borrowEnabled: bool,
 	marginLevel: String,
@@ -322,7 +331,6 @@ struct MarginAccountDetails {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
 struct MarginUserAsset {
 	asset: String,
 	borrowed: String,
@@ -334,7 +342,6 @@ struct MarginUserAsset {
 
 // FuturesExchangeInfo structs {{{
 #[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
 struct FuturesExchangeInfo {
 	exchangeFilters: Vec<String>,
 	rateLimits: Vec<RateLimit>,
@@ -344,7 +351,6 @@ struct FuturesExchangeInfo {
 	timezone: String,
 }
 #[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
 struct RateLimit {
 	interval: String,
 	intervalNum: u32,
@@ -371,7 +377,6 @@ struct RateLimit {
 //}
 
 #[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
 struct FuturesSymbol {
 	symbol: String,
 	pair: String,
@@ -397,5 +402,31 @@ struct FuturesSymbol {
 	timeInForce: Vec<String>,
 	liquidationFee: String,
 	marketTakeBound: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct FuturesAllPositionsResponse {
+	entryPrice: String,
+	breakEvenPrice: String,
+	marginType: String,
+	isAutoAddMargin: Value,
+	isolatedMargin: String,
+	leverage: String,
+	liquidationPrice: String,
+	markPrice: String,
+	maxNotionalValue: String,
+	positionAmt: String,
+	notional: String,
+	isolatedWallet: String,
+	symbol: String,
+	unRealizedProfit: String,
+	positionSide: Value, // is "BOTH" in standard (non-hedge mode) requests, because designed by fucking morons. Apparently we now have negative values in `positionAmt`, if short.
+	updateTime: i64,
+}
+impl FuturesAllPositionsResponse {
+	pub fn get_url() -> Url {
+		let base_url = Market::BinanceFutures.get_base_url();
+		base_url.join("/fapi/v2/positionRisk").unwrap()
+	}
 }
 //,}}}

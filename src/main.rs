@@ -5,6 +5,7 @@ pub mod positions;
 mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
+use positions::Positions;
 use protocols::Protocol;
 use v_utils::{
 	io::{self, ExpandedPath},
@@ -58,6 +59,14 @@ async fn main() {
 	};
 	let noconfirm = cli.noconfirm;
 
+	let positions = match Positions::read_from_file(&config).await {
+		Ok(p) => p,
+		Err(e) => {
+			eprintln!("Loading positions from positions.lock failed: {}", e);
+			std::process::exit(1);
+		}
+	};
+
 	match cli.command {
 		Commands::New(position_args) => {
 			let balance = exchange_interactions::compile_total_balance(config.clone()).await.unwrap();
@@ -72,7 +81,7 @@ async fn main() {
 			};
 
 			if noconfirm || io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
-				match exchange_interactions::open_futures_position(config, position_args.symbol, side, target_size).await {
+				match exchange_interactions::open_futures_position(config, positions, position_args.symbol, side, target_size).await {
 					Ok(_) => println!("Order placed successfully"),
 					Err(e) => {
 						eprintln!("Order placement failed: {}", e);

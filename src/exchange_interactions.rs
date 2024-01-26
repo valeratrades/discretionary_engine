@@ -1,10 +1,11 @@
-use std::sync::atomic::Ordering;
-
 use crate::binance_api;
+use log::info;
 use crate::binance_api::OrderStatus;
 use crate::config::Config;
-use crate::positions::Position;
+use crate::positions::{Position, Positions};
 use anyhow::Result;
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use tokio::time::Duration;
 use url::Url;
 use v_utils::trades::Side;
@@ -26,7 +27,7 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 }
 
 //? Should I make this return new total postion size?
-pub async fn open_futures_position(config: Config, symbol: String, side: Side, usdt_quantity: f64) -> Result<()> {
+pub async fn open_futures_position(config: Config, positions: Positions, symbol: String, side: Side, usdt_quantity: f64) -> Result<()> {
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
 	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
@@ -49,23 +50,29 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 		coin_quantity_adjusted,
 	)
 	.await?;
+	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 	loop {
 		let order = binance_api::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
 		if order.status == OrderStatus::Filled {
-			dbg!(&order);
 			let order_notional = order.origQty.parse::<f64>()?;
 			let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
 			//NB: currently assuming there is nothing else to the position.
 			position.qty_notional.store(order_notional, Ordering::SeqCst);
 			position.qty_usdt.store(order_usdt, Ordering::SeqCst);
 
+			//info!(target: "/tmp/discretionary_engine.lock", "Order filled; new position: {:?}", &position);
+			positions.positions.lock().unwrap().push(position);
 			break;
 		}
 		tokio::time::sleep(Duration::from_secs(1)).await;
 	}
-
-	dbg!(&position);
+	positions.sync(config.clone()).await?;
 	Ok(())
+}
+
+//TODO!: \
+pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
+	binance_api::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
 }
 
 #[allow(dead_code)]
