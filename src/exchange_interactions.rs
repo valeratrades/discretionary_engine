@@ -29,6 +29,7 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 pub async fn open_futures_position(config: Config, symbol: String, side: Side, usdt_quantity: f64) -> Result<()> {
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
+	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
 
 	let current_price_handler = binance_api::futures_price(symbol.clone());
 	let quantity_percision_handler = binance_api::futures_quantity_precision(symbol.clone());
@@ -48,7 +49,6 @@ pub async fn open_futures_position(config: Config, symbol: String, side: Side, u
 		coin_quantity_adjusted,
 	)
 	.await?;
-	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
 	loop {
 		let order = binance_api::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
 		if order.status == OrderStatus::Filled {

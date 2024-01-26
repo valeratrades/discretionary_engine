@@ -1,3 +1,5 @@
+positions_dir = "~/s/g/positions"
+
 [binance]
 full_key = { env = "BINANCE_TIGER_FULL_KEY" }
 full_secret = { env = "BINANCE_TIGER_FULL_SECRET" }

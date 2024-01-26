@@ -3,6 +3,7 @@ use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fmt;
+use std::path::PathBuf;
 use v_utils::io::ExpandedPath;
 
 impl TryFrom<ExpandedPath> for Config {
@@ -15,6 +16,8 @@ impl TryFrom<ExpandedPath> for Config {
 			.with_context(|| "The config file is not correctly formatted TOML\nand/or\n is missing some of the required fields")?;
 
 		let config: Config = raw_config.process()?;
+		let _ = std::fs::create_dir_all(&config.positions_dir)
+			.with_context(|| format!("Failed to create positions directory at {:?}", config.positions_dir))?;
 
 		Ok(config)
 	}
@@ -28,6 +31,7 @@ impl TryFrom<ExpandedPath> for Config {
 /// Some of the Values that are best kept private could be specified both as a string and as an environment variable. For example exchange API keys.
 #[derive(Clone, Debug)]
 pub struct Config {
+	pub positions_dir: PathBuf,
 	pub binance: Binance,
 }
 #[derive(Clone, Debug)]
@@ -44,11 +48,13 @@ pub struct Binance {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct RawConfig {
+	pub positions_dir: ExpandedPath,
 	pub binance: RawBinance,
 }
 impl RawConfig {
 	pub fn process(&self) -> Result<Config> {
 		Ok(Config {
+			positions_dir: self.positions_dir.0.clone(),
 			binance: self.binance.process()?,
 		})
 	}
