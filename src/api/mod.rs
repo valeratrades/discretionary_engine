@@ -1,5 +1,6 @@
-use crate::binance_api;
-use crate::binance_api::OrderStatus;
+pub mod binance;
+
+use binance::OrderStatus;
 use crate::config::Config;
 use crate::positions::{Position, Positions};
 use anyhow::Result;
@@ -14,8 +15,8 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 	let read_secret = config.binance.read_secret.clone();
 
 	let mut handlers = Vec::new();
-	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures));
-	handlers.push(binance_api::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot));
+	handlers.push(binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures));
+	handlers.push(binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot));
 
 	let mut total_balance = 0.0;
 	for handler in handlers {
@@ -31,8 +32,8 @@ pub async fn open_futures_position(config: Config, positions: Positions, symbol:
 	let full_secret = config.binance.full_secret.clone();
 	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
 
-	let current_price_handler = binance_api::futures_price(symbol.clone());
-	let quantity_percision_handler = binance_api::futures_quantity_precision(symbol.clone());
+	let current_price_handler = binance::futures_price(symbol.clone());
+	let quantity_percision_handler = binance::futures_quantity_precision(symbol.clone());
 	let current_price = current_price_handler.await?;
 	let quantity_precision: usize = quantity_percision_handler.await?;
 
@@ -40,10 +41,10 @@ pub async fn open_futures_position(config: Config, positions: Positions, symbol:
 	let factor = 10_f64.powi(quantity_precision as i32);
 	let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
-	let order_id = binance_api::post_futures_order(
+	let order_id = binance::post_futures_order(
 		full_key.clone(),
 		full_secret.clone(),
-		binance_api::OrderType::Market,
+		binance::OrderType::Market,
 		symbol.clone(),
 		side.clone(),
 		coin_quantity_adjusted,
@@ -51,7 +52,7 @@ pub async fn open_futures_position(config: Config, positions: Positions, symbol:
 	.await?;
 	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 	loop {
-		let order = binance_api::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
+		let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
 		if order.status == OrderStatus::Filled {
 			let order_notional = order.origQty.parse::<f64>()?;
 			let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
@@ -71,9 +72,10 @@ pub async fn open_futures_position(config: Config, positions: Positions, symbol:
 
 //TODO!: \
 pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
-	binance_api::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
+	binance::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
 }
 
+//? Should I start passing down the entire Exchange objects?
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum Market {
@@ -96,12 +98,12 @@ pub struct Exchanges {
 }
 
 pub struct Exchange {
-	pub general_info: GeneralInfo,
+	//pub general_info: GeneralInfo, // gonna be gradually expanded, based on the needs. The abstraction shall be generalized across exchanges.
 	//pub account_info: AccountInfo,
 	pub coins: HashMap<String, Coin>,
 }
 
 pub struct Coin {
 	pub price: f64, // is copied over from klines, for easier access
-	pub kilens: Vec<Kline>,
+	//pub kliens: Vec<Kline>,
 }

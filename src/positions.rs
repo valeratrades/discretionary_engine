@@ -1,5 +1,5 @@
+use crate::api::{get_positions, Market};
 use crate::config::Config;
-use crate::exchange_interactions::{Market, get_positions};
 use crate::protocols::Protocol;
 use anyhow::Result;
 use atomic_float::AtomicF64;
@@ -41,10 +41,13 @@ impl Positions {
 		let mut exchange_positions = get_positions(&config).await?;
 
 		for (symbol, qty_notional) in accounted_positions.iter() {
-			exchange_positions.entry(symbol.clone()).and_modify(|e| *e -= qty_notional).or_insert(-qty_notional);
+			exchange_positions
+				.entry(symbol.clone())
+				.and_modify(|e| *e -= qty_notional)
+				.or_insert(-qty_notional);
 		}
 		let mut difference_lock = self.difference_from_exchange.lock().unwrap();
-		for  (symbol, qty_notional) in exchange_positions.iter() {
+		for (symbol, qty_notional) in exchange_positions.iter() {
 			if *qty_notional != 0.0 {
 				difference_lock.insert(symbol.clone(), *qty_notional);
 			}

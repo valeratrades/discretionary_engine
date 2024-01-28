@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use crate::exchange_interactions::Market;
+use crate::api::Market;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};

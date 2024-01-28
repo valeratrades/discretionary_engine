@@ -1,6 +1,5 @@
-pub mod binance_api;
+pub mod api;
 pub mod config;
-pub mod exchange_interactions;
 pub mod positions;
 mod protocols;
 use clap::{Args, Parser, Subcommand};
@@ -69,7 +68,7 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			let balance = exchange_interactions::compile_total_balance(config.clone()).await.unwrap();
+			let balance = api::compile_total_balance(config.clone()).await.unwrap();
 
 			let (side, target_size) = match position_args.size {
 				s if s > 0.0 => (Side::Buy, s * balance),
@@ -81,7 +80,7 @@ async fn main() {
 			};
 
 			if noconfirm || io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
-				match exchange_interactions::open_futures_position(config, positions, position_args.symbol, side, target_size).await {
+				match api::open_futures_position(config, positions, position_args.symbol, side, target_size).await {
 					Ok(_) => println!("Order placed successfully"),
 					Err(e) => {
 						eprintln!("Order placement failed: {}", e);
