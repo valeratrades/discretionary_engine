@@ -1,5 +1,4 @@
 use crate::binance_api;
-use log::info;
 use crate::binance_api::OrderStatus;
 use crate::config::Config;
 use crate::positions::{Position, Positions};
@@ -90,4 +89,19 @@ impl Market {
 			Market::BinanceMargin => Url::parse("https://api.binance.com/").unwrap(),
 		}
 	}
+}
+
+pub struct Exchanges {
+	pub binance_futures: Exchange,
+}
+
+pub struct Exchange {
+	pub general_info: GeneralInfo,
+	//pub account_info: AccountInfo,
+	pub coins: HashMap<String, Coin>,
+}
+
+pub struct Coin {
+	pub price: f64, // is copied over from klines, for easier access
+	pub kilens: Vec<Kline>,
 }
