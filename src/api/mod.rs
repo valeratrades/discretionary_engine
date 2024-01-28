@@ -1,5 +1,5 @@
 pub mod binance;
-
+use crate::protocols::{ProtocolWrapper, Protocols};
 use binance::OrderStatus;
 use crate::config::Config;
 use crate::positions::{Position, Positions};
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use tokio::time::Duration;
 use url::Url;
+use chrono::Utc;
 use v_utils::trades::Side;
 
 pub async fn compile_total_balance(config: Config) -> Result<f64> {
@@ -27,10 +28,10 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 }
 
 //? Should I make this return new total postion size?
-pub async fn open_futures_position(config: Config, positions: Positions, symbol: String, side: Side, usdt_quantity: f64) -> Result<()> {
+pub async fn open_futures_position(config: Config, positions: Positions, symbol: String, side: Side, usdt_quantity: f64, protocols: Protocols) -> Result<()> {
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
-	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, chrono::Utc::now());
+	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
 
 	let current_price_handler = binance::futures_price(symbol.clone());
 	let quantity_percision_handler = binance::futures_quantity_precision(symbol.clone());
@@ -93,17 +94,28 @@ impl Market {
 	}
 }
 
-pub struct Exchanges {
-	pub binance_futures: Exchange,
+#[derive(Clone, Debug)]
+pub enum Order {
+	BinanceOrder(binance::FuturesOrder),
 }
 
-pub struct Exchange {
-	//pub general_info: GeneralInfo, // gonna be gradually expanded, based on the needs. The abstraction shall be generalized across exchanges.
-	//pub account_info: AccountInfo,
-	pub coins: HashMap<String, Coin>,
-}
 
-pub struct Coin {
-	pub price: f64, // is copied over from klines, for easier access
-	//pub kliens: Vec<Kline>,
-}
+
+
+
+//pub struct Exchanges {
+//	pub binance_futures: Exchange,
+//}
+//
+//pub struct Exchange {
+//	//pub general_info: GeneralInfo, // gonna be gradually expanded, based on the needs. The abstraction shall be generalized across exchanges.
+//	//pub account_info: AccountInfo,
+//	pub coins: HashMap<String, Coin>,
+//}
+//
+//pub struct Coin {
+//	pub price: f64, // is copied over from klines, for easier access
+//	//pub kliens: Vec<Kline>,
+//}
+
+

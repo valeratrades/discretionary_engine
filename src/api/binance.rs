@@ -1,6 +1,8 @@
 #![allow(non_snake_case, dead_code)]
 use crate::api::Market;
+use crate::protocols::Klines;
 use anyhow::Result;
+use arrow2::array::{Float64Array, Int64Array};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -10,8 +12,9 @@ use serde_json::Value;
 use serde_urlencoded;
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use url::Url;
-use v_utils::trades::Side;
+use v_utils::trades::{Side, Timeframe};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -209,6 +212,75 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 	Ok(response)
 }
 
+pub async fn get_futures_klines(symbol: String, timeframe: Timeframe, limit: usize) -> Result<Klines> {
+	assert!(limit <= 1500);
+	let base_url = Market::BinanceFutures.get_base_url();
+	let url = base_url.join("/fapi/v1/klines")?;
+
+	let mut params = HashMap::<&str, String>::new();
+	params.insert("symbol", symbol);
+	params.insert("interval", timeframe.to_string());
+	params.insert("limit", format!("{}", limit));
+
+	let client = reqwest::Client::new();
+	let r = client.get(url).json(&params).send().await?;
+	let response_klines: Vec<ResponseKline> = r.json().await?;
+
+	let mut t_open = Vec::new();
+	let mut open = Vec::new();
+	let mut high = Vec::new();
+	let mut low = Vec::new();
+	let mut close = Vec::new();
+	let mut volume = Vec::new();
+	for kline in response_klines {
+		t_open.push(Some(kline.open_time));
+		open.push(Some(kline.open.parse::<f64>().unwrap()));
+		high.push(Some(kline.high.parse::<f64>().unwrap()));
+		low.push(Some(kline.low.parse::<f64>().unwrap()));
+		close.push(Some(kline.close.parse::<f64>().unwrap()));
+		volume.push(Some(kline.volume.parse::<f64>().unwrap()));
+	}
+	let klines = Klines {
+		t_open: Int64Array::from(t_open),
+		open: Float64Array::from(open),
+		high: Float64Array::from(high),
+		low: Float64Array::from(low),
+		close: Float64Array::from(close),
+		volume: Some(Float64Array::from(volume)),
+	};
+	Ok(klines)
+}
+
+//async fn binance_websocket_klines(klines_arc: Arc<Mutex<Klines>>, symbol: String, timeframe: Timeframe) {{{{
+//	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
+//	let url = url::Url::parse(address).unwrap();
+//	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+//	let (_, read) = ws_stream.split();
+//
+//	read.for_each(|message| {
+//		let main_line = self_arc.clone(); // Cloning the Arc for each iteration
+//		let output = output.clone(); // Can i get rid of these?
+//		async move {
+//			let data = message.unwrap().into_data();
+//			match serde_json::from_slice::<Value>(&data) {
+//				Ok(json) => {
+//					if let Some(price_str) = json.get("p") {
+//						let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+//						let mut main_line = main_line.lock().unwrap();
+//						main_line.btcusdt = Some(price);
+//						let mut output_lock = output.lock().unwrap();
+//						output_lock.main_line_str = main_line.display(config);
+//						output_lock.out().unwrap();
+//					}
+//				}
+//				Err(e) => {
+//					println!("Failed to parse message as JSON: {}", e);
+//				}
+//			}
+//		}
+//	})
+//	.await;
+//}}}}
 //=============================================================================
 // Response structs {{{
 //=============================================================================
@@ -428,5 +500,27 @@ impl FuturesAllPositionsResponse {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v2/positionRisk").unwrap()
 	}
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct FuturesOrder {
+	///TODO!!!!!!: /
+	_todo: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ResponseKline {
+	open_time: i64,
+	open: String,
+	high: String,
+	low: String,
+	close: String,
+	volume: String,
+	close_time: u64,
+	quote_asset_volume: String,
+	number_of_trades: usize,
+	taker_buy_base_asset_volume: String,
+	taker_buy_quote_asset_volume: String,
+	ignore: String,
 }
 //,}}}

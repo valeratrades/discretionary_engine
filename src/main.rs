@@ -5,7 +5,7 @@ mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::Positions;
-use protocols::Protocol;
+use protocols::Protocols;
 use v_utils::{
 	io::{self, ExpandedPath},
 	trades::{Side, Timeframe},
@@ -40,7 +40,7 @@ struct PositionArgs {
 	symbol: String,
 	#[arg(short, long, default_value = "")]
 	/// trail parameters, in the format of "<protocol>-<params>", e.g. "trailing-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
-	protocols: Vec<Protocol>,
+	protocols: Vec<String>,
 }
 
 #[derive(Args)]
@@ -66,8 +66,20 @@ async fn main() {
 		}
 	};
 
+
 	match cli.command {
 		Commands::New(position_args) => {
+			//let protocols = Protocols::from(position_args.protocols).unwrap();
+
+			use std::str::FromStr;
+			let ts = protocols::TrailingStop::from_str("p0.5").unwrap();
+			let protocols = Protocols{
+				trailing_stop: Some(protocols::ProtocolWrapper::new(ts)),
+				sar: None,
+				tpsl: None,
+				leading_crosses: None,
+			};
+
 			let balance = api::compile_total_balance(config.clone()).await.unwrap();
 
 			let (side, target_size) = match position_args.size {
@@ -80,7 +92,7 @@ async fn main() {
 			};
 
 			if noconfirm || io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
-				match api::open_futures_position(config, positions, position_args.symbol, side, target_size).await {
+				match api::open_futures_position(config, positions, position_args.symbol, side, target_size, protocols).await {
 					Ok(_) => println!("Order placed successfully"),
 					Err(e) => {
 						eprintln!("Order placement failed: {}", e);

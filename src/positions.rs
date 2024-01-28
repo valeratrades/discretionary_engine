@@ -1,6 +1,6 @@
 use crate::api::{get_positions, Market};
 use crate::config::Config;
-use crate::protocols::Protocol;
+use crate::protocols::Protocols;
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use chrono::{DateTime, Utc};
@@ -68,14 +68,14 @@ pub struct Position {
 	pub target_qty_usdt: AtomicF64,
 	// I now think it should be possible to slap multiple protocols on it. Say 1) tp+sl 2) trailing_stop
 	// And then the protocols can have traits indicating their type. Like momentum, preset, fundamental, or what have you. Just need to figure out rules for their interaction amongst themselthes.
-	pub follow: Vec<Protocol>,
+	pub protocols: Protocols,
 	pub timestamp: DateTime<Utc>,
 	//? add `realised_usdt` field?
 }
 
 impl Position {
 	//TODO!!!: implement the darn Symbol
-	pub fn new(market: Market, side: Side, symbol: String, target_qty_usdt: f64, timestamp: DateTime<Utc>) -> Self {
+	pub fn new(market: Market, side: Side, symbol: String, target_qty_usdt: f64, protocols: Protocols, timestamp: DateTime<Utc>) -> Self {
 		Self {
 			market,
 			side,
@@ -83,7 +83,7 @@ impl Position {
 			qty_notional: AtomicF64::new(0.0),
 			qty_usdt: AtomicF64::new(0.0),
 			target_qty_usdt: AtomicF64::from(target_qty_usdt),
-			follow: Vec::new(),
+			protocols: protocols,
 			timestamp,
 		}
 	}
