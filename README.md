@@ -29,9 +29,10 @@ An example config can be found in ./examples/config.toml
 - [x] record positions on open
 
 - [ ] start protocols after synching positions with exchange
-1. move apis out
-1. Coins struct with klines
-1. klines sync loop for binance_futures
+    - [x] move apis out
+    - [ ] Coins struct with klines
+        - for klines use arrow vectors, and wrap them in polars only when calculating protocols.
+    - [ ] klines sync loop for binance_futures
 
 - [ ] lock file
 
