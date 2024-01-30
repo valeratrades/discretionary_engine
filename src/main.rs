@@ -66,15 +66,14 @@ async fn main() {
 		}
 	};
 
-
 	match cli.command {
 		Commands::New(position_args) => {
 			//let protocols = Protocols::from(position_args.protocols).unwrap();
 
 			use std::str::FromStr;
 			let ts = protocols::TrailingStop::from_str("p0.5").unwrap();
-			let protocols = Protocols{
-				trailing_stop: Some(protocols::ProtocolWrapper::new(ts)),
+			let protocols = Protocols {
+				trailing_stop: Some(ts),
 				sar: None,
 				tpsl: None,
 				leading_crosses: None,

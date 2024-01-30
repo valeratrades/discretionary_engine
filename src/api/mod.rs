@@ -1,15 +1,16 @@
 pub mod binance;
-use crate::protocols::{ProtocolWrapper, Protocols};
-use binance::OrderStatus;
 use crate::config::Config;
 use crate::positions::{Position, Positions};
+use crate::protocols::Klines;
+use crate::protocols::Protocols;
 use anyhow::Result;
+use binance::OrderStatus;
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use tokio::time::Duration;
 use url::Url;
-use chrono::Utc;
-use v_utils::trades::Side;
+use v_utils::trades::{Side, Timeframe};
 
 pub async fn compile_total_balance(config: Config) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -28,7 +29,14 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 }
 
 //? Should I make this return new total postion size?
-pub async fn open_futures_position(config: Config, positions: Positions, symbol: String, side: Side, usdt_quantity: f64, protocols: Protocols) -> Result<()> {
+pub async fn open_futures_position(
+	config: Config,
+	positions: Positions,
+	symbol: String,
+	side: Side,
+	usdt_quantity: f64,
+	protocols: Protocols,
+) -> Result<()> {
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
 	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
@@ -76,6 +84,21 @@ pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
 	binance::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
 }
 
+/// Does the routing to the most liquid exchange automatically, don't have to specify. (not yet implemented).
+pub async fn klines(klines_spec: KlinesSpec) -> Result<Klines> {
+	binance::get_futures_klines(klines_spec.symbol, klines_spec.timeframe, klines_spec.limit).await
+}
+pub struct KlinesSpec {
+	symbol: String,
+	timeframe: Timeframe,
+	limit: usize,
+}
+impl KlinesSpec {
+	pub fn new(symbol: String, timeframe: Timeframe, limit: usize) -> Self {
+		Self { symbol, timeframe, limit }
+	}
+}
+
 //? Should I start passing down the entire Exchange objects?
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -94,14 +117,14 @@ impl Market {
 	}
 }
 
+/// Order spec and human-interpretable unique name of the structure requesting it. Ex: `"trailing_stop"`
 #[derive(Clone, Debug)]
-pub enum Order {
-	BinanceOrder(binance::FuturesOrder),
+pub enum OrderSpec {
+	BinanceOrder((String, binance::FuturesOrder)),
 }
 
-
-
-
+// top level: [Protocol, Execution, RiskManager]
+// second level: [TrailingStop, SAR, ...]
 
 //pub struct Exchanges {
 //	pub binance_futures: Exchange,
@@ -117,5 +140,3 @@ pub enum Order {
 //	pub price: f64, // is copied over from klines, for easier access
 //	//pub kliens: Vec<Kline>,
 //}
-
-

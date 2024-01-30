@@ -30,7 +30,6 @@ An example config can be found in ./examples/config.toml
 
 - [ ] start protocols after synching positions with exchange
     - [x] move apis out
-    - [ ] connect new websocket for every protocol for now, and write klines to shared mutex regularly
 
 - [ ] lock file
 

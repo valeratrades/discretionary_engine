@@ -251,6 +251,37 @@ pub async fn get_futures_klines(symbol: String, timeframe: Timeframe, limit: usi
 	Ok(klines)
 }
 
+//TODO!: generalize websockets and writing out from them.
+//async fn binance_websocket_listen(self_arc: Arc<Mutex<MainLine>>, config: &Config, output: Arc<Mutex<Output>>) {
+//	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
+//	let url = url::Url::parse(address).unwrap();
+//	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+//	let (_, read) = ws_stream.split();
+//
+//	read.for_each(|message| {
+//		let main_line = self_arc.clone(); // Cloning the Arc for each iteration
+//		let output = output.clone(); // Can i get rid of these?
+//		async move {
+//			let data = message.unwrap().into_data();
+//			match serde_json::from_slice::<Value>(&data) {
+//				Ok(json) => {
+//					if let Some(price_str) = json.get("p") {
+//						let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+//						let mut main_line = main_line.lock().unwrap();
+//						main_line.btcusdt = Some(price);
+//						let mut output_lock = output.lock().unwrap();
+//						output_lock.main_line_str = main_line.display(config);
+//						output_lock.out().unwrap();
+//					}
+//				}
+//				Err(e) => {
+//					println!("Failed to parse message as JSON: {}", e);
+//				}
+//			}
+//		}
+//	})
+//	.await;
+//}
 //async fn binance_websocket_klines(klines_arc: Arc<Mutex<Klines>>, symbol: String, timeframe: Timeframe) {{{{
 //	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
 //	let url = url::Url::parse(address).unwrap();

@@ -1,28 +1,32 @@
 use crate::api::binance;
-use crate::api::Order;
+use crate::api::KlinesSpec;
+use crate::api::OrderSpec;
 use crate::positions::Position;
 use anyhow::{Error, Result};
 use arrow2::array::{Float64Array, Int64Array};
+use futures_util::StreamExt;
 use serde::de::{self, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use tokio_tungstenite::connect_async;
 use v_utils::data::compact_format::COMPACT_FORMAT_DELIMITER;
 use v_utils::init_compact_format;
-use v_utils::trades::{Timeframe, Timestamp};
+use v_utils::trades::{Side, Timeframe, Timestamp};
 
 // everybody will have owned orders on them too
 
 // de impl on this will split upon a delimiter, then have several ways to define the name, which is the first part and translated directly; while the rest is parsed.
 #[derive(Clone, Debug)]
 pub struct Protocols {
-	pub trailing_stop: Option<ProtocolWrapper<TrailingStop>>,
-	pub sar: Option<ProtocolWrapper<SAR>>,
-	pub tpsl: Option<ProtocolWrapper<TpSl>>,
+	pub trailing_stop: Option<TrailingStop>,
+	pub sar: Option<SAR>,
+	pub tpsl: Option<TpSl>,
 	/// close position when another asset crosses certain price
-	pub leading_crosses: Option<ProtocolWrapper<LeadingCrosses>>,
+	pub leading_crosses: Option<LeadingCrosses>,
 }
 // want to just go through the supplied Vec<String>, and try until it fits.
 //impl FromStr for Protocol {
@@ -96,45 +100,137 @@ init_compact_format!(TrailingStop, [(percent, f64)]);
 init_compact_format!(TpSl, [(tp, f64), (sl, f64)]);
 init_compact_format!(LeadingCrosses, [(symbol, String), (price, f64)]);
 
-//impl TrailingStop {
-//	pub fn attach(&self, position: Arc<Mutex<Position>>) {
-//		//- klines loop
-//
-//		//- orders based on klines
-//
-//		todo!()
-//	}
-//}
-
-#[derive(Clone, Debug)]
-pub struct ProtocolWrapper<T> {
-	pub protocol: T,
-	/// Vec of IDs, as we are never checking what's here from the inside. Currently assuming IDs are all numeric, but that should not be relied upon, as it may be a subject to change.
-	pub orders: Arc<Mutex<Vec<usize>>>,
-	pub klines: Arc<Mutex<HashMap<Timestamp, Klines>>>,
-	pub requesting_orders: Arc<Mutex<Vec<Order>>>,
+// this will be done as part of the macro
+pub enum Protocol {
+	TrailingStop(TrailingStop),
+	SAR(SAR),
+	TpSl(TpSl),
+	LeadingCrosses(LeadingCrosses),
 }
-impl<T> ProtocolWrapper<T> {
-	pub fn new(protocol: T) -> Self {
-		Self {
-			protocol,
-			orders: Arc::new(Mutex::new(Vec::new())),
-			klines: Arc::new(Mutex::new(HashMap::new())),
-			requesting_orders: Arc::new(Mutex::new(Vec::new())),
+// this not
+impl Protocol {
+	pub fn required_klines_spec(&self, symbol: String) -> Option<KlinesSpec> {
+		match self {
+			//? How do you even express this? I need to know the highest/lowest point over the entire period that the position was open.
+			// This has to dinamically choose a timeframe such as the moment the position was opened is on a different candle from current.
+			// Does this mean we cannot have our own loops, and have to just request data to be supplied on call?
+			Protocol::TrailingStop(_) => Some(KlinesSpec::new(symbol, Timeframe::from_str("1m").unwrap(), 1)),
+			Protocol::SAR(sar) => Some(KlinesSpec::new(symbol, sar.timeframe.clone(), 500)),
+			Protocol::TpSl(_) => None,
+			Protocol::LeadingCrosses(lc) => Some(KlinesSpec::new(lc.symbol.clone(), Timeframe::from_str("1m").unwrap(), 1)),
 		}
 	}
+}
 
-	// I guess will be called only when the child has timeframe, as we're fucking unable to access it in a generic.
-	pub async fn init(&self, owner: Arc<Mutex<Position>>, timeframe: Timeframe) -> Result<()> {
-		let klines_arc = self.klines.clone();
-		let symbol = owner.lock().unwrap().symbol.clone();
+pub trait ProtocolAttach {
+	async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<ProtocolCache>) -> Result<()>;
+}
+
+impl ProtocolAttach for TrailingStop {
+	async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<ProtocolCache>) -> Result<()> {
+		async fn websocket_listen(symbol: String, side: Side, percent: f64, cache: Arc<ProtocolCache>) {
+			let address = format!("wss://fstream.binance.com/ws/{}@markPrice", symbol.to_lowercase());
+			let url = url::Url::parse(&address).unwrap();
+			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+			let (_, read) = ws_stream.split();
+
+			read.for_each(|message| {
+				let cache = cache.clone();
+				async move {
+					let data = message.unwrap().into_data();
+					match serde_json::from_slice::<Value>(&data) {
+						Ok(json) => {
+							if let Some(price_str) = json.get("p") {
+								let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+								dbg!(&price);
+								let mut trailing_stop_local_lock = cache.trailing_stop.local.lock().unwrap();
+								if price < trailing_stop_local_lock.bottom {
+									trailing_stop_local_lock.bottom = price;
+									match side {
+										Side::Buy => {}
+										Side::Sell => {
+											// remove old order request, place new at new p+percent
+											todo!()
+										}
+									}
+								}
+								if price > trailing_stop_local_lock.top {
+									trailing_stop_local_lock.top = price;
+									match side {
+										Side::Buy => {}
+										Side::Sell => {
+											// remove old order request, place new at new p+percent
+											todo!()
+										}
+									}
+								}
+							}
+						}
+						Err(e) => {
+							println!("Failed to parse message as JSON: {}", e);
+						}
+					}
+				}
+			})
+			.await;
+		}
+		let percent = self.percent;
+		let symbol: String;
+		let side: Side;
+		{
+			let lock = owner.lock().unwrap();
+			symbol = lock.symbol.clone();
+			side = lock.side.clone();
+		}
 		tokio::spawn(async move {
-			let klines = binance::get_futures_klines(symbol, timeframe, 1000 as usize).await.unwrap();
-			klines_arc.lock().unwrap().insert(timeframe::to_str(), klines).unwrap();
+			let symbol = symbol.clone();
+			loop {
+				let handle = websocket_listen(symbol.clone(), side, percent, cache.clone());
+
+				handle.await;
+				eprintln!("Restarting Binance websocket for the trailing stop in 30 seconds...");
+				tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+			}
 		});
 		Ok(())
 	}
 }
+
+//	// I guess will be called only when the child has timeframe, as we're fucking unable to access it in a generic.
+//	pub async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<Mutex<ProtocolCache>>, timeframe: Timeframe) -> Result<()> {
+//		let klines_arc = self.klines.clone();
+//		let symbol = owner.lock().unwrap().symbol.clone();
+//		tokio::spawn(async move {
+//			let klines = binance::get_futures_klines(symbol, timeframe, 1000 as usize).await.unwrap();
+//			klines_arc.lock().unwrap().insert(timeframe::to_str(), klines).unwrap();
+//		});
+//		Ok(())
+//	}
+//}
+
+/// With current implementation, structs that do not store Cache do not have their associated field. All protocols receive Arc<Mutex<ProtocolCache>> in its entirety.
+pub struct ProtocolCache {
+	pub trailing_stop: CacheBlob<TrailingStopCache>,
+	pub sar: CacheBlob<SARCache>,
+	pub tpsl: CacheBlob<TpSlCache>,
+	pub leading_crosses: CacheBlob<LeadingCrossesCache>,
+}
+pub struct CacheBlob<T> {
+	pub orders: Arc<Mutex<OrderSpec>>,
+	pub local: Arc<Mutex<T>>,
+}
+
+/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: not meant to.
+pub struct TrailingStopCache {
+	pub timeframe: Timeframe,
+	pub top: f64,
+	pub bottom: f64,
+}
+pub struct LeadingCrossesCache {
+	pub init_price: f64,
+}
+pub struct SARCache {}
+pub struct TpSlCache {}
 
 /// For components that are not included into standard definition of a kline, (and thus are behind `Option`), requesting of these fields should be adressed to the producer.
 //TODO!!: move to v_utils after it's functional enough \
