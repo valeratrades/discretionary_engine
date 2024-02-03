@@ -1,4 +1,4 @@
-use crate::api::binance;
+use crate::api::binance::{self, futures_price};
 use crate::api::KlinesSpec;
 use crate::api::OrderSpec;
 use crate::positions::Position;
@@ -28,6 +28,24 @@ pub struct Protocols {
 	/// close position when another asset crosses certain price
 	pub leading_crosses: Option<LeadingCrosses>,
 }
+impl Protocols {
+	pub async fn attach(&self, owner: &Position) -> Result<()> {
+		if let Some(trailing_stop) = &self.trailing_stop {
+			trailing_stop.attach(owner).await?;
+		}
+		//if let Some(sar) = &self.sar {
+		//	sar.attach(owner).await?;
+		//}
+		//if let Some(tpsl) = &self.tpsl {
+		//	tpsl.attach(owner).await?;
+		//}
+		//if let Some(leading_crosses) = &self.leading_crosses {
+		//	leading_crosses.attach(owner).await?;
+		//}
+		Ok(())
+	}
+}
+
 // want to just go through the supplied Vec<String>, and try until it fits.
 //impl FromStr for Protocol {
 //	type Err = anyhow::Error;
@@ -107,28 +125,14 @@ pub enum Protocol {
 	TpSl(TpSl),
 	LeadingCrosses(LeadingCrosses),
 }
-// this not
-impl Protocol {
-	pub fn required_klines_spec(&self, symbol: String) -> Option<KlinesSpec> {
-		match self {
-			//? How do you even express this? I need to know the highest/lowest point over the entire period that the position was open.
-			// This has to dinamically choose a timeframe such as the moment the position was opened is on a different candle from current.
-			// Does this mean we cannot have our own loops, and have to just request data to be supplied on call?
-			Protocol::TrailingStop(_) => Some(KlinesSpec::new(symbol, Timeframe::from_str("1m").unwrap(), 1)),
-			Protocol::SAR(sar) => Some(KlinesSpec::new(symbol, sar.timeframe.clone(), 500)),
-			Protocol::TpSl(_) => None,
-			Protocol::LeadingCrosses(lc) => Some(KlinesSpec::new(lc.symbol.clone(), Timeframe::from_str("1m").unwrap(), 1)),
-		}
-	}
-}
 
 pub trait ProtocolAttach {
-	async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<ProtocolCache>) -> Result<()>;
+	async fn attach(&self, owner: &Position) -> Result<()>;
 }
 
 impl ProtocolAttach for TrailingStop {
-	async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<ProtocolCache>) -> Result<()> {
-		async fn websocket_listen(symbol: String, side: Side, percent: f64, cache: Arc<ProtocolCache>) {
+	async fn attach(&self, owner: &Position) -> Result<()> {
+		async fn websocket_listen(symbol: String, side: Side, percent: f64, cache: Arc<Mutex<TrailingStopCache>>) {
 			let address = format!("wss://fstream.binance.com/ws/{}@markPrice", symbol.to_lowercase());
 			let url = url::Url::parse(&address).unwrap();
 			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -143,9 +147,9 @@ impl ProtocolAttach for TrailingStop {
 							if let Some(price_str) = json.get("p") {
 								let price: f64 = price_str.as_str().unwrap().parse().unwrap();
 								dbg!(&price);
-								let mut trailing_stop_local_lock = cache.trailing_stop.local.lock().unwrap();
-								if price < trailing_stop_local_lock.bottom {
-									trailing_stop_local_lock.bottom = price;
+								let mut trailing_stop_guard = cache.lock().unwrap();
+								if price < trailing_stop_guard.bottom {
+									trailing_stop_guard.bottom = price;
 									match side {
 										Side::Buy => {}
 										Side::Sell => {
@@ -154,8 +158,8 @@ impl ProtocolAttach for TrailingStop {
 										}
 									}
 								}
-								if price > trailing_stop_local_lock.top {
-									trailing_stop_local_lock.top = price;
+								if price > trailing_stop_guard.top {
+									trailing_stop_guard.top = price;
 									match side {
 										Side::Buy => {}
 										Side::Sell => {
@@ -175,17 +179,21 @@ impl ProtocolAttach for TrailingStop {
 			.await;
 		}
 		let percent = self.percent;
-		let symbol: String;
-		let side: Side;
-		{
-			let lock = owner.lock().unwrap();
-			symbol = lock.symbol.clone();
-			side = lock.side.clone();
+		let symbol = owner.symbol.clone();
+		let side = owner.side;
+
+		let mut cache_guard = owner.cache.lock().unwrap();
+		let trailing_internal = &mut cache_guard.trailing_stop.internal;
+		if trailing_internal.is_none() {
+			let price = futures_price(symbol.clone()).await?;
+			*trailing_internal = Some(Arc::new(Mutex::new(TrailingStopCache { top: price, bottom: price })));
 		}
+		let trailing_cache = trailing_internal.as_ref().map(|arc| Arc::clone(arc)).unwrap();
+
 		tokio::spawn(async move {
 			let symbol = symbol.clone();
 			loop {
-				let handle = websocket_listen(symbol.clone(), side, percent, cache.clone());
+				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone());
 
 				handle.await;
 				eprintln!("Restarting Binance websocket for the trailing stop in 30 seconds...");
@@ -196,40 +204,51 @@ impl ProtocolAttach for TrailingStop {
 	}
 }
 
-//	// I guess will be called only when the child has timeframe, as we're fucking unable to access it in a generic.
-//	pub async fn attach(&self, owner: Arc<Mutex<Position>>, cache: Arc<Mutex<ProtocolCache>>, timeframe: Timeframe) -> Result<()> {
-//		let klines_arc = self.klines.clone();
-//		let symbol = owner.lock().unwrap().symbol.clone();
-//		tokio::spawn(async move {
-//			let klines = binance::get_futures_klines(symbol, timeframe, 1000 as usize).await.unwrap();
-//			klines_arc.lock().unwrap().insert(timeframe::to_str(), klines).unwrap();
-//		});
-//		Ok(())
-//	}
-//}
-
 /// With current implementation, structs that do not store Cache do not have their associated field. All protocols receive Arc<Mutex<ProtocolCache>> in its entirety.
-pub struct ProtocolCache {
+#[derive(Debug)]
+pub struct Cache {
 	pub trailing_stop: CacheBlob<TrailingStopCache>,
 	pub sar: CacheBlob<SARCache>,
 	pub tpsl: CacheBlob<TpSlCache>,
 	pub leading_crosses: CacheBlob<LeadingCrossesCache>,
 }
+impl Cache {
+	pub fn new() -> Self {
+		Self {
+			trailing_stop: CacheBlob::new(),
+			sar: CacheBlob::new(),
+			tpsl: CacheBlob::new(),
+			leading_crosses: CacheBlob::new(),
+		}
+	}
+}
+#[derive(Debug)]
 pub struct CacheBlob<T> {
-	pub orders: Arc<Mutex<OrderSpec>>,
-	pub local: Arc<Mutex<T>>,
+	pub orders: Arc<Mutex<Vec<OrderSpec>>>,
+	pub internal: Option<Arc<Mutex<T>>>,
+}
+impl<T> CacheBlob<T> {
+	pub fn new() -> Self {
+		Self {
+			orders: Arc::new(Mutex::new(Vec::new())),
+			internal: None,
+		}
+	}
 }
 
 /// Stores both highest and lowest prices in case the direction is switched for some reason. Note: not meant to.
+#[derive(Debug)]
 pub struct TrailingStopCache {
-	pub timeframe: Timeframe,
 	pub top: f64,
 	pub bottom: f64,
 }
+#[derive(Debug)]
 pub struct LeadingCrossesCache {
 	pub init_price: f64,
 }
+#[derive(Debug)]
 pub struct SARCache {}
+#[derive(Debug)]
 pub struct TpSlCache {}
 
 /// For components that are not included into standard definition of a kline, (and thus are behind `Option`), requesting of these fields should be adressed to the producer.

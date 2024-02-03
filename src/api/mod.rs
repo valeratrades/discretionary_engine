@@ -70,12 +70,16 @@ pub async fn open_futures_position(
 			position.qty_usdt.store(order_usdt, Ordering::SeqCst);
 
 			//info!(target: "/tmp/discretionary_engine.lock", "Order filled; new position: {:?}", &position);
-			positions.positions.lock().unwrap().push(position);
+			position.protocols.attach(&position).await?;
+			{
+				positions.positions.lock().unwrap().push(position); // function to execute the orders, that start being proposed after `attach`, is on the entire Positions master struct, so they have no chance of being executed or accounted before this line.
+			}
 			break;
 		}
 		tokio::time::sleep(Duration::from_secs(1)).await;
 	}
 	positions.sync(config.clone()).await?;
+
 	Ok(())
 }
 

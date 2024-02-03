@@ -1,6 +1,6 @@
 use crate::api::{get_positions, Market};
 use crate::config::Config;
-use crate::protocols::Protocols;
+use crate::protocols::{Cache, Protocols};
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use chrono::{DateTime, Utc};
@@ -69,6 +69,7 @@ pub struct Position {
 	// I now think it should be possible to slap multiple protocols on it. Say 1) tp+sl 2) trailing_stop
 	// And then the protocols can have traits indicating their type. Like momentum, preset, fundamental, or what have you. Just need to figure out rules for their interaction amongst themselthes.
 	pub protocols: Protocols,
+	pub cache: Arc<Mutex<Cache>>,
 	pub timestamp: DateTime<Utc>,
 	//? add `realised_usdt` field?
 }
@@ -83,7 +84,8 @@ impl Position {
 			qty_notional: AtomicF64::new(0.0),
 			qty_usdt: AtomicF64::new(0.0),
 			target_qty_usdt: AtomicF64::from(target_qty_usdt),
-			protocols: protocols,
+			protocols,
+			cache: Arc::new(Mutex::new(Cache::new())),
 			timestamp,
 		}
 	}

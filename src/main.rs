@@ -5,7 +5,7 @@ mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::Positions;
-use protocols::Protocols;
+use protocols::{Protocols, Cache};
 use v_utils::{
 	io::{self, ExpandedPath},
 	trades::{Side, Timeframe},
@@ -78,6 +78,8 @@ async fn main() {
 				tpsl: None,
 				leading_crosses: None,
 			};
+
+			let cache = Cache::new();
 
 			let balance = api::compile_total_balance(config.clone()).await.unwrap();
 
