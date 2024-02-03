@@ -535,8 +535,9 @@ impl FuturesAllPositionsResponse {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct FuturesOrder {
-	///TODO!!!!!!: /
-	_todo: String,
+	pub symbol: String,
+	pub price: f64,
+	pub quantity: f64,
 }
 
 #[derive(Deserialize, Debug, Clone)]

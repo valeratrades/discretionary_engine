@@ -1,4 +1,5 @@
 use crate::api::binance::{self, futures_price};
+use crate::api::round_to_required_precision;
 use crate::api::KlinesSpec;
 use crate::api::OrderSpec;
 use crate::positions::Position;
@@ -11,6 +12,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
 use v_utils::data::compact_format::COMPACT_FORMAT_DELIMITER;
@@ -132,7 +134,13 @@ pub trait ProtocolAttach {
 
 impl ProtocolAttach for TrailingStop {
 	async fn attach(&self, owner: &Position) -> Result<()> {
-		async fn websocket_listen(symbol: String, side: Side, percent: f64, cache: Arc<Mutex<TrailingStopCache>>) {
+		async fn websocket_listen(
+			symbol: String,
+			side: Side,
+			percent: f64,
+			cache: Arc<Mutex<TrailingStopCache>>,
+			orders_sink: Arc<Mutex<Vec<InnerOrder>>>,
+		) {
 			let address = format!("wss://fstream.binance.com/ws/{}@markPrice", symbol.to_lowercase());
 			let url = url::Url::parse(&address).unwrap();
 			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -140,6 +148,7 @@ impl ProtocolAttach for TrailingStop {
 
 			read.for_each(|message| {
 				let cache = cache.clone();
+				let orders_sink = orders_sink.clone();
 				async move {
 					let data = message.unwrap().into_data();
 					match serde_json::from_slice::<Value>(&data) {
@@ -153,19 +162,27 @@ impl ProtocolAttach for TrailingStop {
 									match side {
 										Side::Buy => {}
 										Side::Sell => {
-											// remove old order request, place new at new p+percent
-											todo!()
+											let target_price = price + price * percent;
+											let mut orders_guard = orders_sink.lock().unwrap();
+											*orders_guard = vec![InnerOrder {
+												side: Side::Buy,
+												price: target_price,
+											}];
 										}
 									}
 								}
 								if price > trailing_stop_guard.top {
 									trailing_stop_guard.top = price;
 									match side {
-										Side::Buy => {}
-										Side::Sell => {
-											// remove old order request, place new at new p+percent
-											todo!()
+										Side::Buy => {
+											let target_price = price - price * percent;
+											let mut orders_guard = orders_sink.lock().unwrap();
+											*orders_guard = vec![InnerOrder {
+												side: Side::Buy,
+												price: target_price,
+											}];
 										}
+										Side::Sell => {}
 									}
 								}
 							}
@@ -190,10 +207,13 @@ impl ProtocolAttach for TrailingStop {
 		}
 		let trailing_cache = trailing_internal.as_ref().map(|arc| Arc::clone(arc)).unwrap();
 
+		let trailing_orders = cache_guard.trailing_stop.orders.clone();
+		drop(cache_guard);
+
 		tokio::spawn(async move {
 			let symbol = symbol.clone();
 			loop {
-				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone());
+				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone(), trailing_orders.clone());
 
 				handle.await;
 				eprintln!("Restarting Binance websocket for the trailing stop in 30 seconds...");
@@ -224,7 +244,7 @@ impl Cache {
 }
 #[derive(Debug)]
 pub struct CacheBlob<T> {
-	pub orders: Arc<Mutex<Vec<OrderSpec>>>,
+	pub orders: Arc<Mutex<Vec<InnerOrder>>>,
 	pub internal: Option<Arc<Mutex<T>>>,
 }
 impl<T> CacheBlob<T> {
@@ -250,6 +270,12 @@ pub struct LeadingCrossesCache {
 pub struct SARCache {}
 #[derive(Debug)]
 pub struct TpSlCache {}
+
+#[derive(Debug)]
+pub struct InnerOrder {
+	pub side: Side,
+	pub price: f64,
+}
 
 /// For components that are not included into standard definition of a kline, (and thus are behind `Option`), requesting of these fields should be adressed to the producer.
 //TODO!!: move to v_utils after it's functional enough \

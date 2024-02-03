@@ -8,6 +8,7 @@ use binance::OrderStatus;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tokio::time::Duration;
 use url::Url;
 use v_utils::trades::{Side, Timeframe};
@@ -26,6 +27,14 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 		total_balance += balance;
 	}
 	Ok(total_balance)
+}
+
+///NB: Temporary function that assumes BinanceFutures, and will be replaced with making the same request to a BinanceExchange struct, with preloaded values.
+pub async fn round_to_required_precision(symbol: String, quantity: f64) -> Result<f64> {
+	let quantity_precision = binance::futures_quantity_precision(symbol.clone()).await?;
+	let factor = 10_f64.powi(quantity_precision as i32);
+	let quantity_adjusted = (quantity * factor).round() / factor;
+	Ok(quantity_adjusted)
 }
 
 //? Should I make this return new total postion size?
@@ -124,7 +133,13 @@ impl Market {
 /// Order spec and human-interpretable unique name of the structure requesting it. Ex: `"trailing_stop"`
 #[derive(Clone, Debug)]
 pub enum OrderSpec {
-	BinanceOrder((String, binance::FuturesOrder)),
+	BinanceFutures((String, binance::FuturesOrder)),
+}
+impl OrderSpec {
+	pub fn new(name: String, symbol: String, side: Side, price: f64, quantity: f64) -> Self {
+		let order = binance::FuturesOrder { symbol, price, quantity };
+		Self::BinanceFutures((name, order))
+	}
 }
 
 // top level: [Protocol, Execution, RiskManager]

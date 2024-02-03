@@ -41,9 +41,10 @@ impl Positions {
 		let mut exchange_positions = get_positions(&config).await?;
 
 		for (symbol, qty_notional) in accounted_positions.iter() {
+			dbg!(&qty_notional);
 			exchange_positions
 				.entry(symbol.clone())
-				.and_modify(|e| *e -= qty_notional)
+				.and_modify(|e| *e += qty_notional)
 				.or_insert(-qty_notional);
 		}
 		let mut difference_lock = self.difference_from_exchange.lock().unwrap();
@@ -53,6 +54,7 @@ impl Positions {
 			}
 		}
 		drop(difference_lock);
+		dbg!(&self);
 		Ok(())
 	}
 }

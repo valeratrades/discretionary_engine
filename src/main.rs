@@ -5,7 +5,7 @@ mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::Positions;
-use protocols::{Protocols, Cache};
+use protocols::{Cache, Protocols};
 use v_utils::{
 	io::{self, ExpandedPath},
 	trades::{Side, Timeframe},
@@ -94,7 +94,14 @@ async fn main() {
 
 			if noconfirm || io::confirm(&format!("Gonna open a new {}$ {} order on {}", target_size, side, position_args.symbol)) {
 				match api::open_futures_position(config, positions, position_args.symbol, side, target_size, protocols).await {
-					Ok(_) => println!("Order placed successfully"),
+					Ok(_) => {
+						println!("Order placed successfully");
+						eprintln!("Starting the endless loop");
+						loop {
+							//positions.sync(config.clone()).await.unwrap();
+							tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+						}
+					}
 					Err(e) => {
 						eprintln!("Order placement failed: {}", e);
 						std::process::exit(1);
