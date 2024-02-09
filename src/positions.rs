@@ -1,6 +1,6 @@
 use crate::api::{get_positions, Market};
 use crate::config::Config;
-use crate::protocols::{Cache, Protocols};
+use crate::protocols::{FollowupCache, Protocols};
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use chrono::{DateTime, Utc};
@@ -44,7 +44,7 @@ impl Positions {
 			dbg!(&qty_notional);
 			exchange_positions
 				.entry(symbol.clone())
-				.and_modify(|e| *e += qty_notional)
+				.and_modify(|e| *e -= qty_notional)
 				.or_insert(-qty_notional);
 		}
 		let mut difference_lock = self.difference_from_exchange.lock().unwrap();
@@ -56,6 +56,16 @@ impl Positions {
 		drop(difference_lock);
 		dbg!(&self);
 		Ok(())
+	}
+
+	//TODO!: in `positions.update_orders`, initialize more than just trailing_stop
+	pub async fn update_orders(&self, config: Config) -> Result<()> {
+		let positions_guard = self.positions.lock().unwrap();
+		for position in positions_guard {
+			if let Some(trailing_stop) = position.protocols.trailing_stop {
+				trailing_stop.attach(&position).await.unwrap();
+			}
+		}
 	}
 }
 
@@ -71,7 +81,7 @@ pub struct Position {
 	// I now think it should be possible to slap multiple protocols on it. Say 1) tp+sl 2) trailing_stop
 	// And then the protocols can have traits indicating their type. Like momentum, preset, fundamental, or what have you. Just need to figure out rules for their interaction amongst themselthes.
 	pub protocols: Protocols,
-	pub cache: Arc<Mutex<Cache>>,
+	pub cache: Arc<Mutex<FollowupCache>>,
 	pub timestamp: DateTime<Utc>,
 	//? add `realised_usdt` field?
 }
@@ -87,8 +97,17 @@ impl Position {
 			qty_usdt: AtomicF64::new(0.0),
 			target_qty_usdt: AtomicF64::from(target_qty_usdt),
 			protocols,
-			cache: Arc::new(Mutex::new(Cache::new())),
+			cache: Arc::new(Mutex::new(FollowupCache::new())),
 			timestamp,
 		}
 	}
+}
+
+/// What the Position __is__
+struct PositionCore {
+	//? specific market is not connected to the essence of the position; so maybe that should be generated internall within PositionAcquisition, and passed manually to the PositionFollowup
+	//market: Market,
+	symbol: String,
+	side: Side,
+	size_usdt: f64,
 }

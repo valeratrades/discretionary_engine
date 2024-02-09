@@ -40,7 +40,7 @@ pub async fn round_to_required_precision(symbol: String, quantity: f64) -> Resul
 //? Should I make this return new total postion size?
 pub async fn open_futures_position(
 	config: Config,
-	positions: Positions,
+	positions: &Positions,
 	symbol: String,
 	side: Side,
 	usdt_quantity: f64,
