@@ -61,7 +61,7 @@ pub struct SAR {
 }
 
 #[derive(Debug, CompactFormat)]
-pub struct TPSL {
+pub struct TakeProfitStopLoss {
 	pub tp: f64,
 	pub sl: f64,
 }

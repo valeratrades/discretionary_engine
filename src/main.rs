@@ -39,7 +39,7 @@ struct PositionArgs {
 	/// full ticker of the futures binance symbol
 	symbol: String,
 	#[arg(short, long, default_value = "")]
-	/// trail parameters, in the format of "<protocol>-<params>", e.g. "ts-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	/// trail parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	protocols: Vec<String>,
 }
 
