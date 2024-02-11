@@ -17,24 +17,25 @@ use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
 use v_utils::data::compact_format::COMPACT_FORMAT_DELIMITER;
 use v_utils::init_compact_format;
+use v_utils::macros::{CompactFormat, FromVecStr};
 use v_utils::trades::{Side, Timeframe, Timestamp};
 
 // everybody will have owned orders on them too
 
-// de impl on this will split upon a delimiter, then have several ways to define the name, which is the first part and translated directly; while the rest is parsed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, FromVecString)]
 pub struct Protocols {
 	pub trailing_stop: Option<TrailingStop>,
 	pub sar: Option<SAR>,
-	pub tpsl: Option<TpSl>,
+	pub tpsl: Option<TPSL>,
 	/// close position when another asset crosses certain price
 	pub leading_crosses: Option<LeadingCrosses>,
 }
 impl Protocols {
+	//TODO!!!: \
 	pub async fn attach(&self, owner: &Position) -> Result<()> {
-		if let Some(trailing_stop) = &self.trailing_stop {
-			trailing_stop.attach(owner).await?;
-		}
+		//if let Some(trailing_stop) = &self.trailing_stop {
+		//	trailing_stop.attach(owner).await?;
+		//}
 		//if let Some(sar) = &self.sar {
 		//	sar.attach(owner).await?;
 		//}
@@ -48,85 +49,10 @@ impl Protocols {
 	}
 }
 
-// want to just go through the supplied Vec<String>, and try until it fits.
-//impl FromStr for Protocol {
-//	type Err = anyhow::Error;
-//
-//	fn from_str(s: &str) -> Result<Self> {
-//		let mut parts = s.splitn(2, COMPACT_FORMAT_DELIMITER);
-//		let name = parts.next().ok_or_else(|| Error::msg("No protocol name"))?;
-//		let params = parts.next().ok_or_else(|| Error::msg("Missing parameter specifications"))?;
-//		let protocol: Protocol = match name.to_lowercase().as_str() {
-//			"trailing" | "trailing_stop" | "ts" => Protocol::TrailingStop(TrailingStop::from_str(params)?),
-//			"sar" => Protocol::SAR(SAR::from_str(params)?),
-//			"tpsl" | "take_stop" | "sltp" | "take_profit_stop_loss" => Protocol::TpSl(TpSl::from_str(params)?),
-//			"leading_crosses" | "lc" => Protocol::LeadingCrosses(LeadingCrosses::from_str(params)?),
-//			_ => return Err(Error::msg("Unknown protocol")),
-//		};
-//		Ok(protocol)
-//	}
-//}
-//impl fmt::Display for Protocol {
-//	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//		match self {
-//			Protocol::TrailingStop(ts) => ts.fmt(f),
-//			Protocol::SAR(sar) => sar.fmt(f),
-//			Protocol::TpSl(tpsl) => tpsl.fmt(f),
-//			Protocol::LeadingCrosses(lc) => lc.fmt(f),
-//		}
-//	}
-//}
-//fn deserialize_from_vec<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-//where
-//	D: Deserializer<'de>,
-//	T: FromStr,
-//	T::Err: std::fmt::Display,
-//{
-//	let vec: Vec<String> = Vec::deserialize(deserializer)?;
-//	vec.iter()
-//		.find_map(|s| s.parse().ok())
-//		.ok_or_else(|| serde::de::Error::custom("Deserialization failed for all elements"))
-//}
-//
-//impl<'de> Deserialize<'de> for Protocols {
-//	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//	where
-//		D: Deserializer<'de>,
-//	{
-//		#[derive(Deserialize)]
-//		struct Helper {
-//			#[serde(deserialize_with = "deserialize_from_vec")]
-//			trailing_stop: Option<TrailingStop>,
-//			#[serde(deserialize_with = "deserialize_from_vec")]
-//			sar: Option<SAR>,
-//			#[serde(deserialize_with = "deserialize_from_vec")]
-//			tpsl: Option<TpSl>,
-//			#[serde(deserialize_with = "deserialize_from_vec")]
-//			leading_crosses: Option<LeadingCrosses>,
-//		}
-//
-//		let helper = Helper::deserialize(deserializer)?;
-//		Ok(Protocols {
-//			trailing_stop: helper.trailing_stop.clone().map(|protocol| ProtocolWrapper::new(protocol)),
-//			sar: helper.sar.clone().map(|protocol| ProtocolWrapper::new(protocol)),
-//			tpsl: helper.tpsl.clone().map(|protocol| ProtocolWrapper::new(protocol)),
-//			leading_crosses: helper.leading_crosses.clone().map(|protocol| ProtocolWrapper::new(protocol)),
-//		})
-//	}
-//}
-
 init_compact_format!(SAR, [(start, f64), (increment, f64), (max, f64), (timeframe, Timeframe)]);
 init_compact_format!(TrailingStop, [(percent, f64)]);
-init_compact_format!(TpSl, [(tp, f64), (sl, f64)]);
+init_compact_format!(TPSL, [(tp, f64), (sl, f64)]);
 init_compact_format!(LeadingCrosses, [(symbol, String), (price, f64)]);
-
-// this will be done as part of the macro
-pub enum Protocol {
-	TrailingStop(TrailingStop),
-	SAR(SAR),
-	TpSl(TpSl),
-	LeadingCrosses(LeadingCrosses),
-}
 
 /// Writes directly to the unprotected fields of CacheBlob, using unsafe
 pub trait ProtocolAttach {
@@ -206,7 +132,7 @@ impl ProtocolAttach for TrailingStop {
 		tokio::spawn(async move {
 			let symbol = symbol.clone();
 			loop {
-				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone(), trailing_orders.clone());
+				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone() /*trailing_orders.clone()*/);
 
 				handle.await;
 				eprintln!("Restarting Binance websocket for the trailing stop in 30 seconds...");
@@ -243,7 +169,7 @@ impl<T> CacheBlob<T> {
 	}
 }
 
-/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: not meant to.
+/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
 #[derive(Debug)]
 pub struct TrailingStopCache {
 	pub top: f64,

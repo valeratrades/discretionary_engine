@@ -39,7 +39,7 @@ struct PositionArgs {
 	/// full ticker of the futures binance symbol
 	symbol: String,
 	#[arg(short, long, default_value = "")]
-	/// trail parameters, in the format of "<protocol>-<params>", e.g. "trailing-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	/// trail parameters, in the format of "<protocol>-<params>", e.g. "ts-p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	protocols: Vec<String>,
 }
 
@@ -68,16 +68,7 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			//let protocols = Protocols::from(position_args.protocols).unwrap();
-
-			use std::str::FromStr;
-			let ts = protocols::TrailingStop::from_str("p0.5").unwrap();
-			let protocols = Protocols {
-				trailing_stop: Some(ts),
-				sar: None,
-				tpsl: None,
-				leading_crosses: None,
-			};
+			let protocols = Protocols::try_from(position_args.protocols).unwrap();
 
 			let cache = FollowupCache::new();
 
@@ -99,7 +90,7 @@ async fn main() {
 						eprintln!("Starting the endless loop");
 						loop {
 							//positions.sync(config.clone()).await.unwrap();
-							positions.update_orders().await.unwrap();
+							//positions.update_orders().await.unwrap();
 							tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 						}
 					}
