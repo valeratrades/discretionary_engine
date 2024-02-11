@@ -27,11 +27,11 @@ serde = { version = "^1.0.195", features = ["derive"] }
 serde_json = "^1.0.111"
 serde_urlencoded = "^0.7.1"
 url = "^2.5.0"
-v_utils = { version = "0.2.0", features = ["full", "macros"] } # will be updated manually, as I can't be trusted yet.
 atomic_float = "0.1.0"
 serde_with = "3.5.1"
 log = "0.4.20"
 arrow2 = "0.18.0"
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 futures-util = "0.3.30"
-v_utils_macros = "1.0.0"
+
+v_utils = { version = "1.0.1", features = ["full"] } # will be updated manually, as I can't be trusted yet.

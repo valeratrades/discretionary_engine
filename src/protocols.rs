@@ -15,8 +15,6 @@ use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
-use v_utils::data::compact_format::COMPACT_FORMAT_DELIMITER;
-use v_utils::init_compact_format;
 use v_utils::macros::{CompactFormat, FromVecStr};
 use v_utils::trades::{Side, Timeframe, Timestamp};
 
@@ -49,10 +47,30 @@ impl Protocols {
 	}
 }
 
-init_compact_format!(SAR, [(start, f64), (increment, f64), (max, f64), (timeframe, Timeframe)]);
-init_compact_format!(TrailingStop, [(percent, f64)]);
-init_compact_format!(TPSL, [(tp, f64), (sl, f64)]);
-init_compact_format!(LeadingCrosses, [(symbol, String), (price, f64)]);
+#[derive(Debug, CompactFormat)]
+pub struct TrailingStop {
+	pub percent: f64,
+}
+
+#[derive(Debug, CompactFormat)]
+pub struct SAR {
+	pub start: f64,
+	pub increment: f64,
+	pub max: f64,
+	pub timeframe: Timeframe,
+}
+
+#[derive(Debug, CompactFormat)]
+pub struct TPSL {
+	pub tp: f64,
+	pub sl: f64,
+}
+
+#[derive(Debug, CompactFormat)]
+pub struct LeadingCrosses {
+	pub symbol: String,
+	pub price: f64,
+}
 
 /// Writes directly to the unprotected fields of CacheBlob, using unsafe
 pub trait ProtocolAttach {
