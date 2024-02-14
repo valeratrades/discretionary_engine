@@ -28,23 +28,23 @@ enum Commands {
 }
 #[derive(Args)]
 struct PositionArgs {
-	#[arg(long)]
 	/// percentage of the total balance to use
-	size: f64,
 	#[arg(long)]
+	size: f64,
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
-	tf: Option<Timeframe>,
 	#[arg(long)]
+	tf: Option<Timeframe>,
 	/// full ticker of the futures binance symbol
+	#[arg(long)]
 	symbol: String,
+	/// position acquisition parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long, default_value = "")]
-	/// trail parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
-	protocols: Vec<String>,
+	acquisition_protocols_spec: Vec<String>,
+	/// position followup parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	#[arg(short, long, default_value = "")]
+	followup_protocols_spec: Vec<String>,
 }
-
-#[derive(Args)]
-struct NoArgs {}
 
 #[tokio::main]
 async fn main() {
