@@ -18,33 +18,13 @@ use tokio_tungstenite::connect_async;
 use v_utils::macros::{CompactFormat, FromVecStr};
 use v_utils::trades::{Side, Timeframe, Timestamp};
 
-// everybody will have owned orders on them too
-
-#[derive(Clone, Debug, FromVecString)]
-pub struct Protocols {
+#[derive(Clone, Debug, FromVecStr)]
+pub struct ProtocolsSpec {
 	pub trailing_stop: Option<TrailingStop>,
 	pub sar: Option<SAR>,
 	pub tpsl: Option<TPSL>,
 	/// close position when another asset crosses certain price
 	pub leading_crosses: Option<LeadingCrosses>,
-}
-impl Protocols {
-	//TODO!!!: \
-	pub async fn attach(&self, owner: &Position) -> Result<()> {
-		//if let Some(trailing_stop) = &self.trailing_stop {
-		//	trailing_stop.attach(owner).await?;
-		//}
-		//if let Some(sar) = &self.sar {
-		//	sar.attach(owner).await?;
-		//}
-		//if let Some(tpsl) = &self.tpsl {
-		//	tpsl.attach(owner).await?;
-		//}
-		//if let Some(leading_crosses) = &self.leading_crosses {
-		//	leading_crosses.attach(owner).await?;
-		//}
-		Ok(())
-	}
 }
 
 #[derive(Debug, CompactFormat)]
@@ -212,21 +192,4 @@ pub struct TpSlCache {}
 pub struct InternalOrder {
 	pub side: Side,
 	pub price: f64,
-}
-
-pub trait Cache {
-	async fn init() -> Result<Self> {}
-}
-
-/// For components that are not included into standard definition of a kline, (and thus are behind `Option`), requesting of these fields should be adressed to the producer.
-//TODO!!: move to v_utils after it's functional enough \
-#[derive(Clone, Debug, Default)]
-pub struct Klines {
-	pub t_open: Int64Array,
-	pub open: Float64Array,
-	pub high: Float64Array,
-	pub low: Float64Array,
-	pub close: Float64Array,
-	pub volume: Option<Float64Array>,
-	//... other optional
 }
