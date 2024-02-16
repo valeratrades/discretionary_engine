@@ -11,7 +11,7 @@ use v_utils::trades::Side;
 
 /// What the Position _*is*_
 struct PositionSpec {
-	symbol: String,
+	asset: String,
 	side: Side,
 	size_usdt: f64,
 }
@@ -23,8 +23,8 @@ enum Position {
 	Closed(PositionClosed),
 }
 impl Position {
-	pub fn new(symbol: String, side: Side, size_usdt: f64) -> Self {
-		Self::Spec(PositionSpec { symbol, side, size_usdt })
+	pub fn new(asset: String, side: Side, size_usdt: f64) -> Self {
+		Self::Spec(PositionSpec { asset, side, size_usdt })
 	}
 
 	pub async fn execute(&mut self) -> Result<Self::Closed> {

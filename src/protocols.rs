@@ -2,6 +2,7 @@ use crate::api::binance::{self, futures_price};
 use crate::api::round_to_required_precision;
 use crate::api::KlinesSpec;
 use crate::api::OrderSpec;
+use crate::order_types::*;
 use crate::positions::{Position, PositionCore, PositionFollowup};
 use anyhow::{Error, Result};
 use arrow2::array::{Float64Array, Int64Array};
@@ -18,20 +19,159 @@ use tokio_tungstenite::connect_async;
 use v_utils::macros::{CompactFormat, FromVecStr};
 use v_utils::trades::{Side, Timeframe, Timestamp};
 
-#[derive(Clone, Debug, FromVecStr)]
-pub struct ProtocolsSpec {
-	pub trailing_stop: Option<TrailingStop>,
-	pub sar: Option<SAR>,
-	pub tpsl: Option<TPSL>,
-	/// close position when another asset crosses certain price
-	pub leading_crosses: Option<LeadingCrosses>,
+pub enum ProtocolType {
+	Momentum,
+	TP,
+	SL,
 }
 
+pub struct Protocol<T: FollowupProtocol> {
+	pub spec: T,
+	pub orders: Vec<OrderType>,
+	pub cache: T::Cache,
+}
+
+impl std::str::FromStr for Protocol<T> {
+	type Err = Error;
+
+	fn from_str(s: &str) -> Result<Self> {
+		let t = T::from_str(s)?;
+		Ok(Self {
+			spec: t,
+			orders: Vec::new(),
+			cache: T::Cache::build(t.clone(), Position::Core),
+		})
+	}
+}
+/// Writes directly to the unprotected fields of CacheBlob, using unsafe
+pub trait FollowupProtocol {
+	type Cache: ProtocolCache;
+	async fn attach<T>(&self, orders: &mut Vec<OrderType>, &mut cache: Cache) -> Result<()>;
+	fn subtype(&self) -> ProtocolType;
+}
+
+pub trait ProtocolCache {
+	fn build<T>(spec: T, position_core: PositionCore) -> Self;
+}
+
+//=============================================================================
+// Individual implementations
+//=============================================================================
+
+// Trailing Stop {{{
 #[derive(Debug, CompactFormat)]
 pub struct TrailingStop {
 	pub percent: f64,
 }
+impl FollowupProtocol for TrailingStop {
+	type Cache = TrailingStopCache;
 
+	async fn attach<T>(&self, orders: &mut Vec<OrderType>, cache: &mut Cache) -> Result<()> {
+		let address = format!("wss://fstream.binance.com/ws/{}@markPrice", &cache.symbol);
+		let url = url::Url::parse(&address).unwrap();
+		let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+		let (_, read) = ws_stream.split();
+
+		read.for_each(|message| {
+			let cache_blob = cache_blob.clone();
+			async move {
+				let data = message.unwrap().into_data();
+				match serde_json::from_slice::<Value>(&data) {
+					Ok(json) => {
+						if let Some(price_str) = json.get("p") {
+							let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+							if price < cache.bottom {
+								cache.bottom = price;
+								match side {
+									Side::Buy => {}
+									Side::Sell => {
+										let target_price = price + price * self.percent;
+										orders.clear();
+										orders.push(StopMarketWhere {
+											symbol: cache.symbol,
+											side: Side::Buy,
+											price: target_price,
+										});
+									}
+								}
+							}
+							if price > cache.top {
+								cache.top = price;
+								match side {
+									Side::Buy => {
+										let target_price = price - price * self.percent;
+										orders.clear();
+										orders.push(StopMarketWhere {
+											symbol: cache.symbol,
+											side: Side::Sell,
+											price: target_price,
+										});
+									}
+									Side::Sell => {}
+								}
+							}
+						}
+					}
+					Err(e) => {
+						println!("Failed to parse message as JSON: {}", e);
+					}
+				}
+			}
+		})
+		.await;
+	}
+
+	fn subtype(&self) -> ProtocolType {
+		ProtocolType::Momentum
+	}
+}
+
+/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
+#[derive(Debug)]
+pub struct TrailingStopCache {
+	pub symbol: Symbol,
+	pub top: f64,
+	pub bottom: f64,
+}
+impl ProtocolCache for TrailingStopCache {
+	fn build<T>(spec: T, position_core: PositionCore) -> Self {
+		let binance_symbol = Symbol {
+			base: position_core.asset.clone(),
+			quote: "USDT".to_owned(),
+			market: Market::BinanceFutures,
+		};
+		let price = binance::futures_price(&binance_symbol.base).await?;
+		Self {
+			symbol: binance_symbol,
+			top: price,
+			bottom: price,
+		}
+	}
+} //}}}
+
+// LeadingCrosses {{{
+#[derive(Debug)]
+pub struct LeadingCrossesCache {
+	pub symbol: Symbol,
+	pub init_price: f64,
+}
+#[derive(Debug, CompactFormat)]
+pub struct LeadingCrosses {
+	pub symbol: Symbol,
+	pub price: f64,
+}
+impl ProtocolCache for LeadingCrossesCache {
+	fn build<LeadingCrosses>(spec: LeadingCrosses, position_core: PositionCore) -> Self {
+		let target_asset = spec.symbol.asset.clone();
+		let price = binance::futures_price(target_asset).await?;
+		Self {
+			symbol: target_asset,
+			init_price: price,
+		}
+	}
+} //}}}
+
+// SAR {{{
 #[derive(Debug, CompactFormat)]
 pub struct SAR {
 	pub start: f64,
@@ -40,156 +180,35 @@ pub struct SAR {
 	pub timeframe: Timeframe,
 }
 
+#[derive(Debug)]
+pub struct SARCache {}
+impl ProtocolCache for SARCache {
+	fn build<SAR>(spec: SAR, position_core: PositionCore) -> Self {
+		SARCache {}
+	}
+}
+//}}}
+
+// TPSL {{{
 #[derive(Debug, CompactFormat)]
-pub struct TakeProfitStopLoss {
+pub struct TPSL {
+	pub market: Market,
 	pub tp: f64,
 	pub sl: f64,
 }
 
-#[derive(Debug, CompactFormat)]
-pub struct LeadingCrosses {
-	pub symbol: String,
-	pub price: f64,
+#[derive(Debug)]
+pub struct TPSLCache {
+	symbol: Symbol,
 }
-
-/// Writes directly to the unprotected fields of CacheBlob, using unsafe
-pub trait ProtocolAttach {
-	async fn attach<T>(&self, cache_blob: &CacheBlob, position_core: &PositionCore) -> Result<()>;
-}
-
-impl ProtocolAttach for TrailingStop {
-	async fn attach(&self, cache_blob: &CacheBlob<TrailingStopCache>, position_core: &PositionCore) -> Result<()> {
-		async fn websocket_listen(symbol: String, side: Side, percent: f64, cache_blob: &CacheBlob<TrailingStopCache>) {
-			let address = format!("wss://fstream.binance.com/ws/{}@markPrice", symbol.to_lowercase());
-			let url = url::Url::parse(&address).unwrap();
-			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-			let (_, read) = ws_stream.split();
-
-			read.for_each(|message| {
-				let cache_blob = cache_blob.clone();
-				async move {
-					let data = message.unwrap().into_data();
-					match serde_json::from_slice::<Value>(&data) {
-						Ok(json) => {
-							if let Some(price_str) = json.get("p") {
-								let price: f64 = price_str.as_str().unwrap().parse().unwrap();
-								dbg!(&price);
-								if price < internal.bottom {
-									internal.bottom = price;
-									match side {
-										Side::Buy => {}
-										Side::Sell => {
-											let target_price = price + price * percent;
-											let orders_raw_pointer = &mut cache_blob.orders as *mut Vec<InternalOrder>;
-											*orders = vec![InternalOrder {
-												side: Side::Buy,
-												price: target_price,
-											}];
-										}
-									}
-								}
-								if price > internal.top {
-									internal.top = price;
-									match side {
-										Side::Buy => {
-											let target_price = price - price * percent;
-											let orders_raw_pointer = &mut cache_blob.orders as *mut Vec<InternalOrder>;
-											*orders = vec![InternalOrder {
-												side: Side::Buy,
-												price: target_price,
-											}];
-										}
-										Side::Sell => {}
-									}
-								}
-							}
-						}
-						Err(e) => {
-							println!("Failed to parse message as JSON: {}", e);
-						}
-					}
-				}
-			})
-			.await;
-		}
-		let percent = self.percent;
-		let symbol = position_core.symbol.clone();
-		let side = position_core.side;
-
-		let mut cache_guard = owner.cache.lock().unwrap();
-		let trailing_internal = &mut cache_guard.trailing_stop.internal;
-		if trailing_internal.is_none() {
-			let price = futures_price(symbol.clone()).await?;
-			*trailing_internal = Some(Arc::new(Mutex::new(TrailingStopCache { top: price, bottom: price })));
-		}
-		let trailing_cache = trailing_internal.as_ref().map(|arc| Arc::clone(arc)).unwrap();
-
-		let trailing_orders = cache_guard.trailing_stop.orders.clone();
-		drop(cache_guard);
-
-		tokio::spawn(async move {
-			let symbol = symbol.clone();
-			loop {
-				let handle = websocket_listen(symbol.clone(), side, percent, trailing_cache.clone() /*trailing_orders.clone()*/);
-
-				handle.await;
-				eprintln!("Restarting Binance websocket for the trailing stop in 30 seconds...");
-				tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-			}
-		});
-		Ok(())
+impl ProtocolCache for TpSlCache {
+	fn build<TPSL>(spec: T, position_core: PositionCore) -> Self {
+		let binance_symbol = Symbol {
+			base: position_core.asset.clone(),
+			quote: "USDT".to_owned(),
+			market: T.market.clone(),
+		};
+		TpSlCache { symbol: binance_symbol }
 	}
 }
-
-/// With current implementation, structs that do not store Cache do not have their associated field. All protocols receive Arc<Mutex<ProtocolCache>> in its entirety.
-#[derive(Debug, Default)]
-pub struct FollowupCache {
-	pub trailing_stop: Option<CacheBlob<TrailingStopCache>>,
-	pub sar: Option<CacheBlob<SARCache>>,
-	pub tpsl: Option<CacheBlob<TpSlCache>>,
-	pub leading_crosses: Option<CacheBlob<LeadingCrossesCache>>,
-}
-#[derive(Debug)]
-pub struct CacheBlob<T> {
-	// written internally; read from outside
-	pub orders: Vec<InternalOrder>,
-	// written internally
-	pub internal: T,
-}
-impl<T> CacheBlob<T> {
-	pub fn read_orders(&self) -> Vec<InternalOrder> {
-		self.orders.clone()
-	}
-
-	/// passes the ref to self of CacheBlob down to the owned protocol, which in turn will start writing directly to the fields of CacheBlob, using unsafe
-	pub fn attach(&self) -> Result<()> {
-		self.internal.attach(self)
-	}
-}
-
-/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
-#[derive(Debug)]
-pub struct TrailingStopCache {
-	pub top: f64,
-	pub bottom: f64,
-}
-impl Cache for TrailingStopCache {
-	async fn init() -> Result<Self> {
-		let price = futures_price(symbol.clone()).await?;
-		Ok(Self { top: price, bottom: price })
-	}
-}
-#[derive(Debug)]
-pub struct LeadingCrossesCache {
-	pub init_price: f64,
-}
-#[derive(Debug)]
-pub struct SARCache {}
-#[derive(Debug)]
-pub struct TpSlCache {}
-
-#[derive(Debug, Clone)]
-pub struct InternalOrder {
-	pub side: Side,
-	pub price: f64,
-}
+//,}}}

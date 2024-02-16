@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use crate::api::Market;
+use crate::api::{Market, OrderType};
 use crate::protocols::Klines;
 use anyhow::Result;
 use arrow2::array::{Float64Array, Int64Array};
@@ -64,7 +64,8 @@ pub async fn signed_request(
 	Ok(r)
 }
 
-pub enum OrderType {
+/// All the iteractions with submitting orders use this
+pub enum BinanceOrder {
 	Market,
 	Limit,
 	StopLoss,
@@ -73,16 +74,29 @@ pub enum OrderType {
 	TakeProfitLimit,
 	LimitMaker,
 }
-impl ToString for OrderType {
+impl From<OrderType> for BinanceOrder {
+	fn from(order_type: OrderType) -> Self {
+		match order_type {
+			OrderType::Market => unimplemented!(),
+			OrderType::Limit => unimplemented!(),
+			OrderType::StopMarket => unimplemented!(),
+			OrderType::StopLimit => unimplemented!(),
+			OrderType::TakeProfit => unimplemented!(),
+			OrderType::TakeProfitLimit => unimplemented!(),
+			OrderType::LimitMaker => unimplemented!(),
+		}
+	}
+}
+impl ToString for BinanceOrder {
 	fn to_string(&self) -> String {
 		match self {
-			OrderType::Market => "MARKET".to_string(),
-			OrderType::Limit => "LIMIT".to_string(),
-			OrderType::StopLoss => "STOP_LOSS".to_string(),
-			OrderType::StopLossLimit => "STOP_LOSS_LIMIT".to_string(),
-			OrderType::TakeProfit => "TAKE_PROFIT".to_string(),
-			OrderType::TakeProfitLimit => "TAKE_PROFIT_LIMIT".to_string(),
-			OrderType::LimitMaker => "LIMIT_MAKER".to_string(),
+			BinanceOrder::Market => "MARKET".to_string(),
+			BinanceOrder::Limit => "LIMIT".to_string(),
+			BinanceOrder::StopLoss => "STOP_LOSS".to_string(),
+			BinanceOrder::StopLossLimit => "STOP_LOSS_LIMIT".to_string(),
+			BinanceOrder::TakeProfit => "TAKE_PROFIT".to_string(),
+			BinanceOrder::TakeProfitLimit => "TAKE_PROFIT_LIMIT".to_string(),
+			BinanceOrder::LimitMaker => "LIMIT_MAKER".to_string(),
 		}
 	}
 }
@@ -131,7 +145,12 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 	}
 }
 
-pub async fn futures_price(symbol: String) -> Result<f64> {
+pub async fn futures_price(asset: &str) -> Result<f64> {
+	let symbol = Symbol {
+		base: asset,
+		quote: "USDT".to_string(),
+		market: Market::BinanceFutures,
+	};
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v2/ticker/price")?;
 
@@ -251,37 +270,6 @@ pub async fn get_futures_klines(symbol: String, timeframe: Timeframe, limit: usi
 	Ok(klines)
 }
 
-//TODO!: generalize websockets and writing out from them.
-//async fn binance_websocket_listen(self_arc: Arc<Mutex<MainLine>>, config: &Config, output: Arc<Mutex<Output>>) {
-//	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
-//	let url = url::Url::parse(address).unwrap();
-//	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-//	let (_, read) = ws_stream.split();
-//
-//	read.for_each(|message| {
-//		let main_line = self_arc.clone(); // Cloning the Arc for each iteration
-//		let output = output.clone(); // Can i get rid of these?
-//		async move {
-//			let data = message.unwrap().into_data();
-//			match serde_json::from_slice::<Value>(&data) {
-//				Ok(json) => {
-//					if let Some(price_str) = json.get("p") {
-//						let price: f64 = price_str.as_str().unwrap().parse().unwrap();
-//						let mut main_line = main_line.lock().unwrap();
-//						main_line.btcusdt = Some(price);
-//						let mut output_lock = output.lock().unwrap();
-//						output_lock.main_line_str = main_line.display(config);
-//						output_lock.out().unwrap();
-//					}
-//				}
-//				Err(e) => {
-//					println!("Failed to parse message as JSON: {}", e);
-//				}
-//			}
-//		}
-//	})
-//	.await;
-//}
 //async fn binance_websocket_klines(klines_arc: Arc<Mutex<Klines>>, symbol: String, timeframe: Timeframe) {{{{
 //	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
 //	let url = url::Url::parse(address).unwrap();

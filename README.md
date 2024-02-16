@@ -26,5 +26,12 @@ An example config can be found in ./examples/config.toml
 
 # TODO for next version
 
+- [x] is there a pattern to connect members of two enums?
+    If yes, implement it, otherwise make them HashMap<str, String>
+
+- [x] impl all `ProtocolCache` for Followups
+
+- [ ] impl all `FollowupProtocol` for Followups
+
 // might as well go fuck it, and:
 - [ ] move to config lib instead of custom implementation

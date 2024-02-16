@@ -1,4 +1,5 @@
 pub mod binance;
+pub mod order_types;
 use crate::config::Config;
 use crate::positions::{Position, Positions};
 use crate::protocols::Klines;
@@ -6,11 +7,13 @@ use crate::protocols::Protocols;
 use anyhow::Result;
 use binance::OrderStatus;
 use chrono::Utc;
+use order_types::OrderType;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::time::Duration;
 use url::Url;
+use v_utils::macros::graphemics;
 use v_utils::trades::{Side, Timeframe};
 
 pub async fn compile_total_balance(config: Config) -> Result<f64> {
@@ -97,22 +100,6 @@ pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
 	binance::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
 }
 
-/// Does the routing to the most liquid exchange automatically, don't have to specify. (not yet implemented).
-pub async fn klines(klines_spec: KlinesSpec) -> Result<Klines> {
-	binance::get_futures_klines(klines_spec.symbol, klines_spec.timeframe, klines_spec.limit).await
-}
-pub struct KlinesSpec {
-	symbol: String,
-	timeframe: Timeframe,
-	limit: usize,
-}
-impl KlinesSpec {
-	pub fn new(symbol: String, timeframe: Timeframe, limit: usize) -> Self {
-		Self { symbol, timeframe, limit }
-	}
-}
-
-//? Should I start passing down the entire Exchange objects?
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum Market {
@@ -128,34 +115,62 @@ impl Market {
 			Market::BinanceMargin => Url::parse("https://api.binance.com/").unwrap(),
 		}
 	}
-}
 
-/// Order spec and human-interpretable unique name of the structure requesting it. Ex: `"trailing_stop"`
-#[derive(Clone, Debug)]
-pub enum OrderSpec {
-	BinanceFutures((String, binance::FuturesOrder)),
-}
-impl OrderSpec {
-	pub fn new(name: String, symbol: String, side: Side, price: f64, quantity: f64) -> Self {
-		let order = binance::FuturesOrder { symbol, price, quantity };
-		Self::BinanceFutures((name, order))
+	pub fn format_symbol(&self, symbol: &str) -> String {
+		match self {
+			Market::BinanceFutures => symbol.to_owned().to_uppercase() + "USDT",
+			Market::BinanceSpot => symbol.to_owned().to_uppercase() + "USDT",
+			Market::BinanceMargin => symbol.to_owned().to_uppercase() + "USDT",
+		}
 	}
 }
 
-// top level: [Protocol, Execution, RiskManager]
-// second level: [TrailingStop, SAR, ...]
+impl std::str::FromStr for Market {
+	type Err = anyhow::Error;
 
-//pub struct Exchanges {
-//	pub binance_futures: Exchange,
-//}
-//
-//pub struct Exchange {
-//	//pub general_info: GeneralInfo, // gonna be gradually expanded, based on the needs. The abstraction shall be generalized across exchanges.
-//	//pub account_info: AccountInfo,
-//	pub coins: HashMap<String, Coin>,
-//}
-//
-//pub struct Coin {
-//	pub price: f64, // is copied over from klines, for easier access
-//	//pub kliens: Vec<Kline>,
-//}
+	fn from_str(s: &str) -> Result<Self> {
+		match s {
+			_ if graphemics!(BinanceFutures).contains(&s) => Ok(Market::BinanceFutures),
+			_ if graphemics!(BinanceSpot).contains(&s) => Ok(Market::BinanceSpot),
+			_ if graphemics!(BinanceMargin).contains(&s) => Ok(Market::BinanceMargin),
+			_ => Err(anyhow::anyhow!("Unknown market: {}", s)),
+		}
+	}
+}
+
+/// Contains information sufficient to identify the exact orderbook.
+///```rust
+///let symbol = "BTC-USDT-BinanceFutures".parse::<Symbol>().unwrap();
+///```
+pub struct Symbol {
+	pub base: String,
+	pub quote: String,
+	pub market: Market,
+}
+impl std::fmt::Display for Symbol {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.market.format_symbol(&self.base))
+	}
+}
+impl std::str::FromStr for Symbol {
+	type Err = anyhow::Error;
+
+	fn from_str(s: &str) -> Result<Self> {
+		let split = s.split('-').collect::<Vec<&str>>();
+		Ok(Self {
+			base: s.0.to_owned(),
+			quote: s.1.to_owned(),
+			market: Market::from_str(s.2)?,
+		})
+	}
+}
+
+/// Order spec and human-interpretable unique name of the structure requesting it. Ex: `"trailing_stop"`
+/// Later on the submission engine just looks at the market, and creates according api-specific structure. However, user only sees this.
+#[derive(Debug, Clone)]
+pub struct OrderSpec {
+	pub spec: OrderType,
+	pub name: String,
+	pub size: f64,
+	pub market: Market,
+}
