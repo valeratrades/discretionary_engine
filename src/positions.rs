@@ -1,6 +1,6 @@
 use crate::api::{get_positions, Market};
 use crate::config::Config;
-use crate::protocols::{FollowupCache, Protocols};
+use crate::protocols::*;
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use chrono::{DateTime, Utc};
@@ -10,13 +10,13 @@ use std::sync::{Arc, Mutex};
 use v_utils::trades::Side;
 
 /// What the Position _*is*_
-struct PositionSpec {
+pub struct PositionSpec {
 	asset: String,
 	side: Side,
 	size_usdt: f64,
 }
 
-enum Position {
+pub enum Position {
 	Spec(PositionSpec),
 	Acquisition(PositionAcquisition),
 	Followup(PositionFollowup),
@@ -59,7 +59,7 @@ impl Position {
 	}
 }
 
-struct PositionAcquisition {
+pub struct PositionAcquisition {
 	_previous: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
@@ -67,13 +67,13 @@ struct PositionAcquisition {
 	cache: AcquisitionCache,
 }
 
-struct PositionFollowup {
+pub struct PositionFollowup {
 	_previous: PositionAcquisition,
 	protocols_spec: FollowupProtocolsSpec,
 	cache: FollowupCache,
 }
 
-struct PositionClosed {
+pub struct PositionClosed {
 	_previous: PositionFollowup,
 	t_closed: DateTime<Utc>,
 }

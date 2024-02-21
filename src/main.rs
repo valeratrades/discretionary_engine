@@ -5,9 +5,9 @@ mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::Position;
-use protocols::{FollowupCache, Protocols};
+use protocols::*;
 use v_utils::{
-	io::{self, ExpandedPath},
+	io::ExpandedPath,
 	trades::{Side, Timeframe},
 };
 

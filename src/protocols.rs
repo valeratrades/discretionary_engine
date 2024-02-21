@@ -1,9 +1,8 @@
 use crate::api::binance::{self, futures_price};
+use crate::api::order_types::*;
 use crate::api::round_to_required_precision;
-use crate::api::KlinesSpec;
 use crate::api::OrderSpec;
-use crate::order_types::*;
-use crate::positions::{Position, PositionCore, PositionFollowup};
+use crate::positions::{Position, PositionFollowup, PositionSpec};
 use anyhow::{Error, Result};
 use arrow2::array::{Float64Array, Int64Array};
 use futures_util::StreamExt;
@@ -25,33 +24,40 @@ pub enum ProtocolType {
 	SL,
 }
 
-pub struct Protocol<T: FollowupProtocol> {
+pub struct Protocol<T>
+where
+	T: FollowupProtocol + Clone + Send + Sync + FromStr,
+	T::Err: std::error::Error + Send + Sync + 'static,
+{
 	pub spec: T,
 	pub orders: Vec<OrderType>,
 	pub cache: T::Cache,
 }
 
-impl std::str::FromStr for Protocol<T> {
-	type Err = Error;
-
-	fn from_str(s: &str) -> Result<Self> {
+impl<T> Protocol<T>
+where
+	T: FollowupProtocol + Clone + Send + Sync + FromStr,
+	T::Err: std::error::Error + Send + Sync + 'static,
+{
+	fn build(s: &str, spec: &PositionSpec) -> anyhow::Result<Self> {
 		let t = T::from_str(s)?;
+
 		Ok(Self {
-			spec: t,
+			spec: t.clone(),
 			orders: Vec::new(),
-			cache: T::Cache::build(t.clone(), Position::Core),
+			cache: T::Cache::build(t, spec),
 		})
 	}
 }
 /// Writes directly to the unprotected fields of CacheBlob, using unsafe
-pub trait FollowupProtocol {
+pub trait FollowupProtocol: FromStr + Clone {
 	type Cache: ProtocolCache;
-	async fn attach<T>(&self, orders: &mut Vec<OrderType>, &mut cache: Cache) -> Result<()>;
+	async fn attach<T>(&self, orders: &mut Vec<OrderType>, cache: &mut Self::Cache) -> Result<()>;
 	fn subtype(&self) -> ProtocolType;
 }
 
 pub trait ProtocolCache {
-	fn build<T>(spec: T, position_core: PositionCore) -> Self;
+	fn build<T>(spec: T, position_spec: &PositionSpec) -> Self;
 }
 
 //=============================================================================
@@ -59,7 +65,7 @@ pub trait ProtocolCache {
 //=============================================================================
 
 // Trailing Stop {{{
-#[derive(Debug, CompactFormat)]
+#[derive(Debug)]
 pub struct TrailingStop {
 	pub percent: f64,
 }
@@ -134,7 +140,7 @@ pub struct TrailingStopCache {
 	pub bottom: f64,
 }
 impl ProtocolCache for TrailingStopCache {
-	fn build<T>(spec: T, position_core: PositionCore) -> Self {
+	fn build<T>(spec: T, position_core: PositionSpec) -> Self {
 		let binance_symbol = Symbol {
 			base: position_core.asset.clone(),
 			quote: "USDT".to_owned(),
@@ -148,67 +154,67 @@ impl ProtocolCache for TrailingStopCache {
 		}
 	}
 } //}}}
-
-// LeadingCrosses {{{
-#[derive(Debug)]
-pub struct LeadingCrossesCache {
-	pub symbol: Symbol,
-	pub init_price: f64,
-}
-#[derive(Debug, CompactFormat)]
-pub struct LeadingCrosses {
-	pub symbol: Symbol,
-	pub price: f64,
-}
-impl ProtocolCache for LeadingCrossesCache {
-	fn build<LeadingCrosses>(spec: LeadingCrosses, position_core: PositionCore) -> Self {
-		let target_asset = spec.symbol.asset.clone();
-		let price = binance::futures_price(target_asset).await?;
-		Self {
-			symbol: target_asset,
-			init_price: price,
-		}
-	}
-} //}}}
-
-// SAR {{{
-#[derive(Debug, CompactFormat)]
-pub struct SAR {
-	pub start: f64,
-	pub increment: f64,
-	pub max: f64,
-	pub timeframe: Timeframe,
-}
-
-#[derive(Debug)]
-pub struct SARCache {}
-impl ProtocolCache for SARCache {
-	fn build<SAR>(spec: SAR, position_core: PositionCore) -> Self {
-		SARCache {}
-	}
-}
-//}}}
-
-// TPSL {{{
-#[derive(Debug, CompactFormat)]
-pub struct TPSL {
-	pub market: Market,
-	pub tp: f64,
-	pub sl: f64,
-}
-
-#[derive(Debug)]
-pub struct TPSLCache {
-	symbol: Symbol,
-}
-impl ProtocolCache for TpSlCache {
-	fn build<TPSL>(spec: T, position_core: PositionCore) -> Self {
-		let binance_symbol = Symbol {
-			base: position_core.asset.clone(),
-			quote: "USDT".to_owned(),
-			market: T.market.clone(),
-		};
-		TpSlCache { symbol: binance_symbol }
-	}
-}
-//,}}}
+  //
+  //// LeadingCrosses {{{
+  //#[derive(Debug)]
+  //pub struct LeadingCrossesCache {
+  //	pub symbol: Symbol,
+  //	pub init_price: f64,
+  //}
+  //#[derive(Debug)]
+  //pub struct LeadingCrosses {
+  //	pub symbol: Symbol,
+  //	pub price: f64,
+  //}
+  //impl ProtocolCache for LeadingCrossesCache {
+  //	fn build<LeadingCrosses>(spec: LeadingCrosses, position_core: PositionSpec) -> Self {
+  //		let target_asset = spec.symbol.asset.clone();
+  //		let price = binance::futures_price(target_asset).await?;
+  //		Self {
+  //			symbol: target_asset,
+  //			init_price: price,
+  //		}
+  //	}
+  //} //}}}
+  //
+  //// SAR {{{
+  //#[derive(Debug)]
+  //pub struct SAR {
+  //	pub start: f64,
+  //	pub increment: f64,
+  //	pub max: f64,
+  //	pub timeframe: Timeframe,
+  //}
+  //
+  //#[derive(Debug)]
+  //pub struct SARCache {}
+  //impl ProtocolCache for SARCache {
+  //	fn build<SAR>(spec: SAR, position_core: PositionSpec) -> Self {
+  //		SARCache {}
+  //	}
+  //}
+  ////}}}
+  //
+  //// TPSL {{{
+  //#[derive(Debug)]
+  //pub struct TPSL {
+  //	pub market: Market,
+  //	pub tp: f64,
+  //	pub sl: f64,
+  //}
+  //
+  //#[derive(Debug)]
+  //pub struct TPSLCache {
+  //	symbol: Symbol,
+  //}
+  //impl ProtocolCache for TpSlCache {
+  //	fn build<TPSL>(spec: T, position_core: PositionSpec) -> Self {
+  //		let binance_symbol = Symbol {
+  //			base: position_core.asset.clone(),
+  //			quote: "USDT".to_owned(),
+  //			market: T.market.clone(),
+  //		};
+  //		TpSlCache { symbol: binance_symbol }
+  //	}
+  //}
+  ////,}}}
