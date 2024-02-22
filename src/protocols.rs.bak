@@ -1,0 +1,64 @@
+//
+//// LeadingCrosses {{{
+//#[derive(Debug)]
+//pub struct LeadingCrossesCache {
+//	pub symbol: Symbol,
+//	pub init_price: f64,
+//}
+//#[derive(Debug)]
+//pub struct LeadingCrosses {
+//	pub symbol: Symbol,
+//	pub price: f64,
+//}
+//impl ProtocolCache for LeadingCrossesCache {
+//	fn build<LeadingCrosses>(spec: LeadingCrosses, position_core: PositionSpec) -> Self {
+//		let target_asset = spec.symbol.asset.clone();
+//		let price = binance::futures_price(target_asset).await?;
+//		Self {
+//			symbol: target_asset,
+//			init_price: price,
+//		}
+//	}
+//} //}}}
+//
+//// SAR {{{
+//#[derive(Debug)]
+//pub struct SAR {
+//	pub start: f64,
+//	pub increment: f64,
+//	pub max: f64,
+//	pub timeframe: Timeframe,
+//}
+//
+//#[derive(Debug)]
+//pub struct SARCache {}
+//impl ProtocolCache for SARCache {
+//	fn build<SAR>(spec: SAR, position_core: PositionSpec) -> Self {
+//		SARCache {}
+//	}
+//}
+////}}}
+//
+//// TPSL {{{
+//#[derive(Debug)]
+//pub struct TPSL {
+//	pub market: Market,
+//	pub tp: f64,
+//	pub sl: f64,
+//}
+//
+//#[derive(Debug)]
+//pub struct TPSLCache {
+//	symbol: Symbol,
+//}
+//impl ProtocolCache for TpSlCache {
+//	fn build<TPSL>(spec: T, position_core: PositionSpec) -> Self {
+//		let binance_symbol = Symbol {
+//			base: position_core.asset.clone(),
+//			quote: "USDT".to_owned(),
+//			market: T.market.clone(),
+//		};
+//		TpSlCache { symbol: binance_symbol }
+//	}
+//}
+////,}}}

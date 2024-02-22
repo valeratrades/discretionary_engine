@@ -11,9 +11,9 @@ use v_utils::trades::Side;
 
 /// What the Position _*is*_
 pub struct PositionSpec {
-	asset: String,
-	side: Side,
-	size_usdt: f64,
+	pub asset: String,
+	pub side: Side,
+	pub size_usdt: f64,
 }
 
 pub enum Position {

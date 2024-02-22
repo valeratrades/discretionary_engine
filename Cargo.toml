@@ -34,4 +34,5 @@ arrow2 = "0.18.0"
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 futures-util = "0.3.30"
 
-v_utils = { version = "1.0.1", features = ["full"] } # will be updated manually, as I can't be trusted yet.
+v_utils = { version = "1.0.3", features = ["full"] } # will be updated manually, as I can't be trusted yet.
+v_utils_macros = "1.0.1"

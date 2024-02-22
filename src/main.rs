@@ -1,11 +1,10 @@
 pub mod api;
 pub mod config;
 pub mod positions;
-mod protocols;
+pub mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::Position;
-use protocols::*;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},

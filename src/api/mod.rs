@@ -1,9 +1,7 @@
 pub mod binance;
 pub mod order_types;
 use crate::config::Config;
-use crate::positions::{Position, Positions};
-use crate::protocols::Klines;
-use crate::protocols::Protocols;
+use crate::positions::Position;
 use anyhow::Result;
 use binance::OrderStatus;
 use chrono::Utc;
@@ -101,7 +99,7 @@ pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Market {
 	BinanceFutures,
 	BinanceSpot,
@@ -142,6 +140,7 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<Symbol>().unwrap();
 ///```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,
@@ -158,9 +157,9 @@ impl std::str::FromStr for Symbol {
 	fn from_str(s: &str) -> Result<Self> {
 		let split = s.split('-').collect::<Vec<&str>>();
 		Ok(Self {
-			base: s.0.to_owned(),
-			quote: s.1.to_owned(),
-			market: Market::from_str(s.2)?,
+			base: split.get(0).unwrap().to_string(),
+			quote: split.get(1).unwrap().to_string(),
+			market: Market::from_str(split.get(2).unwrap())?,
 		})
 	}
 }
@@ -169,8 +168,7 @@ impl std::str::FromStr for Symbol {
 /// Later on the submission engine just looks at the market, and creates according api-specific structure. However, user only sees this.
 #[derive(Debug, Clone)]
 pub struct OrderSpec {
-	pub spec: OrderType,
+	pub order: OrderType,
 	pub name: String,
-	pub size: f64,
-	pub market: Market,
 }
+//? would it not make more sense to just pass around tuples (OrderType, String), where String is obviously name. Might be simpler and actually more explicit than having yet another struct.
