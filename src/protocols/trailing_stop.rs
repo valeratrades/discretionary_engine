@@ -1,7 +1,7 @@
 use crate::api::{
 	binance::{self},
 	order_types::*,
-	Symbol,
+	Market, Symbol,
 };
 use crate::positions::PositionSpec;
 use crate::protocols::{FollowupProtocol, ProtocolCache, ProtocolType};
@@ -19,7 +19,7 @@ pub struct TrailingStop {
 impl FollowupProtocol for TrailingStop {
 	type Cache = TrailingStopCache;
 
-	async fn attach<T>(&self, orders: &mut Vec<OrderType>, cache: &mut Cache) -> Result<()> {
+	async fn attach<T>(&self, orders: &mut Vec<OrderTypeP>, cache: &mut Self::Cache) -> Result<()> {
 		let address = format!("wss://fstream.binance.com/ws/{}@markPrice", &cache.symbol);
 		let url = url::Url::parse(&address).unwrap();
 		let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -87,17 +87,17 @@ pub struct TrailingStopCache {
 	pub bottom: f64,
 }
 impl ProtocolCache for TrailingStopCache {
-	fn build<T>(spec: T, position_core: &PositionSpec) -> Self {
+	async fn build<T>(_spec: T, position_core: &PositionSpec) -> Result<Self> {
 		let binance_symbol = Symbol {
 			base: position_core.asset.clone(),
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
 		let price = binance::futures_price(&binance_symbol.base).await?;
-		Self {
+		Ok(Self {
 			symbol: binance_symbol,
 			top: price,
 			bottom: price,
-		}
+		})
 	}
 }

@@ -3,6 +3,7 @@ mod trailing_stop;
 use crate::api::order_types::*;
 use crate::positions::PositionSpec;
 use anyhow::Result;
+use async_trait::async_trait;
 use std::str::FromStr;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
@@ -15,7 +16,6 @@ pub enum ProtocolType {
 pub struct Protocol<T>
 where
 	T: FollowupProtocol + Clone + Send + Sync + FromStr,
-	T::Err: std::error::Error + Send + Sync + 'static,
 {
 	pub spec: T,
 	pub orders: Vec<OrderTypeP>,
@@ -24,11 +24,14 @@ where
 
 impl<T> Protocol<T>
 where
-	T: FollowupProtocol + Clone + Send + Sync + FromStr,
-	T::Err: std::error::Error + Send + Sync + 'static,
+	T: FollowupProtocol,
 {
-	fn build(s: &str, spec: &PositionSpec) -> anyhow::Result<Self> {
-		let t = T::from_str(s)?;
+	fn build(s: &str, spec: &PositionSpec) -> Result<Self> {
+		//TODO!: return Result instead (requirs weird trait bounds) \
+		let t = match T::from_str(s) {
+			Ok(t) => t,
+			Err(_) => panic!("Fuck it, errors are too hard"),
+		};
 
 		Ok(Self {
 			spec: t.clone(),
@@ -37,16 +40,16 @@ where
 		})
 	}
 }
-/// Writes directly to the unprotected fields of CacheBlob, using unsafe
-pub trait FollowupProtocol: Clone + Send + Sync + FromStr
-where
-	Self::Err: std::error::Error + Send + Sync + 'static,
-{
+pub trait FollowupProtocol: Clone + Send + Sync + FromStr {
 	type Cache: ProtocolCache;
 	async fn attach<T>(&self, orders: &mut Vec<OrderTypeP>, cache: &mut Self::Cache) -> Result<()>;
 	fn subtype(&self) -> ProtocolType;
 }
 
+/// Is async and returns anyhow::Result, because some need to request price to build...
+#[async_trait]
 pub trait ProtocolCache {
-	fn build<T>(spec: T, position_spec: &PositionSpec) -> Self;
+	async fn build<T>(_spec: T, position_spec: &PositionSpec) -> Result<Self>
+	where
+		Self: Sized;
 }

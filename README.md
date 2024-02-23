@@ -33,5 +33,4 @@ An example config can be found in ./examples/config.toml
 
 - [ ] impl all `FollowupProtocol` for Followups
 
-// might as well go fuck it, and:
-- [ ] move to config lib instead of custom implementation
+... To make price requests sync, and not have to deal with async traits, I'm making a compound orderbook implementation as a separate project now...
