@@ -1,79 +1,97 @@
-use crate::api::{get_positions, Market};
-use crate::config::Config;
-use crate::protocols::*;
+use crate::api::order_types::OrderType;
+use crate::api::{binance, Symbol};
 use anyhow::Result;
-use atomic_float::AtomicF64;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
 use v_utils::trades::Side;
 
 /// What the Position _*is*_
+#[derive(Debug, Clone)]
 pub struct PositionSpec {
 	pub asset: String,
 	pub side: Side,
 	pub size_usdt: f64,
 }
-
-pub enum Position {
-	Spec(PositionSpec),
-	Acquisition(PositionAcquisition),
-	Followup(PositionFollowup),
-	Closed(PositionClosed),
-}
-impl Position {
+impl PositionSpec {
 	pub fn new(asset: String, side: Side, size_usdt: f64) -> Self {
-		Self::Spec(PositionSpec { asset, side, size_usdt })
-	}
-
-	pub async fn execute(&mut self) -> Result<Self::Closed> {
-		match self {
-			Self::Spec(spec) => {
-				let mut acquisition = PositionAcquisition {
-					_previous: spec.take(),
-					target_notional: todo!(),
-					acquired_notional: 0.0,
-					protocols_spec: acquisition_protocols_spec.into(),
-					cache: Arc::new(Mutex::new(HashMap::new())),
-				};
-				acquisition.execute().await
-			}
-			Self::Acquisition(acquisition) => {
-				todo!()
-			}
-			Self::Followup(followup) => {
-				todo!()
-			}
-			Self::Closed(closed) => Ok(closed),
-		}
-	}
-
-	pub fn size_usdt(self) -> f64 {
-		match self {
-			Self::Spec(spec) => 0.0,
-			Self::Acquisition(acquisition) => acquisition._previous.size_usdt * acquisition.target_notional / acquisition.acquired_notional,
-			Self::Followup(followup) => followup._previous._previous.size_usdt * followup._previous.closed_notional / followup._previous.target_notional,
-			Self::Closed(closed) => 0.0,
-		}
+		Self { asset, side, size_usdt }
 	}
 }
 
 pub struct PositionAcquisition {
-	_previous: PositionSpec,
+	_spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
-	protocols_spec: AcquisitionProtocolsSpec,
-	cache: AcquisitionCache,
+	protocols_spec: Option<String>, //AcquisitionProtocolsSpec,
+	cache: Option<String>,          //AcquisitionCache,
+}
+impl PositionAcquisition {
+	pub async fn do_acquisition(spec: PositionSpec) -> Result<Self> {
+		let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+		let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+		//let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
+		let coin = spec.asset.clone();
+		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
+
+		let current_price_handler = binance::futures_price(&coin);
+		let quantity_percision_handler = binance::futures_quantity_precision(&coin);
+		let current_price = current_price_handler.await?;
+		let quantity_precision: usize = quantity_percision_handler.await?;
+		let factor = 10_f64.powi(quantity_precision as i32);
+		let coin_quantity = spec.size_usdt / current_price;
+		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
+
+		let mut current_state = Self {
+			_spec: spec.clone(),
+			target_notional: coin_quantity_adjusted,
+			acquired_notional: 0.0,
+			protocols_spec: None,
+			cache: None,
+		};
+
+		let order_id = binance::post_futures_order(
+			full_key.clone(),
+			full_secret.clone(),
+			"MARKET".to_string(),
+			symbol.to_string(),
+			spec.side.clone(),
+			coin_quantity_adjusted,
+		)
+		.await?;
+		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+		loop {
+			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.to_string()).await?;
+			if order.status == binance::OrderStatus::Filled {
+				let order_notional = order.origQty.parse::<f64>()?;
+				let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
+				current_state.acquired_notional += order_usdt;
+				break;
+			}
+		}
+
+		Ok(current_state)
+	}
 }
 
 pub struct PositionFollowup {
-	_previous: PositionAcquisition,
-	protocols_spec: FollowupProtocolsSpec,
-	cache: FollowupCache,
+	_acquisition: PositionAcquisition,
+	protocols_spec: Option<String>, //FollowupProtocolsSpec,
+	cache: Option<String>,          //FollowupCache,
 }
 
-pub struct PositionClosed {
-	_previous: PositionFollowup,
-	t_closed: DateTime<Utc>,
+impl PositionFollowup {
+	pub async fn do_followup(acquired: PositionAcquisition) -> Result<Self> {
+		println!("Followup");
+		Ok(Self {
+			_acquisition: acquired,
+			protocols_spec: None,
+			cache: None,
+		})
+	}
 }
+
+//pub struct PositionClosed {
+//	_followup: PositionFollowup,
+//	t_closed: DateTime<Utc>,
+//}

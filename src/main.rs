@@ -4,7 +4,7 @@ pub mod positions;
 pub mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
-use positions::Position;
+use positions::*;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -34,9 +34,9 @@ struct PositionArgs {
 	/// determines the target period for which we expect the edge to persist.
 	#[arg(long)]
 	tf: Option<Timeframe>,
-	/// full ticker of the futures binance symbol
+	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will lead to undefined behavior.
 	#[arg(long)]
-	symbol: String,
+	coin: String,
 	/// position acquisition parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long, default_value = "")]
 	acquisition_protocols_spec: Vec<String>,
@@ -44,6 +44,8 @@ struct PositionArgs {
 	#[arg(short, long, default_value = "")]
 	followup_protocols_spec: Vec<String>,
 }
+
+// Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
 #[tokio::main]
 async fn main() {
@@ -73,13 +75,13 @@ async fn main() {
 				}
 			};
 
-			let mut position_acquisition = Position::new(position_args.side, position_args.size, position_args.symbol);
-			let mut position_followup = position_acquisition.execute();
-			let _ = position_followup.execute();
+			let spec = PositionSpec::new(position_args.coin, side, target_size);
+			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
+			let closed = PositionFollowup::do_followup(acquired).await.unwrap();
 
-			let protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
-
-			let cache = FollowupCache::new();
+			//let protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
+			//
+			//let cache = FollowupCache::new();
 		}
 	}
 }

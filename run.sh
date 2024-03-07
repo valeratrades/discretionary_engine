@@ -1,0 +1,13 @@
+#!/bin/sh
+# File is source on `cs` into the project's root. Allows to define a set of project-specific commands and aliases.
+
+#alias r="sc lrun -- start"
+
+alias n="c lrun -- new --tf=5m --size=-0.1 --symbol=ADAUSDT"
+cq() {
+	"cargo run --quiet -- ${@} 2>/dev/null"
+}
+alias qn="cq new --tf=5m --size=-0.1 --symbol=ADAUSDT"
+
+alias tb="c r -- --noconfirm new --tf=5m --size=0.1 --symbol=ADAUSDT -p='sar:t5m:s0.07:i0.02:m0.15'"
+alias ts="c r -- --noconfirm new --tf=5m --size=-0.1 --symbol=ADAUSDT -p='sar:t5m:s0.07:i0.02:m0.15'"

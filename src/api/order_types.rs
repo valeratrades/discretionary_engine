@@ -39,8 +39,6 @@ pub struct Limit {
 // Apparently, this is how we're pushing orders up to later be chosen and assigned sizes
 //=============================================================================
 
-// I could also be providing notional order size per dollar under management...
-
 pub enum OrderTypeP {
 	Market(MarketP),
 	Limit(LimitP),

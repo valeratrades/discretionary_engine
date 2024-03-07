@@ -1,6 +1,5 @@
 #![allow(non_snake_case, dead_code)]
 use crate::api::{Market, OrderType};
-use crate::protocols::Klines;
 use anyhow::Result;
 use arrow2::array::{Float64Array, Int64Array};
 use chrono::Utc;
@@ -9,10 +8,8 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_json::Value;
-use serde_urlencoded;
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use url::Url;
 use v_utils::trades::{Side, Timeframe};
 
@@ -77,13 +74,13 @@ pub enum BinanceOrder {
 impl From<OrderType> for BinanceOrder {
 	fn from(order_type: OrderType) -> Self {
 		match order_type {
-			OrderType::Market => unimplemented!(),
-			OrderType::Limit => unimplemented!(),
-			OrderType::StopMarket => unimplemented!(),
-			OrderType::StopLimit => unimplemented!(),
-			OrderType::TakeProfit => unimplemented!(),
-			OrderType::TakeProfitLimit => unimplemented!(),
-			OrderType::LimitMaker => unimplemented!(),
+			OrderType::Market(_) => unimplemented!(),
+			OrderType::Limit(_) => unimplemented!(),
+			OrderType::StopMarket(_) => unimplemented!(),
+			//OrderType::StopLimit(_) => unimplemented!(),
+			//OrderType::TakeProfit(_) => unimplemented!(),
+			//OrderType::TakeProfitLimit(_) => unimplemented!(),
+			//OrderType::LimitMaker(_) => unimplemented!(),
 		}
 	}
 }
@@ -146,8 +143,8 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 }
 
 pub async fn futures_price(asset: &str) -> Result<f64> {
-	let symbol = Symbol {
-		base: asset,
+	let symbol = crate::api::Symbol {
+		base: asset.to_string(),
 		quote: "USDT".to_string(),
 		market: Market::BinanceFutures,
 	};
@@ -155,7 +152,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	let url = base_url.join("/fapi/v2/ticker/price")?;
 
 	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", symbol.clone());
+	params.insert("symbol", symbol.to_string());
 
 	let client = reqwest::Client::new();
 	let r = client.get(url).json(&params).send().await?;
@@ -165,7 +162,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	let prices: Vec<serde_json::Value> = r.json().await?;
 	let price = prices
 		.iter()
-		.find(|x| x.get("symbol").unwrap().as_str().unwrap().to_string() == symbol)
+		.find(|x| x.get("symbol").unwrap().as_str().unwrap().to_string() == symbol.to_string())
 		.unwrap()
 		.get("price")
 		.unwrap()
@@ -191,26 +188,27 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 	Ok(positions_map)
 }
 
-pub async fn futures_quantity_precision(symbol: String) -> Result<usize> {
+pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
+	let symbol_str = format!("{}USDT", coin.to_uppercase());
 
 	let r = reqwest::get(url).await?;
 	let futures_exchange_info: FuturesExchangeInfo = r.json().await?;
-	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol).unwrap();
+	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 	Ok(symbol_info.quantityPrecision)
 }
 
 /// submits an order, if successful, returns the order id
 //TODO!!: make the symbol be from utils \
-pub async fn post_futures_order(key: String, secret: String, order_type: OrderType, symbol: String, side: Side, quantity: f64) -> Result<i64> {
+pub async fn post_futures_order(key: String, secret: String, order_type: String, symbol: String, side: Side, quantity: f64) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", symbol);
 	params.insert("side", side.to_string());
-	params.insert("type", order_type.to_string());
+	params.insert("type", order_type);
 	params.insert("quantity", format!("{}", quantity));
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
@@ -231,75 +229,6 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 	Ok(response)
 }
 
-pub async fn get_futures_klines(symbol: String, timeframe: Timeframe, limit: usize) -> Result<Klines> {
-	assert!(limit <= 1500);
-	let base_url = Market::BinanceFutures.get_base_url();
-	let url = base_url.join("/fapi/v1/klines")?;
-
-	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", symbol);
-	params.insert("interval", timeframe.to_string());
-	params.insert("limit", format!("{}", limit));
-
-	let client = reqwest::Client::new();
-	let r = client.get(url).json(&params).send().await?;
-	let response_klines: Vec<ResponseKline> = r.json().await?;
-
-	let mut t_open = Vec::new();
-	let mut open = Vec::new();
-	let mut high = Vec::new();
-	let mut low = Vec::new();
-	let mut close = Vec::new();
-	let mut volume = Vec::new();
-	for kline in response_klines {
-		t_open.push(Some(kline.open_time));
-		open.push(Some(kline.open.parse::<f64>().unwrap()));
-		high.push(Some(kline.high.parse::<f64>().unwrap()));
-		low.push(Some(kline.low.parse::<f64>().unwrap()));
-		close.push(Some(kline.close.parse::<f64>().unwrap()));
-		volume.push(Some(kline.volume.parse::<f64>().unwrap()));
-	}
-	let klines = Klines {
-		t_open: Int64Array::from(t_open),
-		open: Float64Array::from(open),
-		high: Float64Array::from(high),
-		low: Float64Array::from(low),
-		close: Float64Array::from(close),
-		volume: Some(Float64Array::from(volume)),
-	};
-	Ok(klines)
-}
-
-//async fn binance_websocket_klines(klines_arc: Arc<Mutex<Klines>>, symbol: String, timeframe: Timeframe) {{{{
-//	let address = "wss://fstream.binance.com/ws/btcusdt@markPrice";
-//	let url = url::Url::parse(address).unwrap();
-//	let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-//	let (_, read) = ws_stream.split();
-//
-//	read.for_each(|message| {
-//		let main_line = self_arc.clone(); // Cloning the Arc for each iteration
-//		let output = output.clone(); // Can i get rid of these?
-//		async move {
-//			let data = message.unwrap().into_data();
-//			match serde_json::from_slice::<Value>(&data) {
-//				Ok(json) => {
-//					if let Some(price_str) = json.get("p") {
-//						let price: f64 = price_str.as_str().unwrap().parse().unwrap();
-//						let mut main_line = main_line.lock().unwrap();
-//						main_line.btcusdt = Some(price);
-//						let mut output_lock = output.lock().unwrap();
-//						output_lock.main_line_str = main_line.display(config);
-//						output_lock.out().unwrap();
-//					}
-//				}
-//				Err(e) => {
-//					println!("Failed to parse message as JSON: {}", e);
-//				}
-//			}
-//		}
-//	})
-//	.await;
-//}}}}
 //=============================================================================
 // Response structs {{{
 //=============================================================================

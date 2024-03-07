@@ -34,3 +34,8 @@ An example config can be found in ./examples/config.toml
 - [ ] impl all `FollowupProtocol` for Followups
 
 ... To make price requests sync, and not have to deal with async traits, I'm making a compound orderbook implementation as a separate project now...
+
+
+## State
+Currently I am rewriting handling and initialization of exchange interactions in a separate crate.
+Once I have a reasonable core here, it will be possible to either integrate it into here, or the other way around.

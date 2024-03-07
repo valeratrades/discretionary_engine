@@ -1,18 +1,10 @@
 pub mod binance;
 pub mod order_types;
 use crate::config::Config;
-use crate::positions::Position;
 use anyhow::Result;
-use binance::OrderStatus;
-use chrono::Utc;
 use order_types::OrderType;
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use tokio::time::Duration;
 use url::Url;
 use v_utils::macros::graphemics;
-use v_utils::trades::{Side, Timeframe};
 
 pub async fn compile_total_balance(config: Config) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -31,72 +23,13 @@ pub async fn compile_total_balance(config: Config) -> Result<f64> {
 }
 
 ///NB: Temporary function that assumes BinanceFutures, and will be replaced with making the same request to a BinanceExchange struct, with preloaded values.
-pub async fn round_to_required_precision(symbol: String, quantity: f64) -> Result<f64> {
-	let quantity_precision = binance::futures_quantity_precision(symbol.clone()).await?;
+pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<f64> {
+	let quantity_precision = binance::futures_quantity_precision(&coin).await?;
 	let factor = 10_f64.powi(quantity_precision as i32);
 	let quantity_adjusted = (quantity * factor).round() / factor;
 	Ok(quantity_adjusted)
 }
 
-//? Should I make this return new total postion size?
-pub async fn open_futures_position(
-	config: Config,
-	positions: &Positions,
-	symbol: String,
-	side: Side,
-	usdt_quantity: f64,
-	protocols: Protocols,
-) -> Result<()> {
-	let full_key = config.binance.full_key.clone();
-	let full_secret = config.binance.full_secret.clone();
-	let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
-
-	let current_price_handler = binance::futures_price(symbol.clone());
-	let quantity_percision_handler = binance::futures_quantity_precision(symbol.clone());
-	let current_price = current_price_handler.await?;
-	let quantity_precision: usize = quantity_percision_handler.await?;
-
-	let coin_quantity = usdt_quantity / current_price;
-	let factor = 10_f64.powi(quantity_precision as i32);
-	let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
-
-	let order_id = binance::post_futures_order(
-		full_key.clone(),
-		full_secret.clone(),
-		binance::OrderType::Market,
-		symbol.clone(),
-		side.clone(),
-		coin_quantity_adjusted,
-	)
-	.await?;
-	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
-	loop {
-		let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.clone()).await?;
-		if order.status == OrderStatus::Filled {
-			let order_notional = order.origQty.parse::<f64>()?;
-			let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
-			//NB: currently assuming there is nothing else to the position.
-			position.qty_notional.store(order_notional, Ordering::SeqCst);
-			position.qty_usdt.store(order_usdt, Ordering::SeqCst);
-
-			//info!(target: "/tmp/discretionary_engine.lock", "Order filled; new position: {:?}", &position);
-			position.protocols.attach(&position).await?;
-			{
-				positions.positions.lock().unwrap().push(position); // function to execute the orders, that start being proposed after `attach`, is on the entire Positions master struct, so they have no chance of being executed or accounted before this line.
-			}
-			break;
-		}
-		tokio::time::sleep(Duration::from_secs(1)).await;
-	}
-	positions.sync(config.clone()).await?;
-
-	Ok(())
-}
-
-//TODO!: \
-pub async fn get_positions(config: &Config) -> Result<HashMap<String, f64>> {
-	binance::get_futures_positions(config.binance.full_key.clone(), config.binance.full_secret.clone()).await
-}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
