@@ -1,10 +1,12 @@
 use crate::api::order_types::OrderType;
+use tracing::info;
 use crate::api::{binance, Symbol};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use v_utils::trades::Side;
+use tracing;
 
 /// What the Position _*is*_
 #[derive(Debug, Clone)]
@@ -33,6 +35,7 @@ impl PositionAcquisition {
 		//let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
 		let coin = spec.asset.clone();
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
+		info!(coin);
 
 		let current_price_handler = binance::futures_price(&coin);
 		let quantity_percision_handler = binance::futures_quantity_precision(&coin);

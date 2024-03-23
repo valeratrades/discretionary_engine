@@ -1,18 +1,18 @@
-//mod trailing_stop;
-//
-//use crate::api::order_types::*;
-//use crate::positions::PositionSpec;
-//use anyhow::Result;
-//use async_trait::async_trait;
-//use std::str::FromStr;
-//
-///// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
-//pub enum ProtocolType {
-//	Momentum,
-//	TP,
-//	SL,
-//}
-//
+mod trailing_stop;
+
+use crate::api::order_types::*;
+use crate::positions::PositionSpec;
+use anyhow::Result;
+use async_trait::async_trait;
+use std::str::FromStr;
+
+/// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
+pub enum ProtocolType {
+	Momentum,
+	TP,
+	SL,
+}
+
 //pub struct Protocol<T>
 //where
 //	T: FollowupProtocol + Clone + Send + Sync + FromStr,
@@ -36,7 +36,7 @@
 //		Ok(Self {
 //			spec: t.clone(),
 //			orders: Vec::new(),
-//			cache: T::Cache::build(t, spec),
+//			cache: T::Cache::build(t, spec)?,
 //		})
 //	}
 //}

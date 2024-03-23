@@ -153,6 +153,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", symbol.to_string());
+	dbg!(&params);
 
 	let client = reqwest::Client::new();
 	let r = client.get(url).json(&params).send().await?;

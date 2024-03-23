@@ -4,7 +4,7 @@ use crate::api::{
 	Market, Symbol,
 };
 use crate::positions::PositionSpec;
-use crate::protocols::{FollowupProtocol, ProtocolCache, ProtocolType};
+//use crate::protocols::{FollowupProtocol, ProtocolCache, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -79,26 +79,26 @@ pub struct TrailingStop {
 //		ProtocolType::Momentum
 //	}
 //}
-
-/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
-#[derive(Debug)]
-pub struct TrailingStopCache {
-	pub symbol: Symbol,
-	pub top: f64,
-	pub bottom: f64,
-}
-//impl ProtocolCache for TrailingStopCache {
-//	async fn build<T>(_spec: T, position_core: &PositionSpec) -> Result<Self> {
-//		let binance_symbol = Symbol {
-//			base: position_core.asset.clone(),
-//			quote: "USDT".to_owned(),
-//			market: Market::BinanceFutures,
-//		};
-//		let price = binance::futures_price(&binance_symbol.base).await?;
-//		Ok(Self {
-//			symbol: binance_symbol,
-//			top: price,
-//			bottom: price,
-//		})
-//	}
+//
+///// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
+//#[derive(Debug)]
+//pub struct TrailingStopCache {
+//	pub symbol: Symbol,
+//	pub top: f64,
+//	pub bottom: f64,
 //}
+////impl ProtocolCache for TrailingStopCache {
+////	async fn build<T>(_spec: T, position_core: &PositionSpec) -> Result<Self> {
+////		let binance_symbol = Symbol {
+////			base: position_core.asset.clone(),
+////			quote: "USDT".to_owned(),
+////			market: Market::BinanceFutures,
+////		};
+////		let price = binance::futures_price(&binance_symbol.base).await?;
+////		Ok(Self {
+////			symbol: binance_symbol,
+////			top: price,
+////			bottom: price,
+////		})
+////	}
+////}

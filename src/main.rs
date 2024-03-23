@@ -5,6 +5,7 @@ pub mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::*;
+use tracing_subscriber;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -49,6 +50,7 @@ struct PositionArgs {
 
 #[tokio::main]
 async fn main() {
+	let tracing_subscriber = tracing_subscriber::fmt::try_init();
 	let cli = Cli::parse();
 	let config = match Config::try_from(cli.config) {
 		Ok(cfg) => cfg,
@@ -77,7 +79,7 @@ async fn main() {
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
-			let closed = PositionFollowup::do_followup(acquired).await.unwrap();
+			//let chosed = PositionFollowup::do_followup(acquired).await.unwrap();
 
 			//let protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
 			//
