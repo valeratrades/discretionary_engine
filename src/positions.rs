@@ -1,3 +1,6 @@
+use crate::protocols::{TrailingStopCache, TrailingStop, ProtocolCache};
+use std::any::Any;
+use std::sync::{Arc, Mutex};
 use crate::api::order_types::OrderType;
 use crate::api::{binance, Symbol};
 use crate::protocols::FollowupProtocol;
@@ -100,6 +103,16 @@ pub struct PositionFollowup {
 impl PositionFollowup {
 	pub async fn do_followup<T: FollowupProtocol>(acquired: PositionAcquisition, protocols: Vec<T>) -> Result<Self> {
 		println!("{:?}", protocols);
+
+		match protocols[0].as_any().downcast_ref::<TrailingStop>() {
+			Some(trailing_stop_protocol) => {
+				let cache = TrailingStopCache::build(&acquired._spec).await?;
+				let orders = Vec::new();
+				trailing_stop_protocol.attach(Arc::new(Mutex::new(orders)), Arc::new(Mutex::new(cache))).await?;
+			},
+			None => panic!(),
+		}
+
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: None,
