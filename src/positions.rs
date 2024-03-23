@@ -30,6 +30,7 @@ pub struct PositionAcquisition {
 }
 impl PositionAcquisition {
 	pub async fn do_acquisition(spec: PositionSpec) -> Result<Self> {
+		// is this not in config?
 		let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
 		let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
 		//let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());

@@ -35,7 +35,7 @@ struct PositionArgs {
 	/// determines the target period for which we expect the edge to persist.
 	#[arg(long)]
 	tf: Option<Timeframe>,
-	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will lead to undefined behavior.
+	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will error on the stage of making price requests for the coin.
 	#[arg(long)]
 	coin: String,
 	/// position acquisition parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
@@ -79,7 +79,8 @@ async fn main() {
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
-			//let chosed = PositionFollowup::do_followup(acquired).await.unwrap();
+			// currently followup does nothing
+			let closed = PositionFollowup::do_followup(acquired).await.unwrap();
 
 			//let protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
 			//
