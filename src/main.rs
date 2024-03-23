@@ -5,11 +5,11 @@ pub mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::*;
-use tracing_subscriber;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
 };
+use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -50,7 +50,7 @@ struct PositionArgs {
 
 #[tokio::main]
 async fn main() {
-	let tracing_subscriber = tracing_subscriber::fmt::try_init();
+	tracing_subscriber::fmt::try_init().unwrap();
 	let cli = Cli::parse();
 	let config = match Config::try_from(cli.config) {
 		Ok(cfg) => cfg,
@@ -59,7 +59,7 @@ async fn main() {
 			std::process::exit(1);
 		}
 	};
-	let noconfirm = cli.noconfirm;
+	//let noconfirm = cli.noconfirm;
 
 	match cli.command {
 		Commands::New(position_args) => {
@@ -77,14 +77,17 @@ async fn main() {
 				}
 			};
 
-			let spec = PositionSpec::new(position_args.coin, side, target_size);
-			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
-			// currently followup does nothing
-			let closed = PositionFollowup::do_followup(acquired).await.unwrap();
-
-			//let protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
-			//
+			//let followup_protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
+			// Do I need the cache thing though?
 			//let cache = FollowupCache::new();
+
+			let trailing_stop_hardcoded = protocols::TrailingStop::from_str("ts:p0.5").unwrap();
+
+			let spec = PositionSpec::new(position_args.coin, side, target_size);
+			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			// currently followup does nothing
+			let followed = PositionFollowup::do_followup(acquired, vec![trailing_stop_hardcoded]).await.unwrap();
+			println!("{:?}", followed);
 		}
 	}
 }

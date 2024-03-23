@@ -11,9 +11,9 @@
 //	pub price: f64,
 //}
 //impl ProtocolCache for LeadingCrossesCache {
-//	fn build<LeadingCrosses>(spec: LeadingCrosses, position_core: PositionSpec) -> Self {
+//	fn build<LeadingCrosses>(position_core: PositionSpec) -> Self {
 //		let target_asset = spec.symbol.asset.clone();
-//		let price = binance::futures_price(target_asset).await?;
+//		let price = binance::futures_price(target_asset).await?; //TODO: move this inside the build of the BaseProtocol
 //		Self {
 //			symbol: target_asset,
 //			init_price: price,

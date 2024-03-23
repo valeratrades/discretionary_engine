@@ -1,10 +1,12 @@
 mod trailing_stop;
-
 use crate::api::order_types::*;
 use crate::positions::PositionSpec;
 use anyhow::Result;
-use async_trait::async_trait;
+//use async_trait::async_trait;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+
+pub use trailing_stop::TrailingStop;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 pub enum ProtocolType {
@@ -36,23 +38,21 @@ where
 		Ok(Self {
 			spec: t.clone(),
 			orders: Vec::new(),
-			cache: T::Cache::build(t, spec).await?,
+			cache: T::Cache::build(spec).await?,
 		})
 	}
 }
-pub trait FollowupProtocol: Clone + Send + Sync + FromStr
+pub trait FollowupProtocol: Clone + Send + Sync + FromStr + std::fmt::Debug
 where
 	Self::Cache: ProtocolCache,
 {
 	type Cache: ProtocolCache;
-	fn attach<T>(&self, orders: &mut Vec<OrderTypeP>, cache: &mut Self::Cache) -> Result<()>;
+	async fn attach(&self, orders: Arc<Mutex<Vec<OrderTypeP>>>, cache: Arc<Mutex<Self::Cache>>) -> Result<()>;
 	fn subtype(&self) -> ProtocolType;
 }
 
-/// Is async and returns anyhow::Result, because some need to request price to build...
-#[async_trait]
 pub trait ProtocolCache {
-	async fn build<T>(_spec: T, position_spec: &PositionSpec) -> Result<Self>
+	async fn build(position_spec: &PositionSpec) -> Result<Self>
 	where
 		Self: Sized;
 }

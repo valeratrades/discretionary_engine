@@ -1,12 +1,13 @@
 use crate::api::order_types::OrderType;
-use tracing::info;
 use crate::api::{binance, Symbol};
+use crate::protocols::FollowupProtocol;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
-use v_utils::trades::Side;
 use tracing;
+use tracing::info;
+use v_utils::trades::Side;
 
 /// What the Position _*is*_
 #[derive(Debug, Clone)]
@@ -21,6 +22,7 @@ impl PositionSpec {
 	}
 }
 
+#[derive(Debug)]
 pub struct PositionAcquisition {
 	_spec: PositionSpec,
 	target_notional: f64,
@@ -29,6 +31,16 @@ pub struct PositionAcquisition {
 	cache: Option<String>,          //AcquisitionCache,
 }
 impl PositionAcquisition {
+	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
+		Ok(Self {
+			_spec: spec,
+			target_notional: 0.0,
+			acquired_notional: 0.0,
+			protocols_spec: None,
+			cache: None,
+		})
+	}
+
 	pub async fn do_acquisition(spec: PositionSpec) -> Result<Self> {
 		// is this not in config?
 		let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
@@ -78,6 +90,7 @@ impl PositionAcquisition {
 	}
 }
 
+#[derive(Debug)]
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
 	protocols_spec: Option<String>, //FollowupProtocolsSpec,
@@ -85,8 +98,8 @@ pub struct PositionFollowup {
 }
 
 impl PositionFollowup {
-	pub async fn do_followup(acquired: PositionAcquisition) -> Result<Self> {
-		println!("Followup");
+	pub async fn do_followup<T: FollowupProtocol>(acquired: PositionAcquisition, protocols: Vec<T>) -> Result<Self> {
+		println!("{:?}", protocols);
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: None,
