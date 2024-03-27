@@ -49,12 +49,13 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 		info!(coin);
 
-		let current_price_handler = binance::futures_price(&coin);
-		let quantity_percision_handler = binance::futures_quantity_precision(&coin);
-		let current_price = current_price_handler.await?;
-		let quantity_precision: usize = quantity_percision_handler.await?;
-		let factor = 10_f64.powi(quantity_precision as i32);
-		let coin_quantity = spec.size_usdt / current_price;
+		let (current_price, quantity_precision) = tokio::join! {
+			binance::futures_price(&coin),
+			binance::futures_quantity_precision(&coin),
+		};
+
+		let factor = 10_f64.powi(quantity_precision? as i32);
+		let coin_quantity = spec.size_usdt / current_price?;
 		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
 		let mut current_state = Self {
@@ -70,13 +71,13 @@ impl PositionAcquisition {
 			full_secret.clone(),
 			"MARKET".to_string(),
 			symbol.to_string(),
-			spec.side.clone(),
+			spec.side,
 			coin_quantity_adjusted,
 		)
 		.await?;
 		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 		loop {
-			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.to_string()).await?;
+			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
 			if order.status == binance::OrderStatus::Filled {
 				let order_notional = order.origQty.parse::<f64>()?;
 				let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
