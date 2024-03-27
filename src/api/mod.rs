@@ -2,7 +2,7 @@ pub mod binance;
 pub mod order_types;
 use crate::config::Config;
 use anyhow::Result;
-use order_types::OrderType;
+use order_types::Order;
 use url::Url;
 use v_utils::macros::graphemics;
 
@@ -101,7 +101,7 @@ impl std::str::FromStr for Symbol {
 /// Later on the submission engine just looks at the market, and creates according api-specific structure. However, user only sees this.
 #[derive(Debug, Clone)]
 pub struct OrderSpec {
-	pub order: OrderType,
+	pub order: Order,
 	pub name: String,
 }
 //? would it not make more sense to just pass around tuples (OrderType, String), where String is obviously name. Might be simpler and actually more explicit than having yet another struct.

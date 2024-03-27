@@ -22,8 +22,9 @@ pub struct TrailingStop {
 }
 impl FollowupProtocol for TrailingStop {
 	type Cache = TrailingStopCache;
+	type Item = TrailingStop;
 
-	async fn attach(&self, orders: Arc<Mutex<Vec<OrderTypeP>>>, cache: Arc<Mutex<Self::Cache>>) -> Result<()> {
+	async fn attach(&self, orders: Arc<Mutex<Vec<OrderP>>>, cache: Arc<Mutex<Self::Cache>>) -> Result<()> {
 		let address = format!(
 			"wss://fstream.binance.com/ws/{}@aggTrade",
 			&cache.lock().unwrap().symbol.to_string().to_lowercase()
@@ -48,13 +49,12 @@ impl FollowupProtocol for TrailingStop {
 									let target_price = price + price * self.percent;
 									let mut orders_lock = orders.lock().unwrap();
 									orders_lock.clear();
-									orders_lock.push(OrderTypeP::StopMarket(StopMarketP {
+									orders_lock.push(OrderP::StopMarket(StopMarketP {
 										symbol: cache_lock.symbol.clone(),
 										side: Side::Buy,
 										price: target_price,
 										percent_size: 1.0,
 									}));
-									dbg!(&target_price);
 								}
 							}
 						}
@@ -65,7 +65,7 @@ impl FollowupProtocol for TrailingStop {
 									let target_price = price - price * self.percent;
 									let mut orders_lock = orders.lock().unwrap();
 									orders_lock.clear();
-									orders_lock.push(OrderTypeP::StopMarket(StopMarketP {
+									orders_lock.push(OrderP::StopMarket(StopMarketP {
 										symbol: cache_lock.symbol.clone(),
 										side: Side::Sell,
 										price: target_price,
@@ -91,6 +91,10 @@ impl FollowupProtocol for TrailingStop {
 
 	fn subtype(&self) -> ProtocolType {
 		ProtocolType::Momentum
+	}
+
+	fn get_item(&self) -> Self::Item {
+		self.clone()
 	}
 }
 

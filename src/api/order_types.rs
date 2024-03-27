@@ -7,7 +7,7 @@ use v_utils::trades::Side;
 
 /// Generics for defining order types and their whereabouts. Specific `size` and `market` are to be added in the api-specific part of the implementation.
 #[derive(Debug, Clone, PartialEq)]
-pub enum OrderType {
+pub enum Order {
 	Market(Market),
 	Limit(Limit),
 	StopMarket(StopMarket),
@@ -39,22 +39,24 @@ pub struct Limit {
 // Apparently, this is how we're pushing orders up to later be chosen and assigned sizes
 //=============================================================================
 
-pub enum OrderTypeP {
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrderP {
 	Market(MarketP),
 	Limit(LimitP),
 	StopMarket(StopMarketP),
 }
 
-impl OrderTypeP {
-	pub fn to_exact(self, total_controled_size: f64) -> OrderType {
+impl OrderP {
+	pub fn to_exact(self, total_controled_size: f64) -> Order {
 		match self {
-			OrderTypeP::Market(m) => OrderType::Market(m.to_exact(total_controled_size)),
-			OrderTypeP::Limit(l) => OrderType::Limit(l.to_exact(total_controled_size)),
-			OrderTypeP::StopMarket(s) => OrderType::StopMarket(s.to_exact(total_controled_size)),
+			OrderP::Market(m) => Order::Market(m.to_exact(total_controled_size)),
+			OrderP::Limit(l) => Order::Limit(l.to_exact(total_controled_size)),
+			OrderP::StopMarket(s) => Order::StopMarket(s.to_exact(total_controled_size)),
 		}
 	}
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct MarketP {
 	pub symbol: Symbol,
 	pub side: Side,
@@ -71,6 +73,7 @@ impl MarketP {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct StopMarketP {
 	pub symbol: Symbol,
 	pub side: Side,
@@ -89,6 +92,7 @@ impl StopMarketP {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct LimitP {
 	pub symbol: Symbol,
 	pub side: Side,

@@ -81,7 +81,8 @@ async fn main() {
 			// Do I need the cache thing though?
 			//let cache = FollowupCache::new();
 
-			let trailing_stop_hardcoded = protocols::TrailingStop::from_str("ts:p0.5").unwrap();
+			//let trailing_stop_hardcoded = protocols::TrailingStop::from_str("ts:p0.1").unwrap();
+			let trailing_stop_hardcoded = protocols::interpret_followup_spec("ts:p0.1").unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
