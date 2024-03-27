@@ -23,7 +23,7 @@ impl PositionSpec {
 
 #[derive(Debug)]
 pub struct PositionAcquisition {
-	_spec: PositionSpec,
+	spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
 	protocols_spec: Option<String>, //AcquisitionProtocolsSpec,
@@ -32,7 +32,7 @@ pub struct PositionAcquisition {
 impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
-			_spec: spec,
+			spec,
 			target_notional: 0.0,
 			acquired_notional: 0.0,
 			protocols_spec: None,
@@ -59,7 +59,7 @@ impl PositionAcquisition {
 		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
 		let mut current_state = Self {
-			_spec: spec.clone(),
+			spec: spec.clone(),
 			target_notional: coin_quantity_adjusted,
 			acquired_notional: 0.0,
 			protocols_spec: None,
@@ -103,7 +103,8 @@ impl PositionFollowup {
 
 		match protocols[0].as_any().downcast_ref::<TrailingStop>() {
 			Some(trailing_stop_protocol) => {
-				let cache = TrailingStopCache::build(&acquired._spec).await?;
+				let price = binance::futures_price(&acquired.spec.asset).await?;
+				let cache = TrailingStopCache::build(&acquired.spec, price)?;
 				let orders = Vec::new();
 				trailing_stop_protocol.attach(Arc::new(Mutex::new(orders)), Arc::new(Mutex::new(cache))).await?;
 			}

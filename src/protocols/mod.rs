@@ -29,7 +29,7 @@ impl<T> Protocol<T>
 where
 	T: FollowupProtocol,
 {
-	async fn build(s: &str, spec: &PositionSpec) -> Result<Self> {
+	fn build(s: &str, cache: T::Cache) -> Result<Self> {
 		//TODO!: return Result instead (requires weird trait bounds) \
 		let t = match T::from_str(s) {
 			Ok(t) => t,
@@ -39,10 +39,11 @@ where
 		Ok(Self {
 			spec: t.clone(),
 			orders: Vec::new(),
-			cache: T::Cache::build(spec).await?,
+			cache,
 		})
 	}
 }
+
 pub trait FollowupProtocol: Clone + Send + Sync + FromStr + std::fmt::Debug + Any
 where
 	Self::Cache: ProtocolCache,
@@ -54,7 +55,7 @@ where
 }
 
 pub trait ProtocolCache {
-	async fn build(position_spec: &PositionSpec) -> Result<Self>
+	fn build(position_spec: &PositionSpec, price: f64) -> Result<Self>
 	where
 		Self: Sized;
 }

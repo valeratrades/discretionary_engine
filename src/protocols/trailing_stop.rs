@@ -111,13 +111,12 @@ struct CacheInfoCarrier {
 }
 
 impl ProtocolCache for TrailingStopCache {
-	async fn build(position_spec: &PositionSpec) -> Result<Self> {
+	fn build(position_spec: &PositionSpec, price: f64) -> Result<Self> {
 		let binance_symbol = Symbol {
 			base: position_spec.asset.clone(),
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
-		let price = binance::futures_price(&binance_symbol.base).await?;
 		Ok(Self {
 			symbol: binance_symbol,
 			top: price,
