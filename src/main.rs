@@ -5,11 +5,11 @@ pub mod protocols;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::*;
+use std::str::FromStr;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
 };
-use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

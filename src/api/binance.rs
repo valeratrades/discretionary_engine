@@ -1,7 +1,6 @@
 #![allow(non_snake_case, dead_code)]
 use crate::api::{Market, OrderType};
 use anyhow::Result;
-use arrow2::array::{Float64Array, Int64Array};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -11,7 +10,7 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
 use url::Url;
-use v_utils::trades::{Side, Timeframe};
+use v_utils::trades::Side;
 
 type HmacSha256 = Hmac<Sha256>;
 

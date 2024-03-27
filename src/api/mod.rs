@@ -30,7 +30,6 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 	Ok(quantity_adjusted)
 }
 
-
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Market {

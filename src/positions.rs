@@ -1,13 +1,9 @@
-use crate::protocols::{TrailingStopCache, TrailingStop, ProtocolCache};
-use std::any::Any;
-use std::sync::{Arc, Mutex};
-use crate::api::order_types::OrderType;
 use crate::api::{binance, Symbol};
 use crate::protocols::FollowupProtocol;
+use crate::protocols::{ProtocolCache, TrailingStop, TrailingStopCache};
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use tracing;
 use tracing::info;
 use v_utils::trades::Side;
@@ -109,7 +105,7 @@ impl PositionFollowup {
 				let cache = TrailingStopCache::build(&acquired._spec).await?;
 				let orders = Vec::new();
 				trailing_stop_protocol.attach(Arc::new(Mutex::new(orders)), Arc::new(Mutex::new(cache))).await?;
-			},
+			}
 			None => panic!(),
 		}
 
