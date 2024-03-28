@@ -16,20 +16,20 @@ use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
 #[derive(Debug)]
-pub struct TrailingStop {
-	params: Arc<Mutex<TrailingStopParams>>,
+pub struct TrailingStopWrapper {
+	params: Arc<Mutex<TrailingStop>>,
 }
-impl TrailingStop {
+impl TrailingStopWrapper {
 	pub fn from_str(spec: &str) -> Result<Self> {
-		let ts = TrailingStopParams::from_str(spec)?;
+		let ts = TrailingStop::from_str(&spec)?;
 		Ok(Self {
 			params: Arc::new(Mutex::new(ts)),
 		})
 	}
 }
 
-impl RevisedProtocol for TrailingStop {
-	type Params = TrailingStopParams;
+impl RevisedProtocol for TrailingStopWrapper {
+	type Params = TrailingStop;
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
 	fn attach(&self, tx_orders: mpsc::Sender<(Vec<OrderP>, String)>, position_spec: &PositionSpec) -> Result<()> {
@@ -64,7 +64,7 @@ impl RevisedProtocol for TrailingStop {
 								match side {
 									Side::Buy => {}
 									Side::Sell => {
-										let target_price = price + price * params.lock().unwrap().percent;
+										let target_price = price + price * params.lock().unwrap().percent.abs();
 										let uid = params.lock().unwrap().to_string();
 										let _ = tx_orders.send((
 											vec![OrderP::StopMarket(StopMarketP {
@@ -82,7 +82,7 @@ impl RevisedProtocol for TrailingStop {
 								top = price;
 								match side {
 									Side::Buy => {
-										let target_price = price - price * params.lock().unwrap().percent;
+										let target_price = price - price * params.lock().unwrap().percent.abs();
 										let uid = params.lock().unwrap().to_string();
 										let _ = tx_orders.send((
 											vec![OrderP::StopMarket(StopMarketP {
@@ -109,7 +109,7 @@ impl RevisedProtocol for TrailingStop {
 		Ok(())
 	}
 
-	fn update_params(&self, params: &TrailingStopParams) -> Result<()> {
+	fn update_params(&self, params: &TrailingStop) -> Result<()> {
 		todo!()
 	}
 
@@ -119,6 +119,6 @@ impl RevisedProtocol for TrailingStop {
 }
 
 #[derive(Debug, Clone, CompactFormat)]
-pub struct TrailingStopParams {
+pub struct TrailingStop {
 	percent: f64,
 }

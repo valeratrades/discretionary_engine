@@ -5,6 +5,7 @@ use std::str::FromStr;
 use tracing;
 use tracing::info;
 use v_utils::trades::Side;
+use crate::api::order_types::{Order, OrderP};
 
 /// What the Position _*is*_
 #[derive(Debug, Clone)]
@@ -96,7 +97,19 @@ pub struct PositionFollowup {
 
 impl PositionFollowup {
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>) -> Result<Self> {
-		let runtime = tokio::runtime::Runtime::new().unwrap();
+		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<(Vec<OrderP>, String)>();
+
+		for protocol in protocols {
+			protocol.attach(tx_orders.clone(), &acquired._spec)?;
+		}
+		
+		let mut all_requested = Vec::new();
+
+		while let Ok((orders, uid)) = rx_orders.recv() {
+			all_requested.extend(orders.clone()); //TODO: remove the old orders of the same uid if any
+			println!("{:?}", orders);
+			//let _ = binance::post_futures_orders(full_key.clone(), full_secret.clone(), orders).await?;
+		}
 
 		Ok(Self {
 			_acquisition: acquired,

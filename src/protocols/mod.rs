@@ -1,9 +1,9 @@
 mod trailing_stop;
-use anyhow::Result;
-use std::sync::mpsc;
-use std::str::FromStr;
 use crate::api::order_types::OrderP;
-pub use trailing_stop::TrailingStop;
+use anyhow::Result;
+use std::str::FromStr;
+use std::sync::mpsc;
+pub use trailing_stop::TrailingStopWrapper;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 pub enum ProtocolType {
@@ -20,14 +20,33 @@ pub trait RevisedProtocol {
 }
 
 pub enum FollowupProtocol {
-	TrailingStop(TrailingStop),
+	TrailingStop(TrailingStopWrapper),
 }
 impl FollowupProtocol {
 	pub fn from_str(spec: &str) -> Result<Self> {
-		if let Ok(ts) = TrailingStop::from_str(spec) {
+		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
 			Ok(FollowupProtocol::TrailingStop(ts))
 		} else {
 			Err(anyhow::Error::msg("Could not convert string to any FollowupProtocol"))
+		}
+	}
+}
+impl FollowupProtocol {
+	pub fn attach(&self, tx_orders: mpsc::Sender<(Vec<OrderP>, String)>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()> {
+		match self {
+			FollowupProtocol::TrailingStop(ts) => ts.attach(tx_orders, position_spec),
+		}
+	}
+
+	pub fn update_params(&self, params: &<TrailingStopWrapper as RevisedProtocol>::Params) -> anyhow::Result<()> {
+		match self {
+			FollowupProtocol::TrailingStop(ts) => ts.update_params(params),
+		}
+	}
+
+	pub fn get_subtype(&self) -> ProtocolType {
+		match self {
+			FollowupProtocol::TrailingStop(ts) => ts.get_subtype(),
 		}
 	}
 }
@@ -41,4 +60,3 @@ pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Follo
 
 	Ok(protocols)
 }
-
