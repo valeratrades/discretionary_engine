@@ -9,7 +9,6 @@ use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
 };
-use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -82,12 +81,12 @@ async fn main() {
 			//let cache = FollowupCache::new();
 
 			//let trailing_stop_hardcoded = protocols::TrailingStop::from_str("ts:p0.1").unwrap();
-			let trailing_stop_hardcoded = protocols::interpret_followup_spec("ts:p0.1").unwrap();
+			let trailing_stop_hardcoded = protocols::interpret_followup_specs(vec!["ts:p0.1".to_string()]).unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
 			// currently followup does nothing
-			let followed = PositionFollowup::do_followup(acquired, vec![trailing_stop_hardcoded]).await.unwrap();
+			let followed = PositionFollowup::do_followup(acquired, trailing_stop_hardcoded).await.unwrap();
 			println!("{:?}", followed);
 		}
 	}

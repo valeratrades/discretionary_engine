@@ -1,19 +1,10 @@
-use crate::protocols::{TrailingStopCache, TrailingStop, ProtocolCache};
-use std::any::Any;
-use std::sync::{Arc, Mutex, RwLock};
-use crate::api::order_types::Order;
 use crate::api::{binance, Symbol};
 use crate::protocols::FollowupProtocol;
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
 use tracing;
 use tracing::info;
 use v_utils::trades::Side;
-use tokio::time::{self, Duration};
-use std::collections::HashSet;
-
 
 /// What the Position _*is*_
 #[derive(Debug, Clone)]
@@ -104,36 +95,8 @@ pub struct PositionFollowup {
 }
 
 impl PositionFollowup {
-	pub async fn do_followup<T: FollowupProtocol>(acquired: PositionAcquisition, protocols: Vec<T>) -> Result<Self> {
-		let runtime = tokio::runtime::Runtime::new().unwrap(); // Create a new Tokio runtime
-		//1) What
-
-		//for protocol in protocols {
-		//	let protocol = Arc::new(protocol);
-		//	let protocol_clone = Arc::clone(&protocol);
-		//
-		//	let cache = runtime.block_on(async { TrailingStopCache::build(&acquired._spec.clone()).await })?;
-		//	let orders = Arc::new(RwLock::new(Vec::new()));
-		//	let orders_clone = Arc::clone(&orders);
-		//	let cache_shared = Arc::new(Mutex::new(cache));
-		//
-		//	runtime.spawn(async move {
-		//		if let Some(ts_protocol) = protocol_clone.as_any().downcast_ref::<TrailingStop>() {
-		//			ts_protocol.attach(orders_clone, cache_shared).await.unwrap();
-		//		}
-		//	});
-		//
-		//	let mut interval = time::interval(Duration::from_secs(10));
-		//	loop {
-		//		interval.tick().await;
-		//		println!("{:?}", orders.lock().unwrap());
-		//	}
-		//};
-
-		println!("TODO");
-
-
-		//- forever loop until we closed the entire position. Then the runtime is killed.
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>) -> Result<Self> {
+		let runtime = tokio::runtime::Runtime::new().unwrap();
 
 		Ok(Self {
 			_acquisition: acquired,

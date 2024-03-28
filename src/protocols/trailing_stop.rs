@@ -4,19 +4,28 @@ use crate::api::{
 	Market, Symbol,
 };
 use crate::positions::PositionSpec;
-use crate::protocols::RevisedProtocol;
+use crate::protocols::{ProtocolType, RevisedProtocol};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::cell::RefCell;
+use std::str::FromStr;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use tokio_tungstenite::connect_async;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
-#[derive(Debug, Clone, CompactFormat)]
+#[derive(Debug)]
 pub struct TrailingStop {
-	params: RefCell<TrailingStopParams>,
+	params: Arc<Mutex<TrailingStopParams>>,
+}
+impl TrailingStop {
+	pub fn from_str(spec: &str) -> Result<Self> {
+		let ts = TrailingStopParams::from_str(spec)?;
+		Ok(Self {
+			params: Arc::new(Mutex::new(ts)),
+		})
+	}
 }
 
 impl RevisedProtocol for TrailingStop {
@@ -24,18 +33,21 @@ impl RevisedProtocol for TrailingStop {
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
 	fn attach(&self, tx_orders: mpsc::Sender<(Vec<OrderP>, String)>, position_spec: &PositionSpec) -> Result<()> {
+		let symbol = Symbol {
+			base: position_spec.asset.clone(),
+			quote: "USDT".to_owned(),
+			market: Market::BinanceFutures,
+		};
+		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
+
+		let params = self.params.clone();
+		let position_spec = position_spec.clone();
+
 		tokio::spawn(async move {
-			let symbol = Symbol {
-				base: position_spec.asset.clone(),
-				quote: "USDT".to_owned(),
-				market: Market::BinanceFutures,
-			};
-			let price = binance::futures_price(&symbol.base).await?;
+			let price = binance::futures_price(&symbol.base).await.unwrap();
 			let mut top: f64 = price;
 			let mut bottom: f64 = price;
 			let side = position_spec.side.clone();
-			let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
-			let uid = self.params.borrow().to_string();
 
 			let url = url::Url::parse(&address).unwrap();
 			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -52,7 +64,8 @@ impl RevisedProtocol for TrailingStop {
 								match side {
 									Side::Buy => {}
 									Side::Sell => {
-										let target_price = price + price * self.percent;
+										let target_price = price + price * params.lock().unwrap().percent;
+										let uid = params.lock().unwrap().to_string();
 										let _ = tx_orders.send((
 											vec![OrderP::StopMarket(StopMarketP {
 												symbol: symbol.clone(),
@@ -69,7 +82,8 @@ impl RevisedProtocol for TrailingStop {
 								top = price;
 								match side {
 									Side::Buy => {
-										let target_price = price - price * self.percent;
+										let target_price = price - price * params.lock().unwrap().percent;
+										let uid = params.lock().unwrap().to_string();
 										let _ = tx_orders.send((
 											vec![OrderP::StopMarket(StopMarketP {
 												symbol: symbol.clone(),
@@ -91,15 +105,20 @@ impl RevisedProtocol for TrailingStop {
 				}
 			}
 		});
+
 		Ok(())
 	}
 
-	fn update_params(&self, params: &Self::Params) -> Result<()> {
+	fn update_params(&self, params: &TrailingStopParams) -> Result<()> {
 		todo!()
+	}
+
+	fn get_subtype(&self) -> ProtocolType {
+		ProtocolType::Momentum
 	}
 }
 
 #[derive(Debug, Clone, CompactFormat)]
-struct TrailingStopParams {
+pub struct TrailingStopParams {
 	percent: f64,
 }
