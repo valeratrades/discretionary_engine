@@ -3,7 +3,7 @@
 ## Usage
 Example query:
 ```sh
-discretionary_engine new --size=-0.1 --symbol=ADAUSDT '-p=sar:t5m:s0.07:i0.02:m0.15' '-p=tpsl:t0.4884:s0.5190'
+discretionary_engine new --size=-0.1 --symbol=ADAUSDT '-f=sar:t5m:s0.07:i0.02:m0.15' '-f=tpsl:t0.4884:s0.5190'
 ```
 This would open a new position on ADA, where:
 - Side: SELL, as the provided size is negative

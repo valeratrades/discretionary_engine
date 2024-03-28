@@ -6,6 +6,8 @@ use std::sync::mpsc;
 pub use trailing_stop::TrailingStopWrapper;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
+/// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative. 
+/// Note that total size is is 100% for both the stop and normal orders (because they are on the different sides of the price).
 pub enum ProtocolType {
 	Momentum,
 	TP,
