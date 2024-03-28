@@ -1,5 +1,4 @@
+- same mpsc passed to all protocols from position
 
-# Architecture
-## Objects
-### Protocol
-- No protocol can know what total size it is responsible for.
+
+

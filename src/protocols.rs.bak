@@ -42,7 +42,6 @@
 //// TPSL {{{
 //#[derive(Debug)]
 //pub struct TPSL {
-//	pub market: Market,
 //	pub tp: f64,
 //	pub sl: f64,
 //}

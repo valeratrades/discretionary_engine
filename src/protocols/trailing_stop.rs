@@ -4,129 +4,102 @@ use crate::api::{
 	Market, Symbol,
 };
 use crate::positions::PositionSpec;
-use crate::protocols::{FollowupProtocol, ProtocolCache, ProtocolType};
+use crate::protocols::RevisedProtocol;
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::{
-	any::Any,
-	sync::{Arc, Mutex},
-};
+use std::cell::RefCell;
+use std::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
 #[derive(Debug, Clone, CompactFormat)]
 pub struct TrailingStop {
-	pub percent: f64,
+	params: RefCell<TrailingStopParams>,
 }
-impl FollowupProtocol for TrailingStop {
-	type Cache = TrailingStopCache;
-	type Item = TrailingStop;
 
-	async fn attach(&self, orders: Arc<Mutex<Vec<OrderP>>>, cache: Arc<Mutex<Self::Cache>>) -> Result<()> {
-		let address = format!(
-			"wss://fstream.binance.com/ws/{}@aggTrade",
-			&cache.lock().unwrap().symbol.to_string().to_lowercase()
-		);
-		let url = url::Url::parse(&address).unwrap();
-		let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-		let (_, mut read) = ws_stream.split();
+impl RevisedProtocol for TrailingStop {
+	type Params = TrailingStopParams;
 
-		while let Some(msg) = read.next().await {
-			let data = msg.unwrap().into_data();
-			match serde_json::from_slice::<Value>(&data) {
-				Ok(json) => {
-					let mut cache_lock = cache.lock().unwrap();
+	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
+	fn attach(&self, tx_orders: mpsc::Sender<(Vec<OrderP>, String)>, position_spec: &PositionSpec) -> Result<()> {
+		tokio::spawn(async move {
+			let symbol = Symbol {
+				base: position_spec.asset.clone(),
+				quote: "USDT".to_owned(),
+				market: Market::BinanceFutures,
+			};
+			let price = binance::futures_price(&symbol.base).await?;
+			let mut top: f64 = price;
+			let mut bottom: f64 = price;
+			let side = position_spec.side.clone();
+			let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
+			let uid = self.params.borrow().to_string();
 
-					if let Some(price_str) = json.get("p") {
-						let price: f64 = price_str.as_str().unwrap().parse().unwrap();
-						if price < cache_lock.bottom {
-							cache_lock.bottom = price;
-							match cache_lock.side {
-								Side::Buy => {}
-								Side::Sell => {
-									let target_price = price + price * self.percent;
-									let mut orders_lock = orders.lock().unwrap();
-									orders_lock.clear();
-									orders_lock.push(OrderP::StopMarket(StopMarketP {
-										symbol: cache_lock.symbol.clone(),
-										side: Side::Buy,
-										price: target_price,
-										percent_size: 1.0,
-									}));
+			let url = url::Url::parse(&address).unwrap();
+			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+			let (_, mut read) = ws_stream.split();
+
+			while let Some(msg) = read.next().await {
+				let data = msg.unwrap().into_data();
+				match serde_json::from_slice::<Value>(&data) {
+					Ok(json) => {
+						if let Some(price_str) = json.get("p") {
+							let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+							if price < bottom {
+								bottom = price;
+								match side {
+									Side::Buy => {}
+									Side::Sell => {
+										let target_price = price + price * self.percent;
+										let _ = tx_orders.send((
+											vec![OrderP::StopMarket(StopMarketP {
+												symbol: symbol.clone(),
+												side: Side::Buy,
+												price: target_price,
+												percent_size: 1.0,
+											})],
+											uid.clone(),
+										));
+									}
 								}
 							}
-						}
-						if price > cache_lock.top {
-							cache_lock.top = price;
-							match cache_lock.side {
-								Side::Buy => {
-									let target_price = price - price * self.percent;
-									let mut orders_lock = orders.lock().unwrap();
-									orders_lock.clear();
-									orders_lock.push(OrderP::StopMarket(StopMarketP {
-										symbol: cache_lock.symbol.clone(),
-										side: Side::Sell,
-										price: target_price,
-										percent_size: 1.0,
-									}));
+							if price > top {
+								top = price;
+								match side {
+									Side::Buy => {
+										let target_price = price - price * self.percent;
+										let _ = tx_orders.send((
+											vec![OrderP::StopMarket(StopMarketP {
+												symbol: symbol.clone(),
+												side: Side::Sell,
+												price: target_price,
+												percent_size: 1.0,
+											})],
+											uid.clone(),
+										));
+									}
+									Side::Sell => {}
 								}
-								Side::Sell => {}
 							}
 						}
 					}
-				}
-				Err(e) => {
-					println!("Failed to parse message as JSON: {}", e);
+					Err(e) => {
+						println!("Failed to parse message as JSON: {}", e);
+					}
 				}
 			}
-		}
+		});
 		Ok(())
 	}
 
-	fn as_any(&self) -> &dyn Any {
-		self
-	}
-
-	fn subtype(&self) -> ProtocolType {
-		ProtocolType::Momentum
-	}
-
-	fn get_item(&self) -> Self::Item {
-		self.clone()
+	fn update_params(&self, params: &Self::Params) -> Result<()> {
+		todo!()
 	}
 }
 
-/// Stores both highest and lowest prices in case the direction is switched for some reason. Note: it's not meant to though.
-#[derive(Debug)]
-pub struct TrailingStopCache {
-	pub symbol: Symbol,
-	pub top: f64,
-	pub bottom: f64,
-	pub side: Side,
-}
-
-struct CacheInfoCarrier {
-	symbol: Symbol,
-	top: f64,
-	bottom: f64,
-	side: Side,
-}
-
-impl ProtocolCache for TrailingStopCache {
-	async fn build(position_spec: &PositionSpec) -> Result<Self> {
-		let binance_symbol = Symbol {
-			base: position_spec.asset.clone(),
-			quote: "USDT".to_owned(),
-			market: Market::BinanceFutures,
-		};
-		let price = binance::futures_price(&binance_symbol.base).await?;
-		Ok(Self {
-			symbol: binance_symbol,
-			top: price,
-			bottom: price,
-			side: position_spec.side.clone(),
-		})
-	}
+#[derive(Debug, Clone, CompactFormat)]
+struct TrailingStopParams {
+	percent: f64,
 }
