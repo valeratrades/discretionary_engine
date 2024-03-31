@@ -2,9 +2,11 @@ pub mod api;
 pub mod config;
 pub mod positions;
 pub mod protocols;
+pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use positions::*;
+use protocols::FollowupProtocols;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -49,7 +51,7 @@ struct PositionArgs {
 
 #[tokio::main]
 async fn main() {
-	tracing_subscriber::fmt::try_init().unwrap();
+	utils::init_subscriber();
 	let cli = Cli::parse();
 	let config = match Config::try_from(cli.config) {
 		Ok(cfg) => cfg,

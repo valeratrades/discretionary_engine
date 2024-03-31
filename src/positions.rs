@@ -1,9 +1,9 @@
 use crate::api::{binance, Symbol};
-use crate::protocols::FollowupProtocol;
+use std::collections::HashMap;
+use crate::protocols::{FollowupProtocol, ProtocolType};
 use anyhow::Result;
 use std::str::FromStr;
-use tracing;
-use tracing::info;
+use tracing::{instrument, info};
 use v_utils::trades::Side;
 use crate::api::order_types::{Order, OrderP};
 
@@ -32,8 +32,8 @@ impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
 			_spec: spec,
-			target_notional: 0.0,
-			acquired_notional: 0.0,
+			target_notional: 10.0,
+			acquired_notional: 10.0,
 			protocols_spec: None,
 			cache: None,
 		})
@@ -78,8 +78,7 @@ impl PositionAcquisition {
 			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.to_string()).await?;
 			if order.status == binance::OrderStatus::Filled {
 				let order_notional = order.origQty.parse::<f64>()?;
-				let order_usdt = order.avgPrice.unwrap().parse::<f64>()? * order_notional;
-				current_state.acquired_notional += order_usdt;
+				current_state.acquired_notional += order_notional;
 				break;
 			}
 		}
@@ -96,8 +95,19 @@ pub struct PositionFollowup {
 }
 
 impl PositionFollowup {
+	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>) -> Result<Self> {
 		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<(Vec<OrderP>, String)>();
+
+		//let counted_subtypes = protocols.count_subtypes();
+		//
+		//let _ = protocols.attach_all(tx_orders.clone(), &acquired._spec)?;
+
+		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
+		for protocol in &protocols {
+			let subtype = protocol.get_subtype();
+			*counted_subtypes.entry(subtype).or_insert(0) += 1;
+		}
 
 		for protocol in protocols {
 			protocol.attach(tx_orders.clone(), &acquired._spec)?;
@@ -105,9 +115,21 @@ impl PositionFollowup {
 		
 		let mut all_requested = Vec::new();
 
-		while let Ok((orders, uid)) = rx_orders.recv() {
-			all_requested.extend(orders.clone()); //TODO: remove the old orders of the same uid if any
-			println!("{:?}", orders);
+		while let Ok((order_batch, uid)) = rx_orders.recv() {
+			all_requested.extend(order_batch.clone()); //TODO: remove the old orders of the same uid if any
+			let protocol = FollowupProtocol::from_str(&uid).unwrap();
+			let subtype = protocol.get_subtype();
+			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
+			let total_controlled_size = acquired.acquired_notional * size_multiplier;
+
+			let order_batch = order_batch.into_iter().map(|o| {
+				o.to_exact(total_controlled_size)
+			}).collect::<Vec<Order>>();
+			info!(?order_batch);
+
+			let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+			let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+
 			//let _ = binance::post_futures_orders(full_key.clone(), full_secret.clone(), orders).await?;
 		}
 

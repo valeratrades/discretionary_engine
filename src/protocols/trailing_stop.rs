@@ -4,7 +4,7 @@ use crate::api::{
 	Market, Symbol,
 };
 use crate::positions::PositionSpec;
-use crate::protocols::{ProtocolType, RevisedProtocol};
+use crate::protocols::{ProtocolType, Protocol};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -19,8 +19,10 @@ use v_utils::trades::Side;
 pub struct TrailingStopWrapper {
 	params: Arc<Mutex<TrailingStop>>,
 }
-impl TrailingStopWrapper {
-	pub fn from_str(spec: &str) -> Result<Self> {
+impl FromStr for TrailingStopWrapper {
+	type Err = anyhow::Error;
+
+	fn from_str(spec: &str) -> Result<Self> {
 		let ts = TrailingStop::from_str(&spec)?;
 		Ok(Self {
 			params: Arc::new(Mutex::new(ts)),
@@ -28,7 +30,7 @@ impl TrailingStopWrapper {
 	}
 }
 
-impl RevisedProtocol for TrailingStopWrapper {
+impl Protocol for TrailingStopWrapper {
 	type Params = TrailingStop;
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
@@ -110,7 +112,7 @@ impl RevisedProtocol for TrailingStopWrapper {
 	}
 
 	fn update_params(&self, params: &TrailingStop) -> Result<()> {
-		todo!()
+		unimplemented!()
 	}
 
 	fn get_subtype(&self) -> ProtocolType {

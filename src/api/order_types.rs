@@ -18,21 +18,21 @@ pub enum Order {
 pub struct Market {
 	pub symbol: Symbol,
 	pub side: Side,
-	pub size_usd: f64,
+	pub size_notional: f64,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct StopMarket {
 	pub symbol: Symbol,
 	pub side: Side,
 	pub price: f64,
-	pub size_usd: f64,
+	pub size_notional: f64,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limit {
 	pub symbol: Symbol,
 	pub side: Side,
 	pub price: f64,
-	pub size_usd: f64,
+	pub size_notional: f64,
 }
 
 //=============================================================================
@@ -68,7 +68,7 @@ impl MarketP {
 		Market {
 			symbol: self.symbol,
 			side: self.side,
-			size_usd: total_controled_size * self.percent_size,
+			size_notional: total_controled_size * self.percent_size,
 		}
 	}
 }
@@ -87,7 +87,7 @@ impl StopMarketP {
 			symbol: self.symbol,
 			side: self.side,
 			price: self.price,
-			size_usd: total_controled_size * self.percent_size,
+			size_notional: total_controled_size * self.percent_size,
 		}
 	}
 }
@@ -106,7 +106,7 @@ impl LimitP {
 			symbol: self.symbol,
 			side: self.side,
 			price: self.price,
-			size_usd: total_controled_size * self.percent_size,
+			size_notional: total_controled_size * self.percent_size,
 		}
 	}
 }
