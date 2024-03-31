@@ -21,8 +21,10 @@ An example config can be found in ./examples/config.toml
 
 ## Current assumptions
 - no two positions are opened on the same symbol
-- execution is only done by market orders
+
 - no new positions on account are opened outside of the engine
+
+- orders are placed immediately (not that far off, as most of the time we will spam the thing until it accepts, and only other action that will need to be taken is to prevent any increases in exposure while we have any mismatches).
 
 # TODO for next version
 
