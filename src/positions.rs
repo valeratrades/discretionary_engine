@@ -1,4 +1,4 @@
-use crate::api::order_types::{Order, OrderP, OrderStuff};
+use crate::api::order_types::{Order, OrderBucketType, OrderP};
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolType};
 use anyhow::Result;
@@ -88,19 +88,31 @@ impl PositionAcquisition {
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
 	protocols_spec: Vec<FollowupProtocol>,
-	open_orders: OpenOrders,
+	target_orders: TargetOrders,
 	closed_notional: f64,
 }
-#[derive(Debug)]
-struct OpenOrders {
-	normal: f64,
-	stop: f64,
-}
 /// Internal representation of desired orders. The actual orders are synchronized to this, so any details of actual execution are mostly irrelevant.
-struct Orders {
-	total_notional: f64,
+/// Thus these orders have no actual ID; only being tagged with what protocol spawned them.
+#[derive(Debug, Default)]
+struct TargetOrders {
+	stop_orders_total_notional: f64,
+	normal_orders_total_notional: f64,
+	market_orders_total_notional: f64,
 	//total_usd: f64,
 	orders: Vec<Order>,
+}
+impl TargetOrders {
+	//TODO!!!!!!!!!: after updating orders internally, send a channeled message with new state of target_orders right from here \
+	fn update_orders(&mut self, orders: Vec<Order>) {
+		for order in orders.into_iter() {
+			match order.order_bucket_type() {
+				OrderBucketType::Stop => self.stop_orders_total_notional += order.notional(),
+				OrderBucketType::Normal => self.normal_orders_total_notional += order.notional(),
+				OrderBucketType::Market => self.market_orders_total_notional += order.notional(),
+			}
+			self.orders.push(order);
+		}
+	}
 }
 
 impl PositionFollowup {
@@ -119,6 +131,7 @@ impl PositionFollowup {
 
 		let mut all_requested: HashMap<String, Vec<Order>> = HashMap::new();
 		let mut closed_notional = 0.0;
+		let mut target_orders = TargetOrders::default();
 
 		while let Ok((order_batch, uid)) = rx_orders.recv() {
 			let protocol = FollowupProtocol::from_str(&uid).unwrap();
@@ -136,45 +149,77 @@ impl PositionFollowup {
 			let mut stop_orders = Vec::new();
 			let mut normal_orders = Vec::new();
 			let mut market_orders = Vec::new();
-			for (key, value) in all_requested.iter() {
-				value.into_iter().for_each(|o| match o.is_stop_order() {
-					Some(__s) => match __s {
-						true => stop_orders.push(o),
-						false => normal_orders.push(o),
-					},
-					None => market_orders.push(o),
+			for (_key, value) in all_requested.iter() {
+				value.into_iter().for_each(|o| match o.order_bucket_type() {
+					OrderBucketType::Stop => stop_orders.push(o),
+					OrderBucketType::Normal => normal_orders.push(o),
+					OrderBucketType::Market => market_orders.push(o),
 				});
 			}
+
+			let mut left_to_target_full_notional = acquired.acquired_notional - closed_notional;
+			let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
+			let mut new_target_orders: Vec<(Order, OrderBucketType)> = Vec::new();
+
+			let mut update_target_orders = |orders: Vec<&Order>, bucket_type: OrderBucketType| {
+				for order in orders {
+					let notional = order.notional();
+					let compare_against = match bucket_type {
+						OrderBucketType::Stop => left_to_target_spot_notional,
+						OrderBucketType::Normal => left_to_target_normal_notional,
+						OrderBucketType::Market => left_to_target_full_notional,
+					};
+					let mut order = order.clone();
+					if notional > compare_against {
+						order.cut_size(compare_against);
+					}
+					new_target_orders.push((order.clone(), bucket_type.clone()));
+					match bucket_type {
+						OrderBucketType::Stop => left_to_target_spot_notional -= notional,
+						OrderBucketType::Normal => left_to_target_normal_notional -= notional,
+						OrderBucketType::Market => {
+							//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
+							left_to_target_full_notional -= notional;
+							left_to_target_spot_notional -= notional;
+							left_to_target_normal_notional -= notional;
+						}
+					}
+					assert!(
+						left_to_target_spot_notional >= 0.0,
+						"I messed up the code: Market orders must be ran through here first"
+					);
+					assert!(
+						left_to_target_normal_notional >= 0.0,
+						"I messed up the code: Market orders must be ran through here first"
+					);
+				}
+			};
+
+			//NB: market-like orders MUST be ran first!
+			update_target_orders(market_orders, OrderBucketType::Market);
+
+			match acquired._spec.side {
+				Side::Buy => {
+					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+					normal_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+				}
+				Side::Sell => {
+					stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+					normal_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+				}
+			}
+			update_target_orders(stop_orders, OrderBucketType::Stop);
+			update_target_orders(normal_orders, OrderBucketType::Normal);
+
+			target_orders.update_orders(new_target_orders.into_iter().map(|(o, _)| o).collect());
 		}
 
-		let left_notional = acquired.acquired_notional - closed_notional;
-		// both stop and normal orders that we choose should add up to this indiviudally. If any on the border - we cut it.
-
-		// all market orders shall be executed immediately, before others are processed
-
-		// direction of sorting is determined by the side of the position
-		// if Buy, sort stop orders in descending order, if Sell, sort stop orders in ascending order. Opposite for normal orders.
-		match acquired._spec.side {
-			Side::Buy => {
-				stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-				normal_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-			}
-			Side::Sell => {
-				stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-				normal_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-			}
-		}
-
-		let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
-		let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
-
-		//let _ = binance::post_futures_orders(full_key.clone(), full_secret.clone(), orders).await?;
-
-		Ok(Self {
-			_acquisition: acquired,
-			protocols_spec: None,
-			cache: None,
-		})
+		//Ok(Self {
+		//	_acquisition: acquired,
+		//	protocols_spec: None,
+		//	cache: None,
+		//})
+		todo!()
 	}
 }
 

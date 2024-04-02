@@ -6,9 +6,13 @@ use v_utils::trades::Side;
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
-pub trait OrderStuff {
-	fn is_stop_order(&self) -> Option<bool>;
-	fn price(&self) -> Result<f64>;
+// I rarely want to post actual market orders, but most of the time it's going to be above-the-ask limit. Thus I need to somehow mark `effectively_market` orders.
+// probably will add a mark that alters a function returning the order_bucket_type of initialized order. No clue how though.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrderBucketType {
+	Market,
+	Normal,
+	Stop,
 }
 
 /// Generics for defining order types and their whereabouts. Specific `size` and `market` are to be added in the api-specific part of the implementation.
@@ -18,54 +22,55 @@ pub enum Order {
 	Limit(Limit),
 	StopMarket(StopMarket),
 }
-impl OrderStuff for Order {
-	fn is_stop_order(&self) -> Option<bool> {
+impl Order {
+	pub fn order_bucket_type(&self) -> OrderBucketType {
 		match self {
-			Order::Market(m) => m.is_stop_order(),
-			Order::Limit(l) => l.is_stop_order(),
-			Order::StopMarket(s) => s.is_stop_order(),
+			Order::Market(_) => OrderBucketType::Market,
+			Order::Limit(_) => OrderBucketType::Normal,
+			Order::StopMarket(_) => OrderBucketType::Stop,
 		}
 	}
-	fn price(&self) -> Result<f64> {
+
+	pub fn price(&self) -> Result<f64> {
 		match self {
-			Order::Market(m) => m.price(),
-			Order::Limit(l) => l.price(),
-			Order::StopMarket(s) => s.price(),
+			Order::Market(_) => anyhow::bail!("Market orders don't have a price"),
+			Order::Limit(l) => Ok(l.price),
+			Order::StopMarket(s) => Ok(s.price),
+		}
+	}
+
+	pub fn notional(&self) -> f64 {
+		match self {
+			Order::Market(m) => m.qty_notional,
+			Order::Limit(l) => l.qty_notional,
+			Order::StopMarket(s) => s.qty_notional,
+		}
+	}
+
+	pub fn cut_size(&mut self, new: f64) {
+		match self {
+			Order::Market(m) => m.qty_notional = new,
+			Order::Limit(l) => l.qty_notional = new,
+			Order::StopMarket(s) => s.qty_notional = new,
 		}
 	}
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Market {
 	pub owner: String,
 	pub symbol: Symbol,
 	pub side: Side,
-	pub size_notional: f64,
+	pub qty_notional: f64,
 }
-impl OrderStuff for Market {
-	fn is_stop_order(&self) -> Option<bool> {
-		None
-	}
-	fn price(&self) -> Result<f64> {
-		anyhow::bail!("Market orders don't have a price")
-	}
-}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StopMarket {
 	pub owner: String,
 	pub symbol: Symbol,
 	pub side: Side,
 	pub price: f64,
-	pub size_notional: f64,
-}
-impl OrderStuff for StopMarket {
-	fn is_stop_order(&self) -> Option<bool> {
-		Some(true)
-	}
-	fn price(&self) -> Result<f64> {
-		Ok(self.price)
-	}
+	pub qty_notional: f64,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limit {
@@ -73,15 +78,7 @@ pub struct Limit {
 	pub symbol: Symbol,
 	pub side: Side,
 	pub price: f64,
-	pub size_notional: f64,
-}
-impl OrderStuff for Limit {
-	fn is_stop_order(&self) -> Option<bool> {
-		Some(false)
-	}
-	fn price(&self) -> Result<f64> {
-		Ok(self.price)
-	}
+	pub qty_notional: f64,
 }
 
 //=============================================================================
@@ -117,7 +114,7 @@ impl MarketP {
 		Market {
 			symbol: self.symbol,
 			side: self.side,
-			size_notional: total_controled_size * self.percent_size,
+			qty_notional: total_controled_size * self.percent_size,
 			owner,
 		}
 	}
@@ -137,7 +134,7 @@ impl StopMarketP {
 			symbol: self.symbol,
 			side: self.side,
 			price: self.price,
-			size_notional: total_controled_size * self.percent_size,
+			qty_notional: total_controled_size * self.percent_size,
 			owner,
 		}
 	}
@@ -157,7 +154,7 @@ impl LimitP {
 			symbol: self.symbol,
 			side: self.side,
 			price: self.price,
-			size_notional: total_controled_size * self.percent_size,
+			qty_notional: total_controled_size * self.percent_size,
 			owner,
 		}
 	}
