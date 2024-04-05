@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use crate::api::{Market, Order};
+use crate::api::{Market, ConceptualOrder};
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -70,12 +70,12 @@ pub enum BinanceOrder {
 	TakeProfitLimit,
 	LimitMaker,
 }
-impl From<Order> for BinanceOrder {
-	fn from(order_type: Order) -> Self {
+impl From<ConceptualOrder> for BinanceOrder {
+	fn from(order_type: ConceptualOrder) -> Self {
 		match order_type {
-			Order::Market(_) => unimplemented!(),
-			Order::Limit(_) => unimplemented!(),
-			Order::StopMarket(_) => unimplemented!(),
+			ConceptualOrder::Market(_) => unimplemented!(),
+			ConceptualOrder::Limit(_) => unimplemented!(),
+			ConceptualOrder::StopMarket(_) => unimplemented!(),
 			//OrderType::StopLimit(_) => unimplemented!(),
 			//OrderType::TakeProfit(_) => unimplemented!(),
 			//OrderType::TakeProfitLimit(_) => unimplemented!(),

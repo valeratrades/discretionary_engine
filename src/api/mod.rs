@@ -1,8 +1,9 @@
 pub mod binance;
+use uuid::Uuid;
 pub mod order_types;
 use crate::config::Config;
 use anyhow::Result;
-use order_types::Order;
+use order_types::ConceptualOrder;
 use url::Url;
 use v_utils::macros::graphemics;
 
@@ -30,6 +31,20 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 	Ok(quantity_adjusted)
 }
 
+// Orders struct
+// needs to:
+//	+ receive updates of the target order placement
+// 	+ send back the total_notional of an executed order immmediately
+// 		- I probably want a mechanic for ensuring that the side requesting target_orders update is aware of the last close. Do I just attach a uuid, and then check if the same one is sent with the order update?
+//		- ? But how the fuck would we know which orders to exclude from target????
+// 		- ? And then after being told that an order is closed, I need to subtract it from the total size allocated to the according protocol.
+// 	+ well, do the execution, and in a manner that the target order distribution can be updated midway
+
+pub struct ActualOrders {
+	pub snapshot_target_orders: Vec<ConceptualOrder>,
+	pub current_uuid: Uuid,
+	// channel here somehow. Needs to go both ways.
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -101,7 +116,7 @@ impl std::str::FromStr for Symbol {
 /// Later on the submission engine just looks at the market, and creates according api-specific structure. However, user only sees this.
 #[derive(Debug, Clone)]
 pub struct OrderSpec {
-	pub order: Order,
+	pub order: ConceptualOrder,
 	pub name: String,
 }
 //? would it not make more sense to just pass around tuples (OrderType, String), where String is obviously name. Might be simpler and actually more explicit than having yet another struct.

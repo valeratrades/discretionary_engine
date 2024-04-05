@@ -1,10 +1,12 @@
-use crate::api::order_types::{Order, OrderBucketType, OrderP};
+use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents};
 use crate::api::{binance, Symbol};
-use crate::protocols::{FollowupProtocol, ProtocolType};
+use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::str::FromStr;
+use tokio::select;
 use tracing::{info, instrument};
+use uuid::Uuid;
 use v_utils::trades::Side;
 
 /// What the Position _*is*_
@@ -88,9 +90,9 @@ impl PositionAcquisition {
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
 	protocols_spec: Vec<FollowupProtocol>,
-	target_orders: TargetOrders,
 	closed_notional: f64,
 }
+
 /// Internal representation of desired orders. The actual orders are synchronized to this, so any details of actual execution are mostly irrelevant.
 /// Thus these orders have no actual ID; only being tagged with what protocol spawned them.
 #[derive(Debug, Default)]
@@ -99,20 +101,27 @@ struct TargetOrders {
 	normal_orders_total_notional: f64,
 	market_orders_total_notional: f64,
 	//total_usd: f64,
-	orders: Vec<Order>,
+	orders: Vec<ConceptualOrder>,
 }
 impl TargetOrders {
 	//TODO!!!!!!!!!: after updating orders internally, send a channeled message with new state of target_orders right from here \
-	fn update_orders(&mut self, orders: Vec<Order>) {
+	// vec of actual orders can be created on the spot, as we don't care if we accidentially close exposure openned by a different order.
+	// If the distribution of orders to exact exchanges doesn't pertain after the start, there will just be a decision layer for whether we move an existing order in price, or open a new one on a different exchange.
+	// there are also some edge-cases where the order could be too small, and this should be handled on the exchange_api side.
+	// equally so, the maximum update frequency of orders set by exchange shall too be tracked by the execution algorithm.
+
+	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
+	fn update_orders(&mut self, orders: Vec<ConceptualOrder>) {
 		for order in orders.into_iter() {
-			match order.order_bucket_type() {
-				OrderBucketType::Stop => self.stop_orders_total_notional += order.notional(),
-				OrderBucketType::Normal => self.normal_orders_total_notional += order.notional(),
-				OrderBucketType::Market => self.market_orders_total_notional += order.notional(),
+			match order {
+				ConceptualOrder::StopMarket(_) => self.stop_orders_total_notional += order.notional(),
+				ConceptualOrder::Limit(_) => self.normal_orders_total_notional += order.notional(),
+				ConceptualOrder::Market(_) => self.market_orders_total_notional += order.notional(),
 			}
 			self.orders.push(order);
 		}
 	}
+	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
 impl PositionFollowup {
@@ -124,60 +133,68 @@ impl PositionFollowup {
 			*counted_subtypes.entry(subtype).or_insert(0) += 1;
 		}
 
-		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<(Vec<OrderP>, String)>();
-		for protocol in protocols {
+		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<ProtocolOrders>();
+		for protocol in protocols.clone() {
 			protocol.attach(tx_orders.clone(), &acquired._spec)?;
 		}
 
-		let mut all_requested: HashMap<String, Vec<Order>> = HashMap::new();
+		let mut all_requested: HashMap<String, ProtocolOrders> = HashMap::new();
+		let mut all_requested_unrolled: HashMap<String, Vec<ConceptualOrder>> = HashMap::new();
 		let mut closed_notional = 0.0;
 		let mut target_orders = TargetOrders::default();
 
-		while let Ok((order_batch, uid)) = rx_orders.recv() {
-			let protocol = FollowupProtocol::from_str(&uid).unwrap();
+		let mut all_fills: HashMap<Uuid, f64> = HashMap::new();
+
+		let mut update_unrolled = |update_on: String| {
+			let protocol = FollowupProtocol::from_str(&update_on).unwrap();
 			let subtype = protocol.get_subtype();
 			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
 			let total_controlled_size = acquired.acquired_notional * size_multiplier;
 
-			let order_batch = order_batch
-				.into_iter()
-				.map(|o| o.to_exact(total_controlled_size, uid.clone()))
-				.collect::<Vec<Order>>();
+			let mut mask = all_requested[&update_on].empty_mask();
+			for (key, value) in mask {
+				if all_fills.contains_key(&key) {
+					mask.insert(key, *all_fills.get(&key).unwrap());
+				}
+			}
+			let order_batch = all_requested[&update_on].apply_mask(mask, total_controlled_size);
+			all_requested_unrolled.insert(update_on, order_batch);
+		};
 
-			all_requested.insert(uid, order_batch);
-
-			let mut stop_orders = Vec::new();
-			let mut normal_orders = Vec::new();
+		let mut update_target_orders = || {
 			let mut market_orders = Vec::new();
-			for (_key, value) in all_requested.iter() {
-				value.into_iter().for_each(|o| match o.order_bucket_type() {
-					OrderBucketType::Stop => stop_orders.push(o),
-					OrderBucketType::Normal => normal_orders.push(o),
-					OrderBucketType::Market => market_orders.push(o),
+			let mut stop_orders = Vec::new();
+			let mut limit_orders = Vec::new();
+			for (_key, value) in all_requested_unrolled {
+				value.into_iter().for_each(|o| match o {
+					ConceptualOrder::StopMarket(_) => stop_orders.push(o),
+					ConceptualOrder::Limit(_) => limit_orders.push(o),
+					ConceptualOrder::Market(_) => market_orders.push(o),
 				});
 			}
 
 			let mut left_to_target_full_notional = acquired.acquired_notional - closed_notional;
 			let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
-			let mut new_target_orders: Vec<(Order, OrderBucketType)> = Vec::new();
+			let mut new_target_orders: Vec<ConceptualOrder> = Vec::new();
 
-			let mut update_target_orders = |orders: Vec<&Order>, bucket_type: OrderBucketType| {
+			// orders should be all of the same conceptual type (no idea how to enforce it)
+			let mut update_target_orders = |orders: Vec<ConceptualOrder>| {
 				for order in orders {
 					let notional = order.notional();
-					let compare_against = match bucket_type {
-						OrderBucketType::Stop => left_to_target_spot_notional,
-						OrderBucketType::Normal => left_to_target_normal_notional,
-						OrderBucketType::Market => left_to_target_full_notional,
+					let compare_against = match order {
+						ConceptualOrder::StopMarket(_) => left_to_target_spot_notional,
+						ConceptualOrder::Limit(_) => left_to_target_normal_notional,
+						ConceptualOrder::Market(_) => left_to_target_full_notional,
 					};
 					let mut order = order.clone();
 					if notional > compare_against {
 						order.cut_size(compare_against);
 					}
-					new_target_orders.push((order.clone(), bucket_type.clone()));
-					match bucket_type {
-						OrderBucketType::Stop => left_to_target_spot_notional -= notional,
-						OrderBucketType::Normal => left_to_target_normal_notional -= notional,
-						OrderBucketType::Market => {
+					new_target_orders.push(order.clone());
+					match order {
+						ConceptualOrder::StopMarket(_) => left_to_target_spot_notional -= notional,
+						ConceptualOrder::Limit(_) => left_to_target_normal_notional -= notional,
+						ConceptualOrder::Market(_) => {
 							//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
 							left_to_target_full_notional -= notional;
 							left_to_target_spot_notional -= notional;
@@ -196,30 +213,47 @@ impl PositionFollowup {
 			};
 
 			//NB: market-like orders MUST be ran first!
-			update_target_orders(market_orders, OrderBucketType::Market);
+			update_target_orders(market_orders);
 
 			match acquired._spec.side {
 				Side::Buy => {
 					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-					normal_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+					limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
 				}
 				Side::Sell => {
 					stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-					normal_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+					limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
 				}
 			}
-			update_target_orders(stop_orders, OrderBucketType::Stop);
-			update_target_orders(normal_orders, OrderBucketType::Normal);
+			update_target_orders(stop_orders);
+			update_target_orders(limit_orders);
 
-			target_orders.update_orders(new_target_orders.into_iter().map(|(o, _)| o).collect());
+			target_orders.update_orders(new_target_orders);
+		};
+
+		//TODO!: figure out abort when all closed.
+		loop {
+			select! {
+				Some(protocol_orders) = rx_orders.recv() => {
+					all_requested.insert(protocol_orders.produced_by.clone(), protocol_orders.clone());
+					update_unrolled(protocol_orders.produced_by.clone());
+					update_target_orders();
+				},
+				Some((protocol_order_id, filled_notional)) = rx_fills.recv() => {
+					all_fills.insert(protocol_order_id.uuid, filled_notional);
+					update_unrolled(protocol_order_id.produced_by.clone());
+					update_target_orders();
+				},
+				// This happens if all channels are closed.
+				else => break,
+			}
 		}
 
-		//Ok(Self {
-		//	_acquisition: acquired,
-		//	protocols_spec: None,
-		//	cache: None,
-		//})
-		todo!()
+		Ok(Self {
+			_acquisition: acquired,
+			protocols_spec: protocols,
+			closed_notional,
+		})
 	}
 }
 

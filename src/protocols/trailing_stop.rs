@@ -4,18 +4,19 @@ use crate::api::{
 	Market, Symbol,
 };
 use crate::positions::PositionSpec;
-use crate::protocols::{ProtocolType, Protocol};
+use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::str::FromStr;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, str::FromStr};
 use tokio_tungstenite::connect_async;
+use uuid::Uuid;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrailingStopWrapper {
 	params: Arc<Mutex<TrailingStop>>,
 }
@@ -34,7 +35,7 @@ impl Protocol for TrailingStopWrapper {
 	type Params = TrailingStop;
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
-	fn attach(&self, tx_orders: mpsc::Sender<(Vec<OrderP>, String)>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
 		let symbol = Symbol {
 			base: position_spec.asset.clone(),
 			quote: "USDT".to_owned(),
@@ -44,6 +45,32 @@ impl Protocol for TrailingStopWrapper {
 
 		let params = self.params.clone();
 		let position_spec = position_spec.clone();
+
+		// a thing that uniquely marks all the semantic orders of the grid the protocol may want to place.
+		let mut order_mask: HashMap<Uuid, Option<ConceptualOrderPercents>> = HashMap::new();
+		let stop_market_uuid = Uuid::new_v4();
+		order_mask.insert(stop_market_uuid.clone(), None);
+
+		macro_rules! send_orders {
+			($target_price:expr, $side:expr) => {{
+				let protocol_spec = params.lock().unwrap().to_string();
+				let mut orders = order_mask.clone();
+
+				orders.insert(
+					stop_market_uuid,
+					Some(ConceptualOrderPercents::StopMarket(ConceptualStopMarketPercents {
+						symbol: symbol.clone(),
+						side: $side,
+						price: $target_price,
+						percent_size: 1.0,
+						maximum_slippage_percent: 1.0,
+					})),
+				);
+
+				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
+				tx_orders.send(protocol_orders).unwrap();
+			}};
+		}
 
 		tokio::spawn(async move {
 			let price = binance::futures_price(&symbol.base).await.unwrap();
@@ -67,16 +94,7 @@ impl Protocol for TrailingStopWrapper {
 									Side::Buy => {}
 									Side::Sell => {
 										let target_price = price + price * params.lock().unwrap().percent.abs();
-										let uid = params.lock().unwrap().to_string();
-										let _ = tx_orders.send((
-											vec![OrderP::StopMarket(StopMarketP {
-												symbol: symbol.clone(),
-												side: Side::Buy,
-												price: target_price,
-												percent_size: 1.0,
-											})],
-											uid.clone(),
-										));
+										send_orders!(target_price, Side::Buy);
 									}
 								}
 							}
@@ -85,16 +103,7 @@ impl Protocol for TrailingStopWrapper {
 								match side {
 									Side::Buy => {
 										let target_price = price - price * params.lock().unwrap().percent.abs();
-										let uid = params.lock().unwrap().to_string();
-										let _ = tx_orders.send((
-											vec![OrderP::StopMarket(StopMarketP {
-												symbol: symbol.clone(),
-												side: Side::Sell,
-												price: target_price,
-												percent_size: 1.0,
-											})],
-											uid.clone(),
-										));
+										send_orders!(target_price, Side::Buy);
 									}
 									Side::Sell => {}
 								}
