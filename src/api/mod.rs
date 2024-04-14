@@ -1,7 +1,7 @@
 pub mod binance;
 use uuid::Uuid;
 pub mod order_types;
-use crate::config::Config;
+use crate::{config::Config, PositionCallback};
 use anyhow::Result;
 use order_types::ConceptualOrder;
 use url::Url;
@@ -34,11 +34,52 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 // Orders struct
 // needs to:
 //	+ receive updates of the target order placement
-// 	+ send back the total_notional of an executed order immmediately
-// 		- I probably want a mechanic for ensuring that the side requesting target_orders update is aware of the last close. Do I just attach a uuid, and then check if the same one is sent with the order update?
-//		- ? But how the fuck would we know which orders to exclude from target????
-// 		- ? And then after being told that an order is closed, I need to subtract it from the total size allocated to the according protocol.
+// 	+ send back the total_notional of an executed order immediately
+
 // 	+ well, do the execution, and in a manner that the target order distribution can be updated midway
+// So in practice, we want to write to a local Arc<Mutex<T>>, which contains updated target orders for each exchange, which are uploaded according to the maximum frequency they allow.
+
+//TODO!: require providing id of the position of origin.
+/// the global access rx for this is shared among all positions. Each position provides a watch::Sender, to receiver
+/// Currently hard-codes for a single position.
+pub fn i_have_no_clue_how_to_represent_this(rx: mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+	//- merge new recv() with the rest of the known orders globally across all positions.
+
+	//- translate all into exact actual orders on specific exchanges if we were placing them now.
+	// // each ActualOrder must pertain the id of the ConceptualOrder instance it is expressing
+
+	//- compare with the current, calculate the costs of moving (tx between exchanges, latency exposure, spinning the limit), produce final target actual orders for each exchange.
+
+	//- send the batch of new exact orders to the controlling runtime of each exchange.
+	// // these are started locally, as none can be initiated through other means.
+
+	// let mut orders = HashMap::new();
+	// let mut total_notional = 0.0;
+	// let mut total_notional_executed = 0.0;
+	// let mut total_notional_remaining = 0.0;
+
+	// loop {
+	// 	let order = rx.recv().unwrap();
+	// 	match order {
+	// 		ConceptualOrder::Market(m) => {
+	// 			total_notional += m.qty_notional;
+	// 			total_notional_remaining += m.qty_notional;
+	// 		}
+	// 		ConceptualOrder::Limit(l) => {
+	// 			total_notional += l.qty_notional;
+	// 			total_notional_remaining += l.qty_notional;
+	// 		}
+	// 		ConceptualOrder::StopMarket(s) => {
+	// 			total_notional += s.qty_notional;
+	// 			total_notional_remaining += s.qty_notional;
+	// 		}
+	// 	}
+	// }
+}
+
+// translation layer: Vec<ConceptualOrder> -> ActualOrders
+
+// want one runtime handling all of the positions at once, so as not to have to impose artificial requirements on positions containing the same ticker.
 
 pub struct ActualOrders {
 	pub snapshot_target_orders: Vec<ConceptualOrder>,

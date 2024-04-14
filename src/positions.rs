@@ -111,7 +111,8 @@ impl TargetOrders {
 	// equally so, the maximum update frequency of orders set by exchange shall too be tracked by the execution algorithm.
 
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
-	fn update_orders(&mut self, orders: Vec<ConceptualOrder>) {
+	/// Never fails, instead the errors are sent over the channel.
+	fn update_orders(&mut self, orders: Vec<ConceptualOrder>, sender: std::sync::mpsc::Sender<Vec<ConceptualOrder>>) {
 		for order in orders.into_iter() {
 			match order {
 				ConceptualOrder::StopMarket(_) => self.stop_orders_total_notional += order.notional(),
@@ -120,8 +121,16 @@ impl TargetOrders {
 			}
 			self.orders.push(order);
 		}
+		sender.send(self.orders.clone()).unwrap();
 	}
 	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
+}
+
+/// A thing we listen for fills through
+#[derive(Deebug, Hash, Clone)]
+pub struct PositionCallback {
+	sender: std::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>, // stands for "this nominal qty filled on this protocol order"
+	position_uuid: Uuid,
 }
 
 impl PositionFollowup {
