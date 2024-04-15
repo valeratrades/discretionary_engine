@@ -1,13 +1,13 @@
 pub mod binance;
 use uuid::Uuid;
 pub mod order_types;
-use crate::{config::Config, PositionCallback};
+use crate::{config::AppConfig, PositionCallback};
 use anyhow::Result;
 use order_types::ConceptualOrder;
 use url::Url;
 use v_utils::macros::graphemics;
 
-pub async fn compile_total_balance(config: Config) -> Result<f64> {
+pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
 	let read_secret = config.binance.read_secret.clone();
 
@@ -43,6 +43,8 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 /// the global access rx for this is shared among all positions. Each position provides a watch::Sender, to receiver
 /// Currently hard-codes for a single position.
 pub fn i_have_no_clue_how_to_represent_this(rx: mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+	//- init the runtime of exchanges
+
 	//- merge new recv() with the rest of the known orders globally across all positions.
 
 	//- translate all into exact actual orders on specific exchanges if we were placing them now.

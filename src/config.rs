@@ -1,40 +1,18 @@
 use anyhow::{Context, Result};
+use config::{Conifg, File};
 use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
-use v_utils::io::ExpandedPath;
+use v_utils::{io::ExpandedPath, macros::PrivateValues};
 
-impl TryFrom<ExpandedPath> for Config {
-	type Error = anyhow::Error;
-
-	fn try_from(path: ExpandedPath) -> Result<Self> {
-		let raw_config_str = std::fs::read_to_string(&path).with_context(|| format!("Failed to read config file at {:?}", path))?;
-
-		let raw_config: RawConfig = toml::from_str(&raw_config_str)
-			.with_context(|| "The config file is not correctly formatted TOML\nand/or\n is missing some of the required fields")?;
-
-		let config: Config = raw_config.process()?;
-		let _ = std::fs::create_dir_all(&config.positions_dir)
-			.with_context(|| format!("Failed to create positions directory at {:?}", config.positions_dir))?;
-
-		Ok(config)
-	}
-}
-
-//-----------------------------------------------------------------------------
-// Processed Config
-//-----------------------------------------------------------------------------
-
-/// Conifig parses from toml file.
-/// Some of the Values that are best kept private could be specified both as a string and as an environment variable. For example exchange API keys.
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	pub binance: Binance,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PrivateValues)]
 pub struct Binance {
 	pub full_key: String,
 	pub full_secret: String,
@@ -42,91 +20,18 @@ pub struct Binance {
 	pub read_secret: String,
 }
 
-//-----------------------------------------------------------------------------
-// Raw Config
-//-----------------------------------------------------------------------------
+impl AppConfig {
+	pub fn new(path: ExpandedPath) -> Result<Self, ConfigError> {
+		let builder = config::Config::builder()
+			.set_default("comparison_offset_h", 24)?
+			.add_source(File::with_name(&path.to_string()));
 
-#[derive(Deserialize, Clone, Debug)]
-pub struct RawConfig {
-	pub positions_dir: ExpandedPath,
-	pub binance: RawBinance,
-}
-impl RawConfig {
-	pub fn process(&self) -> Result<Config> {
-		Ok(Config {
-			positions_dir: self.positions_dir.0.clone(),
-			binance: self.binance.process()?,
-		})
-	}
-}
+		let settings: config::Config = builder.build()?;
+		let settings: Self = settings.try_deserialize()?;
 
-#[derive(Deserialize, Clone, Debug)]
-pub struct RawBinance {
-	pub full_key: PrivateValue,
-	pub full_secret: PrivateValue,
-	pub read_key: PrivateValue,
-	pub read_secret: PrivateValue,
-}
-impl RawBinance {
-	pub fn process(&self) -> Result<Binance> {
-		Ok(Binance {
-			full_key: self.full_key.process()?,
-			full_secret: self.full_secret.process()?,
-			read_key: self.read_key.process()?,
-			read_secret: self.read_secret.process()?,
-		})
-	}
-}
+		let _ = std::fs::create_dir_all(&settings.positions_dir)
+			.with_context(|| format!("Failed to create positions directory at {:?}", config.positions_dir))?;
 
-//TODO!: either figure out how to do the same with `config` crate, either move PrivateValue into my own.
-#[derive(Clone, Debug)]
-pub enum PrivateValue {
-	String(String),
-	Env { env: String },
-}
-impl PrivateValue {
-	pub fn process(&self) -> Result<String> {
-		match self {
-			PrivateValue::String(s) => Ok(s.clone()),
-			PrivateValue::Env { env } => std::env::var(env).with_context(|| format!("Environment variable '{}' not found", env)),
-		}
-	}
-}
-impl<'de> Deserialize<'de> for PrivateValue {
-	fn deserialize<D>(deserializer: D) -> Result<PrivateValue, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
-		struct PrivateValueVisitor;
-
-		impl<'de> Visitor<'de> for PrivateValueVisitor {
-			type Value = PrivateValue;
-
-			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-				formatter.write_str("a string or a map with a single key 'env'")
-			}
-
-			fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-			where
-				E: de::Error,
-			{
-				Ok(PrivateValue::String(value.to_owned()))
-			}
-
-			fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-			where
-				M: de::MapAccess<'de>,
-			{
-				let key: String = access.next_key()?.ok_or_else(|| de::Error::custom("expected a key"))?;
-				if key == "env" {
-					let value: String = access.next_value()?;
-					Ok(PrivateValue::Env { env: value })
-				} else {
-					Err(de::Error::custom("expected key to be 'env'"))
-				}
-			}
-		}
-
-		deserializer.deserialize_any(PrivateValueVisitor)
+		Ok(settings)
 	}
 }

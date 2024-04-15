@@ -4,7 +4,7 @@ pub mod positions;
 pub mod protocols;
 pub mod utils;
 use clap::{Args, Parser, Subcommand};
-use config::Config;
+use config::AppConfig;
 use positions::*;
 use protocols::FollowupProtocols;
 use v_utils::{
@@ -53,7 +53,7 @@ struct PositionArgs {
 async fn main() {
 	utils::init_subscriber();
 	let cli = Cli::parse();
-	let config = match Config::try_from(cli.config) {
+	let config = match AppConfig::try_from(cli.config) {
 		Ok(cfg) => cfg,
 		Err(e) => {
 			eprintln!("Loading config failed: {}", e);
