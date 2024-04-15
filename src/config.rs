@@ -5,14 +5,14 @@ use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
-use v_utils::{io::ExpandedPath, macros::PrivateValues};
+use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	pub binance: Binance,
 }
-#[derive(Clone, Debug, PrivateValues)]
+#[derive(Clone, Debug, MyConfigPrimitives)]
 pub struct Binance {
 	pub full_key: String,
 	pub full_secret: String,
