@@ -7,7 +7,7 @@ use std::fmt;
 use std::path::PathBuf;
 use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, MyConfigPrimitives)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	pub binance: Binance,

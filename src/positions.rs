@@ -24,7 +24,7 @@ impl PositionSpec {
 
 #[derive(Debug)]
 pub struct PositionAcquisition {
-	_spec: PositionSpec,
+	spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
 	protocols_spec: Option<String>, //Vec<AcquisitionProtocol>,
@@ -32,7 +32,7 @@ pub struct PositionAcquisition {
 impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
-			_spec: spec,
+			spec,
 			target_notional: 10.0,
 			acquired_notional: 10.0,
 			protocols_spec: None,
@@ -48,16 +48,16 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 		info!(coin);
 
-		let current_price_handler = binance::futures_price(&coin);
-		let quantity_percision_handler = binance::futures_quantity_precision(&coin);
-		let current_price = current_price_handler.await?;
-		let quantity_precision: usize = quantity_percision_handler.await?;
+		let (current_price, quantity_precision) = tokio::join! {
+			binance::futures_price(&coin),
+			binance::futures_quantity_precision(&coin),
+		};
 		let factor = 10_f64.powi(quantity_precision as i32);
 		let coin_quantity = spec.size_usdt / current_price;
 		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
 		let mut current_state = Self {
-			_spec: spec.clone(),
+			spec: spec.clone(),
 			target_notional: coin_quantity_adjusted,
 			acquired_notional: 0.0,
 			protocols_spec: None,
@@ -74,7 +74,7 @@ impl PositionAcquisition {
 		.await?;
 		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 		loop {
-			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id.clone(), symbol.to_string()).await?;
+			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
 			if order.status == binance::OrderStatus::Filled {
 				let order_notional = order.origQty.parse::<f64>()?;
 				current_state.acquired_notional += order_notional;
@@ -144,7 +144,7 @@ impl PositionFollowup {
 
 		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<ProtocolOrders>();
 		for protocol in protocols.clone() {
-			protocol.attach(tx_orders.clone(), &acquired._spec)?;
+			protocol.attach(tx_orders.clone(), &acquired.spec)?;
 		}
 
 		let mut all_requested: HashMap<String, ProtocolOrders> = HashMap::new();
@@ -224,7 +224,7 @@ impl PositionFollowup {
 			//NB: market-like orders MUST be ran first!
 			update_target_orders(market_orders);
 
-			match acquired._spec.side {
+			match acquired.spec.side {
 				Side::Buy => {
 					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
 					limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
