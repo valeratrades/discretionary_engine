@@ -1,4 +1,25 @@
 # Discretionary Engine
+```mermaid
+flowchart TD
+    Protocol1 --> |Position| U
+    Protocol2 --> |Position| U
+    Protocol3 --> |Position| U
+    U[Recieve and insert updated request to HashMap<Protocol, Vec<ConceptualOrder>>] --> |select! in Position| R
+    
+    F[Recieved a notif of a fill back from the hub, //includes a random 
+    uuid and we can't resend new target without the uuid of the latest fill] --> |select! in Position| R
+
+    R(Translate all requested orders from percents to nominal sizing
+    and choose up to the max size of the position from closest to current price orders) --> |Hub| Hub
+    Hub(Receives updates on currently desired Vec<ConceptualOrder> from all Positions.
+    If Position sent correct uuid of the last fill on it, we recalculate the target HashMap
+    <Exchange, Order>, based on knowledge of the sizes,sides,symbol of each ConceptualOrder 
+    and liquidity, fees, E-of-latency, cost-of-moving-money-between-exchanges, etc., on each exchange)
+    Hub --> |update orders| A[BinanceFutures]
+    Hub --> |update orders| B[BinanceSpot]
+    Hub --> |update orders| C[BybitFutures]
+    Hub --> |update orders| D[Coinbase]
+```
 
 ## Usage
 Example query:
