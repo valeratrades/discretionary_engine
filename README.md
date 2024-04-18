@@ -1,24 +1,39 @@
 # Discretionary Engine
 ```mermaid
 flowchart TD
-    Protocol1 --> |Position| U
-    Protocol2 --> |Position| U
-    Protocol3 --> |Position| U
-    U[Recieve and insert updated request to HashMap<Protocol, Vec<ConceptualOrder>>] --> |select! in Position| R
-    
-    F[Recieved a notif of a fill back from the hub, //includes a random 
-    uuid and we can't resend new target without the uuid of the latest fill] --> |select! in Position| R
+    subgraph cluster_position_1 ["Position I"]
+        Protocol1_Params1 --> S
+        Protocol3_Params1 --> S
+        S --> |"Knowing how much
+        each protocol manages,
+        convert suggested orders,
+        (size as % of total under
+        protocol's management),
+        into notional sizes.
+        After choose up to
+        target position size
+        from them, so as to not
+        risk having additional
+        stale exposure"| Hub
+        F --> |"apply fill mask on ProtocolOrders
+        objects protocols are sending,
+        and refresh current suggested
+        orders on Position"| S
+        S["All suggested orders for this Position"]
+        F["Fill port of the Position"]
+    end
 
-    R(Translate all requested orders from percents to nominal sizing
-    and choose up to the max size of the position from closest to current price orders) --> |Hub| Hub
-    Hub(Receives updates on currently desired Vec<ConceptualOrder> from all Positions.
-    If Position sent correct uuid of the last fill on it, we recalculate the target HashMap
-    <Exchange, Order>, based on knowledge of the sizes,sides,symbol of each ConceptualOrder 
-    and liquidity, fees, E-of-latency, cost-of-moving-money-between-exchanges, etc., on each exchange)
-    Hub --> |update orders| A[BinanceFutures]
-    Hub --> |update orders| B[BinanceSpot]
-    Hub --> |update orders| C[BybitFutures]
-    Hub --> |update orders| D[Coinbase]
+    PositionII["Position II"] --> Hub
+    PositionIII["Position III"] --> Hub
+    Hub -->|"fill"| F
+    Hub --> BinanceFutures
+    BinanceFutures -->|"fill"| Hub
+    Hub --> BinanceSpot
+    BinanceSpot -->|"fill"| Hub
+    Hub --> BybitFutures
+    BybitFutures -->|"fill"| Hub
+    Hub --> Coinbase
+    Coinbase -->|"fill"| Hub
 ```
 
 ## Usage

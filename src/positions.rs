@@ -1,4 +1,4 @@
-use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents};
+use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
@@ -24,7 +24,7 @@ impl PositionSpec {
 
 #[derive(Debug)]
 pub struct PositionAcquisition {
-	spec: PositionSpec,
+	_spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
 	protocols_spec: Option<String>, //Vec<AcquisitionProtocol>,
@@ -32,7 +32,7 @@ pub struct PositionAcquisition {
 impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
-			spec,
+			_spec: spec,
 			target_notional: 10.0,
 			acquired_notional: 10.0,
 			protocols_spec: None,
@@ -52,12 +52,12 @@ impl PositionAcquisition {
 			binance::futures_price(&coin),
 			binance::futures_quantity_precision(&coin),
 		};
-		let factor = 10_f64.powi(quantity_precision as i32);
-		let coin_quantity = spec.size_usdt / current_price;
+		let factor = 10_f64.powi(quantity_precision? as i32);
+		let coin_quantity = spec.size_usdt / current_price?;
 		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
 
 		let mut current_state = Self {
-			spec: spec.clone(),
+			_spec: spec.clone(),
 			target_notional: coin_quantity_adjusted,
 			acquired_notional: 0.0,
 			protocols_spec: None,
@@ -126,17 +126,11 @@ impl TargetOrders {
 	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
-/// A thing we listen for fills through
-#[derive(Deebug, Hash, Clone)]
-pub struct PositionCallback {
-	sender: std::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>, // stands for "this nominal qty filled on this protocol order"
-	position_uuid: Uuid,
-}
-
 impl PositionFollowup {
 	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
+		let position_id = Uuid::new_v4();
 		for protocol in &protocols {
 			let subtype = protocol.get_subtype();
 			*counted_subtypes.entry(subtype).or_insert(0) += 1;
@@ -144,7 +138,7 @@ impl PositionFollowup {
 
 		let (tx_orders, rx_orders) = std::sync::mpsc::channel::<ProtocolOrders>();
 		for protocol in protocols.clone() {
-			protocol.attach(tx_orders.clone(), &acquired.spec)?;
+			protocol.attach(tx_orders.clone(), &acquired._spec)?;
 		}
 
 		let mut all_requested: HashMap<String, ProtocolOrders> = HashMap::new();
@@ -224,7 +218,7 @@ impl PositionFollowup {
 			//NB: market-like orders MUST be ran first!
 			update_target_orders(market_orders);
 
-			match acquired.spec.side {
+			match acquired._spec.side {
 				Side::Buy => {
 					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
 					limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
@@ -270,3 +264,9 @@ impl PositionFollowup {
 //	_followup: PositionFollowup,
 //	t_closed: DateTime<Utc>,
 //}
+
+#[derive(Debug, Hash, Clone)]
+pub struct PositionOrderId {
+	pub position_id: Uuid,
+	pub protocol_id: ProtocolOrderId,
+}

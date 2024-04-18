@@ -7,6 +7,40 @@ use v_utils::trades::Side;
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
+
+///NB: id of all orders must match uuid field of parent ConceptualOrder if any
+pub enum Order {
+	Market(MarketOrder),
+	StopMarket(StopMarketOrder),
+	//Limit(LimitOrder),
+	//StopLimit(StopLimitOrder),
+	//TrailingStop(TrailingStopOrder),
+	//TWAP(TWAPOrder),
+	//Reverse(ReverseOrder),
+	//ScaledOrder(ScaledOrder),
+	//StopMarket(StopMarketOrder),
+}
+
+pub struct MarketOrder {
+	pub id: Uuid,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub qty_notional: f64,
+}
+pub struct StopMarketOrder {
+	pub id: Uuid,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub price: f64,
+	pub qty_notional: f64,
+}
+
+
+
+//=============================================================================
+// Conceptual Orders
+//=============================================================================
+
 #[derive(Debug, Hash, Clone, PartialEq)]
 pub struct ProtocolOrderId {
 	pub produced_by: String,

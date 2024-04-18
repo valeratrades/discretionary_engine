@@ -156,9 +156,3 @@ impl ProtocolOrders {
 		orders
 	}
 }
-
-#[derive(Debug, Hash, Clone)]
-pub struct ProtocolOrderId {
-	produced_by: String,
-	uuid: Uuid,
-}

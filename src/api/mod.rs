@@ -1,11 +1,15 @@
 pub mod binance;
-use uuid::Uuid;
+use std::collections::HashMap;
+
 pub mod order_types;
 use crate::{config::AppConfig, PositionCallback};
 use anyhow::Result;
-use order_types::ConceptualOrder;
+use order_types::{ConceptualOrder, Order};
 use url::Url;
+use uuid::Uuid;
 use v_utils::macros::graphemics;
+
+use self::order_types::ProtocolOrderId;
 
 pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -31,21 +35,110 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 	Ok(quantity_adjusted)
 }
 
-// Orders struct
-// needs to:
-//	+ receive updates of the target order placement
-// 	+ send back the total_notional of an executed order immediately
-
-// 	+ well, do the execution, and in a manner that the target order distribution can be updated midway
-// So in practice, we want to write to a local Arc<Mutex<T>>, which contains updated target orders for each exchange, which are uploaded according to the maximum frequency they allow.
-
-//TODO!: require providing id of the position of origin.
 /// the global access rx for this is shared among all positions. Each position provides a watch::Sender, to receiver
 /// Currently hard-codes for a single position.
-pub fn i_have_no_clue_how_to_represent_this(rx: mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+pub fn i_have_no_clue_how_to_represent_this(rx: std::sync::mpsc::Receiver<(Vec<ConceptualOrder>, Uuid)>) {
 	//- init the runtime of exchanges
 
-	//- merge new recv() with the rest of the known orders globally across all positions.
+	let mut stupid_filled_one = false;
+
+	let mut callback: HashMap<Uuid, std::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
+	let mut known_orders: HashMap<Uuid, Vec<ConceptualOrder>> = HashMap::new();
+
+	while let Ok((new_orders, position_callback)) = rx.recv() {
+		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
+		known_orders.insert(position_callback, new_orders);
+
+		let mut actual_orders: HashMap<Market, Vec<Order>> = HashMap::new();
+		for (key, vec) in known_orders.iter() {
+			for o in vec {
+				match o {
+					ConceptualOrder::Market(market) => {
+						let order = Order::Market(order_types::MarketOrder {
+							id: market.id.uuid.clone(),
+							symbol: market.symbol.clone(),
+							side: market.side.clone(),
+							qty_notional: market.qty_notional,
+						});
+						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
+					}
+					ConceptualOrder::StopMarket(stop_market) => {
+						let order = Order::StopMarket(order_types::StopMarketOrder {
+							id: stop_market.id.uuid.clone(),
+							symbol: stop_market.symbol.clone(),
+							side: stop_market.side.clone(),
+							price: stop_market.price,
+							qty_notional: stop_market.qty_notional,
+						});
+						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
+					}
+					_ => panic!("Unsupported order type"),
+				}
+			}
+		}
+
+		for (key, vec) in actual_orders.iter() {
+			match key {
+				Market::BinanceSpot => todo!(),
+				Market::BinanceMargin => todo!(),
+				Market::BinanceFutures => {
+					//TODO!!!!!!: generalize and move to the binance module
+					if !stupid_filled_one {
+						let order = vec.get(0).unwrap();
+
+						let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+						let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+
+						let symbol = order.symbol.clone();
+						let (current_price, quantity_precision) = tokio::join! {
+							binance::futures_price(&coin),
+							binance::futures_quantity_precision(&coin),
+						};
+						let factor = 10_f64.powi(quantity_precision? as i32);
+						let coin_quantity = spec.size_usdt / current_price?;
+						let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
+
+						let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
+						info!(coin);
+
+						let (current_price, quantity_precision) = tokio::join! {
+							binance::futures_price(&coin),
+							binance::futures_quantity_precision(&coin),
+						};
+						let factor = 10_f64.powi(quantity_precision? as i32);
+						let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
+
+						let order_type_str = match order {
+							Order::Market(_) => "MARKET",
+							Order::StopMarket(_) => "STOP_MARKET",
+						}
+						.to_string();
+
+						let order_id = binance::post_futures_order(
+							full_key.clone(),
+							full_secret.clone(),
+							order_type_str,
+							order.symbol.to_string(),
+							order.side,
+							order.qty_notional,
+						)
+						.await?;
+						//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+						loop {
+							let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
+							if order.status == binance::OrderStatus::Filled {
+								let order_notional = order.origQty.parse::<f64>()?;
+								current_state.acquired_notional += order_notional;
+								break;
+							}
+						}
+
+						stupid_filled_one = true;
+					}
+				}
+			}
+		}
+	}
 
 	//- translate all into exact actual orders on specific exchanges if we were placing them now.
 	// // each ActualOrder must pertain the id of the ConceptualOrder instance it is expressing
@@ -55,38 +148,9 @@ pub fn i_have_no_clue_how_to_represent_this(rx: mpsc::Receiver<(Vec<ConceptualOr
 	//- send the batch of new exact orders to the controlling runtime of each exchange.
 	// // these are started locally, as none can be initiated through other means.
 
-	// let mut orders = HashMap::new();
-	// let mut total_notional = 0.0;
-	// let mut total_notional_executed = 0.0;
-	// let mut total_notional_remaining = 0.0;
+	// HashMap<Exchange, Vec<Order>> // On fill notif of an exchange, we find the according PositionCallback, by searching for ConceptualOrder with matching uuid
 
-	// loop {
-	// 	let order = rx.recv().unwrap();
-	// 	match order {
-	// 		ConceptualOrder::Market(m) => {
-	// 			total_notional += m.qty_notional;
-	// 			total_notional_remaining += m.qty_notional;
-	// 		}
-	// 		ConceptualOrder::Limit(l) => {
-	// 			total_notional += l.qty_notional;
-	// 			total_notional_remaining += l.qty_notional;
-	// 		}
-	// 		ConceptualOrder::StopMarket(s) => {
-	// 			total_notional += s.qty_notional;
-	// 			total_notional_remaining += s.qty_notional;
-	// 		}
-	// 	}
-	// }
-}
-
-// translation layer: Vec<ConceptualOrder> -> ActualOrders
-
-// want one runtime handling all of the positions at once, so as not to have to impose artificial requirements on positions containing the same ticker.
-
-pub struct ActualOrders {
-	pub snapshot_target_orders: Vec<ConceptualOrder>,
-	pub current_uuid: Uuid,
-	// channel here somehow. Needs to go both ways.
+	//+ hardcode following binance orders here
 }
 
 #[allow(dead_code)]
@@ -154,12 +218,3 @@ impl std::str::FromStr for Symbol {
 		})
 	}
 }
-
-/// Order spec and human-interpretable unique name of the structure requesting it. Ex: `"trailing_stop"`
-/// Later on the submission engine just looks at the market, and creates according api-specific structure. However, user only sees this.
-#[derive(Debug, Clone)]
-pub struct OrderSpec {
-	pub order: ConceptualOrder,
-	pub name: String,
-}
-//? would it not make more sense to just pass around tuples (OrderType, String), where String is obviously name. Might be simpler and actually more explicit than having yet another struct.
