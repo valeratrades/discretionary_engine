@@ -2,6 +2,7 @@ use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, Conceptu
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
+use derive_new::new;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -9,7 +10,6 @@ use tokio::select;
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
-use derive_new::new;
 
 /// What the Position _*is*_
 #[derive(Debug, Clone, new)]
@@ -56,19 +56,8 @@ impl PositionAcquisition {
 			protocols_spec: None,
 		};
 
-		let order = Order::new(
-			Uuid::new_v4(),
-			OrderType::Market,
-			symbol.clone(),
-			spec.side.clone(),
-			coin_quantity,
-		);
-		let order_id = binance::post_futures_order(
-			full_key.clone(),
-			full_secret.clone(),
-			order
-		)
-		.await?;
+		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side.clone(), coin_quantity);
+		let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;
 		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 		loop {
 			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
@@ -119,10 +108,10 @@ impl TargetOrders {
 			self.orders.push(order);
 		}
 		match crate::SENDER.send((self.orders.clone(), position_callback)).await {
-			Ok(_) => {},
+			Ok(_) => {}
 			Err(e) => {
 				info!("Error sending orders: {:?}", e);
-			},
+			}
 		};
 	}
 	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
@@ -246,6 +235,8 @@ impl PositionFollowup {
 				target_orders.update_orders(new_target_orders, position_callback.clone()).await;
 			}};
 		}
+
+		//TODO!!: move the handling of inner values inside a tokio task (protocol orders and fills update data inside an enum, and send it to the task)
 
 		//TODO!: figure out abort when all closed.
 		loop {
