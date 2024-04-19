@@ -126,6 +126,7 @@ async fn dirty_hardcoded_exec(order_spec: Order) -> Result<()> {
 	let factor = 10_f64.powi(quantity_precision.unwrap() as i32);
 	let coin_quantity_adjusted = (order_spec.qty_notional * factor).round() / factor;
 
+	//TODO!!!!!!!!!: binance transform layer for Order types
 	let order_type_str = match order_spec.order_type {
 		OrderType::Market => "MARKET",
 		OrderType::StopMarket(_) => "STOP_MARKET",
