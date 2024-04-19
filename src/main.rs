@@ -49,12 +49,11 @@ struct PositionArgs {
 }
 
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
-
 lazy_static! {
-	pub static ref SENDER: Mutex<tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)>> = {
+	pub static ref SENDER: tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> = {
 		let (tx, rx) = tokio::sync::mpsc::channel(32);
 		tokio::spawn(crate::api::hub_ish(rx));
-		Mutex::new(tx)
+		tx
 	};
 }
 
@@ -70,11 +69,6 @@ async fn main() {
 		}
 	};
 	//let noconfirm = cli.noconfirm;
-
-	// there's gotta be a better way to ensure lazy_static block is activated, but ehh
-	{
-		drop(SENDER.lock().unwrap());
-	}
 
 	match cli.command {
 		Commands::New(position_args) => {

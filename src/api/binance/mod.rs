@@ -1,6 +1,10 @@
 #![allow(non_snake_case, dead_code)]
-use crate::api::order_types::{Order, OrderType};
-use crate::api::{ConceptualOrder, Market};
+mod orders;
+
+pub use orders::*;
+
+use crate::api::order_types::Order;
+use crate::api::Market;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -11,7 +15,6 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
 use url::Url;
-use v_utils::trades::Side;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -59,43 +62,6 @@ pub async fn signed_request(
 		_ => panic!("Not implemented"),
 	};
 	Ok(r)
-}
-
-/// All the iteractions with submitting orders use this
-pub enum BinanceOrder {
-	Market,
-	Limit,
-	StopLoss,
-	StopLossLimit,
-	TakeProfit,
-	TakeProfitLimit,
-	LimitMaker,
-}
-impl From<Order> for BinanceOrder {
-	fn from(order: Order) -> Self {
-		match order.order_type {
-			OrderType::Market => unimplemented!(),
-			OrderType::StopMarket(_) => unimplemented!(),
-			//OrderType::Limit(_) => unimplemented!(),
-			//OrderType::StopLimit(_) => unimplemented!(),
-			//OrderType::TakeProfit(_) => unimplemented!(),
-			//OrderType::TakeProfitLimit(_) => unimplemented!(),
-			//OrderType::LimitMaker(_) => unimplemented!(),
-		}
-	}
-}
-impl ToString for BinanceOrder {
-	fn to_string(&self) -> String {
-		match self {
-			BinanceOrder::Market => "MARKET".to_string(),
-			BinanceOrder::Limit => "LIMIT".to_string(),
-			BinanceOrder::StopLoss => "STOP_LOSS".to_string(),
-			BinanceOrder::StopLossLimit => "STOP_LOSS_LIMIT".to_string(),
-			BinanceOrder::TakeProfit => "TAKE_PROFIT".to_string(),
-			BinanceOrder::TakeProfitLimit => "TAKE_PROFIT_LIMIT".to_string(),
-			BinanceOrder::LimitMaker => "LIMIT_MAKER".to_string(),
-		}
-	}
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
@@ -202,14 +168,11 @@ pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
 
 /// submits an order, if successful, returns the order id
 //TODO!!: make the symbol be from utils \
-pub async fn post_futures_order(key: String, secret: String, order_type: String, symbol: String, side: Side, quantity: f64) -> Result<i64> {
+pub async fn post_futures_order(key: String, secret: String, order: Order) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
-	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", symbol);
-	params.insert("side", side.to_string());
-	params.insert("type", order_type);
-	params.insert("quantity", format!("{}", quantity));
+	let binance_order = BinanceOrder::from_standard(order).await;
+	let params = binance_order.into_params();
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
 	let __why_text_fn_consumes_self = format!("{:?}", r);

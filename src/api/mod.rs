@@ -39,6 +39,7 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 /// Uuid in the Receiver is of Position
 pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
 	//- init the runtime of exchanges
+	dbg!("hub started");
 
 	let mut stupid_filled_one = false;
 
@@ -105,38 +106,11 @@ async fn dirty_hardcoded_exec(order_spec: Order) -> Result<()> {
 	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
 	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
 
-	let symbol = order_spec.symbol;
-	let (current_price, quantity_precision) = tokio::join! {
-		binance::futures_price(&symbol.base),
-		binance::futures_quantity_precision(&symbol.base),
-	};
-	let factor = 10_f64.powi(quantity_precision.unwrap() as i32);
-	let coin_quantity_adjusted = (order_spec.qty_notional * factor).round() / factor;
+	let symbol = order_spec.symbol.clone();
 
-	let (current_price, quantity_precision) = tokio::join! {
-		binance::futures_price(&symbol.base),
-		binance::futures_quantity_precision(&symbol.base),
-	};
-	let factor = 10_f64.powi(quantity_precision.unwrap() as i32);
-	let coin_quantity_adjusted = (order_spec.qty_notional * factor).round() / factor;
-
-	//TODO!!!!!!!!!: binance transform layer for Order types
-	let order_type_str = match order_spec.order_type {
-		OrderType::Market => "MARKET",
-		OrderType::StopMarket(_) => "STOP_MARKET",
-	}
-	.to_string();
-
-	let order_id = binance::post_futures_order(
-		full_key.clone(),
-		full_secret.clone(),
-		order_type_str,
-		symbol.to_string(),
-		order_spec.side,
-		order_spec.qty_notional,
-	)
-	.await
-	.unwrap();
+	let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order_spec.into())
+		.await
+		.unwrap();
 	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 	loop {
 		let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string())
@@ -151,6 +125,12 @@ async fn dirty_hardcoded_exec(order_spec: Order) -> Result<()> {
 
 	Ok(())
 }
+
+//pub fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
+//	let (tx, rx) = tokio::sync::mpsc::channel(32);
+//	tokio::spawn(crate::api::hub_ish(rx));
+//	tx
+//}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

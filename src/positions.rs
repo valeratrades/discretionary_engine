@@ -1,4 +1,4 @@
-use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId};
+use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
@@ -46,28 +46,27 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 		info!(coin);
 
-		let (current_price, quantity_precision) = tokio::join! {
-			binance::futures_price(&coin),
-			binance::futures_quantity_precision(&coin),
-		};
-		let factor = 10_f64.powi(quantity_precision? as i32);
-		let coin_quantity = spec.size_usdt / current_price?;
-		let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
+		let current_price = binance::futures_price(&coin).await?;
+		let coin_quantity = spec.size_usdt / current_price;
 
 		let mut current_state = Self {
 			__spec: spec.clone(),
-			target_notional: coin_quantity_adjusted,
+			target_notional: coin_quantity, //BUG: on very small order sizes, the mismatch between the size we're requesting and adjusted_qty we trim towards to satisfy exchange requirements, could be troublesome
 			acquired_notional: 0.0,
 			protocols_spec: None,
 		};
 
+		let order = Order::new(
+			Uuid::new_v4(),
+			OrderType::Market,
+			symbol.clone(),
+			spec.side.clone(),
+			coin_quantity,
+		);
 		let order_id = binance::post_futures_order(
 			full_key.clone(),
 			full_secret.clone(),
-			"MARKET".to_string(),
-			symbol.to_string(),
-			spec.side.clone(),
-			coin_quantity_adjusted,
+			order
 		)
 		.await?;
 		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
@@ -119,14 +118,12 @@ impl TargetOrders {
 			}
 			self.orders.push(order);
 		}
-		if let Ok(sender) = crate::SENDER.lock() {
-			match sender.send((self.orders.clone(), position_callback)).await {
-				Ok(_) => {},
-				Err(e) => {
-					info!("Error sending orders: {:?}", e);
-				},
-			};
-		}
+		match crate::SENDER.send((self.orders.clone(), position_callback)).await {
+			Ok(_) => {},
+			Err(e) => {
+				info!("Error sending orders: {:?}", e);
+			},
+		};
 	}
 	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
