@@ -56,15 +56,15 @@ impl Protocol for TrailingStopWrapper {
 				let protocol_spec = params.lock().unwrap().to_string();
 				let mut orders = order_mask.clone();
 
+				let sm = ConceptualStopMarket::new(1.0, $target_price);
 				orders.insert(
 					stop_market_uuid,
-					Some(ConceptualOrderPercents::StopMarket(ConceptualStopMarketPercents {
-						symbol: symbol.clone(),
-						side: $side,
-						price: $target_price,
-						percent_size: 1.0,
-						maximum_slippage_percent: 1.0,
-					})),
+					Some(ConceptualOrderPercents::new(
+						ConceptualOrderType::StopMarket(sm),
+						symbol.clone(),
+						$side,
+						1.0,
+					)),
 				);
 
 				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);

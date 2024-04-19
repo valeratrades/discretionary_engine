@@ -42,3 +42,4 @@ uuid = { version = "1.8.0", features = ["v4"] }
 config = "0.14.0"
 v_utils_macros = "1.2.2"
 lazy_static = "1.4.0"
+derive-new = "0.6.0"

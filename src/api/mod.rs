@@ -2,7 +2,7 @@ pub mod binance;
 use crate::positions::PositionCallback;
 use std::collections::HashMap;
 pub mod order_types;
-use self::order_types::{OrderType, ProtocolOrderId};
+use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
 use crate::config::AppConfig;
 use anyhow::Result;
 use order_types::{ConceptualOrder, Order};
@@ -52,24 +52,18 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 		let mut actual_orders: HashMap<Market, Vec<Order>> = HashMap::new();
 		for (key, vec) in known_orders.iter() {
 			for o in vec {
-				match o {
-					ConceptualOrder::Market(market) => {
-						let order = Order::new(
-							order_types::OrderType::Market,
-							market.id.uuid.clone(),
-							market.symbol.clone(),
-							market.side,
-							market.qty_notional,
-						);
+				match &o.order_type {
+					ConceptualOrderType::Market(_) => {
+						let order = Order::new(o.id.uuid.clone(), order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
 						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
 					}
-					ConceptualOrder::StopMarket(stop_market) => {
+					ConceptualOrderType::StopMarket(stop_market) => {
 						let order = Order::new(
+							o.id.uuid.clone(),
 							order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
-							stop_market.id.uuid.clone(),
-							stop_market.symbol.clone(),
-							stop_market.side,
-							stop_market.qty_notional,
+							o.symbol.clone(),
+							o.side,
+							o.qty_notional,
 						);
 						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
 					}

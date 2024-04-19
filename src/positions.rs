@@ -1,4 +1,4 @@
-use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
+use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId};
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
@@ -9,18 +9,14 @@ use tokio::select;
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
+use derive_new::new;
 
 /// What the Position _*is*_
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, new)]
 pub struct PositionSpec {
 	pub asset: String,
 	pub side: Side,
 	pub size_usdt: f64,
-}
-impl PositionSpec {
-	pub fn new(asset: String, side: Side, size_usdt: f64) -> Self {
-		Self { asset, side, size_usdt }
-	}
 }
 
 #[derive(Debug)]
@@ -116,10 +112,10 @@ impl TargetOrders {
 	/// Never fails, instead the errors are sent over the channel.
 	async fn update_orders(&mut self, orders: Vec<ConceptualOrder>, position_callback: PositionCallback) {
 		for order in orders.into_iter() {
-			match order {
-				ConceptualOrder::StopMarket(_) => self.stop_orders_total_notional += order.notional(),
-				ConceptualOrder::Limit(_) => self.normal_orders_total_notional += order.notional(),
-				ConceptualOrder::Market(_) => self.market_orders_total_notional += order.notional(),
+			match order.order_type {
+				ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
+				ConceptualOrderType::Limit(_) => self.normal_orders_total_notional += order.qty_notional,
+				ConceptualOrderType::Market(_) => self.market_orders_total_notional += order.qty_notional,
 			}
 			self.orders.push(order);
 		}
@@ -135,15 +131,10 @@ impl TargetOrders {
 	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, new)]
 pub struct PositionCallback {
 	pub sender: tokio::sync::mpsc::Sender<Vec<(ProtocolOrderId, f64)>>, // stands for "this nominal qty filled on this protocol order"
 	pub position_uuid: Uuid,
-}
-impl PositionCallback {
-	fn new(sender: tokio::sync::mpsc::Sender<Vec<(ProtocolOrderId, f64)>>, position_uuid: Uuid) -> Self {
-		Self { sender, position_uuid }
-	}
 }
 
 impl PositionFollowup {
@@ -193,10 +184,10 @@ impl PositionFollowup {
 				let mut stop_orders = Vec::new();
 				let mut limit_orders = Vec::new();
 				for (_key, value) in all_requested_unrolled.lock().unwrap().clone() {
-					value.into_iter().for_each(|o| match o {
-						ConceptualOrder::StopMarket(_) => stop_orders.push(o),
-						ConceptualOrder::Limit(_) => limit_orders.push(o),
-						ConceptualOrder::Market(_) => market_orders.push(o),
+					value.into_iter().for_each(|o| match o.order_type {
+						ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
+						ConceptualOrderType::Limit(_) => limit_orders.push(o),
+						ConceptualOrderType::Market(_) => market_orders.push(o),
 					});
 				}
 
@@ -207,21 +198,21 @@ impl PositionFollowup {
 				// orders should be all of the same conceptual type (no idea how to enforce it)
 				let mut update_target_orders = |orders: Vec<ConceptualOrder>| {
 					for order in orders {
-						let notional = order.notional();
-						let compare_against = match order {
-							ConceptualOrder::StopMarket(_) => left_to_target_spot_notional,
-							ConceptualOrder::Limit(_) => left_to_target_normal_notional,
-							ConceptualOrder::Market(_) => left_to_target_full_notional,
+						let notional = order.qty_notional;
+						let compare_against = match order.order_type {
+							ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional,
+							ConceptualOrderType::Limit(_) => left_to_target_normal_notional,
+							ConceptualOrderType::Market(_) => left_to_target_full_notional,
 						};
 						let mut order = order.clone();
 						if notional > compare_against {
-							order.cut_size(compare_against);
+							order.qty_notional = compare_against;
 						}
 						new_target_orders.push(order.clone());
-						match order {
-							ConceptualOrder::StopMarket(_) => left_to_target_spot_notional -= notional,
-							ConceptualOrder::Limit(_) => left_to_target_normal_notional -= notional,
-							ConceptualOrder::Market(_) => {
+						match order.order_type {
+							ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional -= notional,
+							ConceptualOrderType::Limit(_) => left_to_target_normal_notional -= notional,
+							ConceptualOrderType::Market(_) => {
 								//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
 								left_to_target_full_notional -= notional;
 								left_to_target_spot_notional -= notional;
