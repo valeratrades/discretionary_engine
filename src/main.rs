@@ -1,12 +1,13 @@
 pub mod api;
+use std::sync::Mutex;
 pub mod config;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
+use lazy_static::lazy_static;
 use positions::*;
-use protocols::FollowupProtocols;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -43,17 +44,25 @@ struct PositionArgs {
 	#[arg(short, long, default_value = "")]
 	acquisition_protocols_spec: Vec<String>,
 	/// position followup parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
-	#[arg(short, long, default_value = "")]
+	#[arg(short, long)]
 	followup_protocols_spec: Vec<String>,
 }
 
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
+lazy_static! {
+	pub static ref SENDER: Mutex<tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)>> = {
+		let (tx, rx) = tokio::sync::mpsc::channel(32);
+		tokio::spawn(crate::api::hub_ish(rx));
+		Mutex::new(tx)
+	};
+}
+
 #[tokio::main]
 async fn main() {
 	utils::init_subscriber();
 	let cli = Cli::parse();
-	let config = match AppConfig::try_from(cli.config) {
+	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
 		Err(e) => {
 			eprintln!("Loading config failed: {}", e);
@@ -61,6 +70,11 @@ async fn main() {
 		}
 	};
 	//let noconfirm = cli.noconfirm;
+
+	// there's gotta be a better way to ensure lazy_static block is activated, but ehh
+	{
+		drop(SENDER.lock().unwrap());
+	}
 
 	match cli.command {
 		Commands::New(position_args) => {
@@ -78,16 +92,13 @@ async fn main() {
 				}
 			};
 
-			//let followup_protocols = ProtocolsSpec::try_from(position_args.followup_protocols_spec).unwrap();
-			// Do I need the cache thing though?
-			//let cache = FollowupCache::new();
-
-			let trailing_stop_hardcoded = protocols::interpret_followup_specs(position_args.followup_protocols_spec).unwrap();
+			let followup_protocols = protocols::interpret_followup_specs(position_args.followup_protocols_spec).unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
-			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			//let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
 			// currently followup does nothing
-			let followed = PositionFollowup::do_followup(acquired, trailing_stop_hardcoded).await.unwrap();
+			let followed = PositionFollowup::do_followup(acquired, followup_protocols).await.unwrap();
 			println!("{:?}", followed);
 		}
 	}

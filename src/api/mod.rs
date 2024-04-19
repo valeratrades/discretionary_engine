@@ -1,15 +1,14 @@
 pub mod binance;
+use crate::positions::PositionCallback;
 use std::collections::HashMap;
-
 pub mod order_types;
-use crate::{config::AppConfig, PositionCallback};
+use self::order_types::{OrderType, ProtocolOrderId};
+use crate::config::AppConfig;
 use anyhow::Result;
 use order_types::{ConceptualOrder, Order};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
-
-use self::order_types::ProtocolOrderId;
 
 pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -35,41 +34,43 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 	Ok(quantity_adjusted)
 }
 
-/// the global access rx for this is shared among all positions. Each position provides a watch::Sender, to receiver
+//TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
-pub fn i_have_no_clue_how_to_represent_this(rx: std::sync::mpsc::Receiver<(Vec<ConceptualOrder>, Uuid)>) {
+/// Uuid in the Receiver is of Position
+pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
 	//- init the runtime of exchanges
 
 	let mut stupid_filled_one = false;
 
-	let mut callback: HashMap<Uuid, std::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
+	let mut callback: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
 	let mut known_orders: HashMap<Uuid, Vec<ConceptualOrder>> = HashMap::new();
 
-	while let Ok((new_orders, position_callback)) = rx.recv() {
+	while let Some((new_orders, position_callback)) = rx.recv().await {
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
-		known_orders.insert(position_callback, new_orders);
+		known_orders.insert(position_callback.position_uuid, new_orders);
 
 		let mut actual_orders: HashMap<Market, Vec<Order>> = HashMap::new();
 		for (key, vec) in known_orders.iter() {
 			for o in vec {
 				match o {
 					ConceptualOrder::Market(market) => {
-						let order = Order::Market(order_types::MarketOrder {
-							id: market.id.uuid.clone(),
-							symbol: market.symbol.clone(),
-							side: market.side.clone(),
-							qty_notional: market.qty_notional,
-						});
+						let order = Order::new(
+							order_types::OrderType::Market,
+							market.id.uuid.clone(),
+							market.symbol.clone(),
+							market.side,
+							market.qty_notional,
+						);
 						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
 					}
 					ConceptualOrder::StopMarket(stop_market) => {
-						let order = Order::StopMarket(order_types::StopMarketOrder {
-							id: stop_market.id.uuid.clone(),
-							symbol: stop_market.symbol.clone(),
-							side: stop_market.side.clone(),
-							price: stop_market.price,
-							qty_notional: stop_market.qty_notional,
-						});
+						let order = Order::new(
+							order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
+							stop_market.id.uuid.clone(),
+							stop_market.symbol.clone(),
+							stop_market.side,
+							stop_market.qty_notional,
+						);
 						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
 					}
 					_ => panic!("Unsupported order type"),
@@ -85,54 +86,7 @@ pub fn i_have_no_clue_how_to_represent_this(rx: std::sync::mpsc::Receiver<(Vec<C
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
-
-						let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
-						let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
-
-						let symbol = order.symbol.clone();
-						let (current_price, quantity_precision) = tokio::join! {
-							binance::futures_price(&coin),
-							binance::futures_quantity_precision(&coin),
-						};
-						let factor = 10_f64.powi(quantity_precision? as i32);
-						let coin_quantity = spec.size_usdt / current_price?;
-						let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
-
-						let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
-						info!(coin);
-
-						let (current_price, quantity_precision) = tokio::join! {
-							binance::futures_price(&coin),
-							binance::futures_quantity_precision(&coin),
-						};
-						let factor = 10_f64.powi(quantity_precision? as i32);
-						let coin_quantity_adjusted = (coin_quantity * factor).round() / factor;
-
-						let order_type_str = match order {
-							Order::Market(_) => "MARKET",
-							Order::StopMarket(_) => "STOP_MARKET",
-						}
-						.to_string();
-
-						let order_id = binance::post_futures_order(
-							full_key.clone(),
-							full_secret.clone(),
-							order_type_str,
-							order.symbol.to_string(),
-							order.side,
-							order.qty_notional,
-						)
-						.await?;
-						//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
-						loop {
-							let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
-							if order.status == binance::OrderStatus::Filled {
-								let order_notional = order.origQty.parse::<f64>()?;
-								current_state.acquired_notional += order_notional;
-								break;
-							}
-						}
-
+						dirty_hardcoded_exec(order.clone()).await.unwrap();
 						stupid_filled_one = true;
 					}
 				}
@@ -151,6 +105,56 @@ pub fn i_have_no_clue_how_to_represent_this(rx: std::sync::mpsc::Receiver<(Vec<C
 	// HashMap<Exchange, Vec<Order>> // On fill notif of an exchange, we find the according PositionCallback, by searching for ConceptualOrder with matching uuid
 
 	//+ hardcode following binance orders here
+}
+
+async fn dirty_hardcoded_exec(order_spec: Order) -> Result<()> {
+	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+
+	let symbol = order_spec.symbol;
+	let (current_price, quantity_precision) = tokio::join! {
+		binance::futures_price(&symbol.base),
+		binance::futures_quantity_precision(&symbol.base),
+	};
+	let factor = 10_f64.powi(quantity_precision.unwrap() as i32);
+	let coin_quantity_adjusted = (order_spec.qty_notional * factor).round() / factor;
+
+	let (current_price, quantity_precision) = tokio::join! {
+		binance::futures_price(&symbol.base),
+		binance::futures_quantity_precision(&symbol.base),
+	};
+	let factor = 10_f64.powi(quantity_precision.unwrap() as i32);
+	let coin_quantity_adjusted = (order_spec.qty_notional * factor).round() / factor;
+
+	let order_type_str = match order_spec.order_type {
+		OrderType::Market => "MARKET",
+		OrderType::StopMarket(_) => "STOP_MARKET",
+	}
+	.to_string();
+
+	let order_id = binance::post_futures_order(
+		full_key.clone(),
+		full_secret.clone(),
+		order_type_str,
+		symbol.to_string(),
+		order_spec.side,
+		order_spec.qty_notional,
+	)
+	.await
+	.unwrap();
+	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+	loop {
+		let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string())
+			.await
+			.unwrap();
+		if order.status == binance::OrderStatus::Filled {
+			let order_notional = order.origQty.parse::<f64>().unwrap();
+			dbg!("Order filled: {:?}", order_notional);
+			break;
+		}
+	}
+
+	Ok(())
 }
 
 #[allow(dead_code)]

@@ -4,7 +4,7 @@ use crate::positions::PositionSpec;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 use tracing::error;
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
@@ -108,7 +108,7 @@ impl ProtocolOrders {
 
 	pub fn empty_mask(&self) -> HashMap<Uuid, f64> {
 		let mut mask = HashMap::new();
-		for (key, _value) in self.fields {
+		for (key, _value) in self.fields.clone() {
 			mask.insert(key, 0.0);
 		}
 		mask

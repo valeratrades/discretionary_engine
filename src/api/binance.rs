@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use crate::api::{Market, ConceptualOrder};
+use crate::api::{ConceptualOrder, Market};
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -10,7 +10,7 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
 use url::Url;
-use v_utils::trades::{Side};
+use v_utils::trades::Side;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -211,7 +211,15 @@ pub async fn post_futures_order(key: String, secret: String, order_type: String,
 	params.insert("quantity", format!("{}", quantity));
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
-	let response: FuturesPositionResponse = r.json().await?;
+	let __why_text_fn_consumes_self = format!("{:?}", r);
+	let response: FuturesPositionResponse = match r.json().await {
+		Ok(r) => r,
+		Err(e) => {
+			println!("Error: {:?}", e);
+			println!("Response: {:?}", __why_text_fn_consumes_self);
+			return Err(e.into());
+		}
+	};
 	Ok(response.orderId)
 }
 

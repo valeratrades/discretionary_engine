@@ -8,9 +8,9 @@ use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, str::FromStr};
+use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use uuid::Uuid;
 use v_utils::macros::CompactFormat;
@@ -68,7 +68,7 @@ impl Protocol for TrailingStopWrapper {
 				);
 
 				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
-				tx_orders.send(protocol_orders).unwrap();
+				tx_orders.send(protocol_orders).await.unwrap();
 			}};
 		}
 

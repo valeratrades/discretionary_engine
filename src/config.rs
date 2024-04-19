@@ -1,9 +1,4 @@
-use anyhow::{Context, Result};
-use config::{Conifg, File};
-use serde::de::{self, Deserializer, Visitor};
-use serde::Deserialize;
-use std::convert::TryFrom;
-use std::fmt;
+use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
 use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
 
@@ -21,16 +16,16 @@ pub struct Binance {
 }
 
 impl AppConfig {
-	pub fn new(path: ExpandedPath) -> Result<Self, ConfigError> {
+	pub fn new(path: ExpandedPath) -> Result<Self> {
 		let builder = config::Config::builder()
 			.set_default("comparison_offset_h", 24)?
-			.add_source(File::with_name(&path.to_string()));
+			.add_source(config::File::with_name(&path.to_string()));
 
 		let settings: config::Config = builder.build()?;
 		let settings: Self = settings.try_deserialize()?;
 
-		let _ = std::fs::create_dir_all(&settings.positions_dir)
-			.with_context(|| format!("Failed to create positions directory at {:?}", config.positions_dir))?;
+		std::fs::create_dir_all(&settings.positions_dir)
+			.with_context(|| anyhow!(format!("Failed to create positions directory at {:?}", settings.positions_dir)))?;
 
 		Ok(settings)
 	}

@@ -7,10 +7,30 @@ use v_utils::trades::Side;
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Order {
+	pub order_type: OrderType,
+	pub id: Uuid,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub qty_notional: f64,
+}
+impl Order {
+	pub fn new(order_type: OrderType, id: Uuid, symbol: Symbol, side: Side, qty_notional: f64) -> Self {
+		Self {
+			order_type,
+			id,
+			symbol,
+			side,
+			qty_notional,
+		}
+	}
+}
 
 ///NB: id of all orders must match uuid field of parent ConceptualOrder if any
-pub enum Order {
-	Market(MarketOrder),
+#[derive(Clone, Debug, PartialEq)]
+pub enum OrderType {
+	Market,
 	StopMarket(StopMarketOrder),
 	//Limit(LimitOrder),
 	//StopLimit(StopLimitOrder),
@@ -21,21 +41,15 @@ pub enum Order {
 	//StopMarket(StopMarketOrder),
 }
 
-pub struct MarketOrder {
-	pub id: Uuid,
-	pub symbol: Symbol,
-	pub side: Side,
-	pub qty_notional: f64,
-}
+#[derive(Clone, Debug, PartialEq)]
 pub struct StopMarketOrder {
-	pub id: Uuid,
-	pub symbol: Symbol,
-	pub side: Side,
 	pub price: f64,
-	pub qty_notional: f64,
 }
-
-
+impl StopMarketOrder {
+	pub fn new(price: f64) -> Self {
+		Self { price }
+	}
+}
 
 //=============================================================================
 // Conceptual Orders
@@ -48,10 +62,7 @@ pub struct ProtocolOrderId {
 }
 impl ProtocolOrderId {
 	pub fn new(produced_by: String, uuid: Uuid) -> Self {
-		Self {
-			produced_by,
-			uuid,
-		}
+		Self { produced_by, uuid }
 	}
 }
 
