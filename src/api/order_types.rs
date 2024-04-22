@@ -1,5 +1,6 @@
 use crate::api::Symbol;
 use anyhow::Result;
+use derive_new::new;
 use uuid::Uuid;
 use v_utils::trades::Side;
 
@@ -7,10 +8,19 @@ use v_utils::trades::Side;
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
+#[derive(Clone, Debug, PartialEq, new)]
+pub struct Order {
+	pub id: Uuid,
+	pub order_type: OrderType,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub qty_notional: f64,
+}
 
 ///NB: id of all orders must match uuid field of parent ConceptualOrder if any
-pub enum Order {
-	Market(MarketOrder),
+#[derive(Clone, Debug, PartialEq)]
+pub enum OrderType {
+	Market,
 	StopMarket(StopMarketOrder),
 	//Limit(LimitOrder),
 	//StopLimit(StopLimitOrder),
@@ -21,185 +31,83 @@ pub enum Order {
 	//StopMarket(StopMarketOrder),
 }
 
-pub struct MarketOrder {
-	pub id: Uuid,
-	pub symbol: Symbol,
-	pub side: Side,
-	pub qty_notional: f64,
-}
+#[derive(Clone, Debug, PartialEq, new)]
 pub struct StopMarketOrder {
-	pub id: Uuid,
-	pub symbol: Symbol,
-	pub side: Side,
 	pub price: f64,
-	pub qty_notional: f64,
 }
-
-
 
 //=============================================================================
 // Conceptual Orders
 //=============================================================================
 
-#[derive(Debug, Hash, Clone, PartialEq)]
+#[derive(Debug, Hash, Clone, PartialEq, new)]
 pub struct ProtocolOrderId {
 	pub produced_by: String,
 	pub uuid: Uuid,
 }
-impl ProtocolOrderId {
-	pub fn new(produced_by: String, uuid: Uuid) -> Self {
-		Self {
-			produced_by,
-			uuid,
+
+#[derive(Debug, Clone, PartialEq, new)]
+pub struct ConceptualOrder {
+	pub id: ProtocolOrderId,
+	pub order_type: ConceptualOrderType,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub qty_notional: f64,
+}
+
+impl ConceptualOrder {
+	pub fn price(&self) -> Result<f64> {
+		match &self.order_type {
+			ConceptualOrderType::Market(_) => anyhow::bail!("Market orders don't have a price"),
+			ConceptualOrderType::Limit(l) => Ok(l.price),
+			ConceptualOrderType::StopMarket(s) => Ok(s.price),
 		}
 	}
 }
 
 /// Generics for defining order types and their whereabouts. Details of execution do not concern us here. We are only trying to specify what we are trying to capture.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ConceptualOrder {
+pub enum ConceptualOrderType {
 	Market(ConceptualMarket),
 	Limit(ConceptualLimit),
 	StopMarket(ConceptualStopMarket),
 }
-impl ConceptualOrder {
-	pub fn price(&self) -> Result<f64> {
-		match self {
-			ConceptualOrder::Market(_) => anyhow::bail!("Market orders don't have a price"),
-			ConceptualOrder::Limit(l) => Ok(l.price),
-			ConceptualOrder::StopMarket(s) => Ok(s.price),
-		}
-	}
-
-	pub fn notional(&self) -> f64 {
-		match self {
-			ConceptualOrder::Market(m) => m.qty_notional,
-			ConceptualOrder::Limit(l) => l.qty_notional,
-			ConceptualOrder::StopMarket(s) => s.qty_notional,
-		}
-	}
-
-	pub fn cut_size(&mut self, new: f64) {
-		match self {
-			ConceptualOrder::Market(m) => m.qty_notional = new,
-			ConceptualOrder::Limit(l) => l.qty_notional = new,
-			ConceptualOrder::StopMarket(s) => s.qty_notional = new,
-		}
-	}
-}
 
 /// Will be executed via above-the-price limits most of the time to prevent excessive slippages.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, new)]
 pub struct ConceptualMarket {
-	pub id: ProtocolOrderId,
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
-	pub symbol: Symbol,
-	pub side: Side,
-	pub qty_notional: f64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, new)]
 pub struct ConceptualStopMarket {
-	pub id: ProtocolOrderId,
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
-	pub symbol: Symbol,
-	pub side: Side,
 	pub price: f64,
-	pub qty_notional: f64,
 }
-#[derive(Debug, Clone, PartialEq)]
+
+#[derive(Debug, Clone, PartialEq, new)]
 pub struct ConceptualLimit {
-	pub id: ProtocolOrderId,
-	pub symbol: Symbol,
-	pub side: Side,
 	pub price: f64,
-	pub qty_notional: f64,
 	pub limit_only: bool,
 }
 
-//=============================================================================
-// Apparently, this is how we're pushing orders up to later be chosen and assigned sizes
-//=============================================================================
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConceptualOrderPercents {
-	Market(ConceptualMarketPercents),
-	Limit(ConceptualLimitPercents),
-	StopMarket(ConceptualStopMarketPercents),
+#[derive(Debug, Clone, PartialEq, new)]
+pub struct ConceptualOrderPercents {
+	pub order_type: ConceptualOrderType,
+	pub symbol: Symbol,
+	pub side: Side,
+	pub qty_percent_of_controlled: f64,
 }
-
 impl ConceptualOrderPercents {
 	pub fn to_exact(self, total_controled_size: f64, produced_by: String, uuid: Uuid) -> ConceptualOrder {
-		match self {
-			ConceptualOrderPercents::Market(m) => ConceptualOrder::Market(m.to_exact(total_controled_size, produced_by, uuid)),
-			ConceptualOrderPercents::Limit(l) => ConceptualOrder::Limit(l.to_exact(total_controled_size, produced_by, uuid)),
-			ConceptualOrderPercents::StopMarket(s) => ConceptualOrder::StopMarket(s.to_exact(total_controled_size, produced_by, uuid)),
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConceptualMarketPercents {
-	pub maximum_slippage_percent: f64,
-	pub symbol: Symbol,
-	pub side: Side,
-	pub percent_size: f64,
-}
-
-impl ConceptualMarketPercents {
-	pub fn to_exact(self, total_controled_size: f64, produced_by: String, uuid: Uuid) -> ConceptualMarket {
-		ConceptualMarket {
+		ConceptualOrder {
 			id: ProtocolOrderId::new(produced_by, uuid),
-			maximum_slippage_percent: self.maximum_slippage_percent,
+			order_type: self.order_type,
 			symbol: self.symbol,
 			side: self.side,
-			qty_notional: total_controled_size * self.percent_size,
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConceptualStopMarketPercents {
-	pub maximum_slippage_percent: f64,
-	pub symbol: Symbol,
-	pub side: Side,
-	pub price: f64,
-	pub percent_size: f64,
-}
-
-impl ConceptualStopMarketPercents {
-	pub fn to_exact(self, total_controled_size: f64, produced_by: String, uuid: Uuid) -> ConceptualStopMarket {
-		ConceptualStopMarket {
-			id: ProtocolOrderId::new(produced_by, uuid),
-			maximum_slippage_percent: self.maximum_slippage_percent,
-			symbol: self.symbol,
-			side: self.side,
-			price: self.price,
-			qty_notional: total_controled_size * self.percent_size,
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConceptualLimitPercents {
-	pub symbol: Symbol,
-	pub side: Side,
-	pub price: f64,
-	pub percent_size: f64,
-	pub limit_only: bool,
-}
-
-impl ConceptualLimitPercents {
-	pub fn to_exact(self, total_controled_size: f64, produced_by: String, uuid: Uuid) -> ConceptualLimit {
-		ConceptualLimit {
-			id: ProtocolOrderId::new(produced_by, uuid),
-			side: self.side,
-			symbol: self.symbol,
-			price: self.price,
-			qty_notional: total_controled_size * self.percent_size,
-			limit_only: self.limit_only,
+			qty_notional: total_controled_size * self.qty_percent_of_controlled,
 		}
 	}
 }

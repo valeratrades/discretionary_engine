@@ -8,9 +8,9 @@ use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, str::FromStr};
+use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use uuid::Uuid;
 use v_utils::macros::CompactFormat;
@@ -56,19 +56,19 @@ impl Protocol for TrailingStopWrapper {
 				let protocol_spec = params.lock().unwrap().to_string();
 				let mut orders = order_mask.clone();
 
+				let sm = ConceptualStopMarket::new(1.0, $target_price);
 				orders.insert(
 					stop_market_uuid,
-					Some(ConceptualOrderPercents::StopMarket(ConceptualStopMarketPercents {
-						symbol: symbol.clone(),
-						side: $side,
-						price: $target_price,
-						percent_size: 1.0,
-						maximum_slippage_percent: 1.0,
-					})),
+					Some(ConceptualOrderPercents::new(
+						ConceptualOrderType::StopMarket(sm),
+						symbol.clone(),
+						$side,
+						1.0,
+					)),
 				);
 
 				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
-				tx_orders.send(protocol_orders).unwrap();
+				tx_orders.send(protocol_orders).await.unwrap();
 			}};
 		}
 

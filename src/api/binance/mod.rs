@@ -1,5 +1,11 @@
 #![allow(non_snake_case, dead_code)]
-use crate::api::{Market, ConceptualOrder};
+mod orders;
+
+pub use orders::*;
+use tracing::info;
+
+use crate::api::order_types::Order;
+use crate::api::Market;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -10,7 +16,6 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
 use url::Url;
-use v_utils::trades::{Side};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -58,43 +63,6 @@ pub async fn signed_request(
 		_ => panic!("Not implemented"),
 	};
 	Ok(r)
-}
-
-/// All the iteractions with submitting orders use this
-pub enum BinanceOrder {
-	Market,
-	Limit,
-	StopLoss,
-	StopLossLimit,
-	TakeProfit,
-	TakeProfitLimit,
-	LimitMaker,
-}
-impl From<ConceptualOrder> for BinanceOrder {
-	fn from(order_type: ConceptualOrder) -> Self {
-		match order_type {
-			ConceptualOrder::Market(_) => unimplemented!(),
-			ConceptualOrder::Limit(_) => unimplemented!(),
-			ConceptualOrder::StopMarket(_) => unimplemented!(),
-			//OrderType::StopLimit(_) => unimplemented!(),
-			//OrderType::TakeProfit(_) => unimplemented!(),
-			//OrderType::TakeProfitLimit(_) => unimplemented!(),
-			//OrderType::LimitMaker(_) => unimplemented!(),
-		}
-	}
-}
-impl ToString for BinanceOrder {
-	fn to_string(&self) -> String {
-		match self {
-			BinanceOrder::Market => "MARKET".to_string(),
-			BinanceOrder::Limit => "LIMIT".to_string(),
-			BinanceOrder::StopLoss => "STOP_LOSS".to_string(),
-			BinanceOrder::StopLossLimit => "STOP_LOSS_LIMIT".to_string(),
-			BinanceOrder::TakeProfit => "TAKE_PROFIT".to_string(),
-			BinanceOrder::TakeProfitLimit => "TAKE_PROFIT_LIMIT".to_string(),
-			BinanceOrder::LimitMaker => "LIMIT_MAKER".to_string(),
-		}
-	}
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
@@ -200,18 +168,22 @@ pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
 }
 
 /// submits an order, if successful, returns the order id
-//TODO!!: make the symbol be from utils \
-pub async fn post_futures_order(key: String, secret: String, order_type: String, symbol: String, side: Side, quantity: f64) -> Result<i64> {
+pub async fn post_futures_order(key: String, secret: String, order: Order) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
-	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", symbol);
-	params.insert("side", side.to_string());
-	params.insert("type", order_type);
-	params.insert("quantity", format!("{}", quantity));
+	let binance_order = BinanceOrder::from_standard(order).await;
+	let params = binance_order.into_params();
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
-	let response: FuturesPositionResponse = r.json().await?;
+	let __why_text_fn_consumes_self = format!("{:?}", r);
+	let response: FuturesPositionResponse = match r.json().await {
+		Ok(r) => r,
+		Err(e) => {
+			println!("Error: {:?}", e);
+			println!("Response: {:?}", __why_text_fn_consumes_self);
+			return Err(e.into());
+		}
+	};
 	Ok(response.orderId)
 }
 
@@ -226,6 +198,34 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
 	Ok(response)
+}
+
+pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
+	assert!(order.qty_notional > 0.0);
+	dbg!(&order);
+	let order = Order {
+		order_type: crate::api::order_types::OrderType::Market,
+		..order
+	};
+
+	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+
+	let symbol = order.symbol.clone();
+
+	let order_id = post_futures_order(full_key.clone(), full_secret.clone(), order).await.unwrap();
+
+	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+	loop {
+		let r = poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
+		if r.status == OrderStatus::Filled {
+			let order_notional = r.origQty.parse::<f64>()?;
+			info!("Order filled: {:?}", order_notional);
+			break;
+		}
+	}
+
+	Ok(())
 }
 
 //=============================================================================

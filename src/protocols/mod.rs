@@ -2,9 +2,10 @@ mod trailing_stop;
 use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents};
 use crate::positions::PositionSpec;
 use anyhow::Result;
+use derive_new::new;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 use tracing::error;
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
@@ -96,19 +97,15 @@ pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Follo
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
 ///NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, new)]
 pub struct ProtocolOrders {
 	pub produced_by: String,
 	fields: HashMap<Uuid, Option<ConceptualOrderPercents>>,
 }
 impl ProtocolOrders {
-	pub fn new(produced_by: String, fields: HashMap<Uuid, Option<ConceptualOrderPercents>>) -> Self {
-		Self { produced_by, fields }
-	}
-
 	pub fn empty_mask(&self) -> HashMap<Uuid, f64> {
 		let mut mask = HashMap::new();
-		for (key, _value) in self.fields {
+		for (key, _value) in self.fields.clone() {
 			mask.insert(key, 0.0);
 		}
 		mask
@@ -116,6 +113,8 @@ impl ProtocolOrders {
 
 	pub fn apply_mask(&self, filled_mask: HashMap<Uuid, f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder> {
 		let mut total_offset = 0.0;
+
+		// subtract filled
 		let mut orders: Vec<ConceptualOrder> = self
 			.fields
 			.iter()
@@ -124,12 +123,12 @@ impl ProtocolOrders {
 					let mut exact_order = o.to_exact(total_controlled_notional, self.produced_by.clone(), uuid.clone());
 					let filled = *filled_mask.get(uuid).unwrap_or(&0.0);
 
-					if filled > exact_order.notional() * 0.99 {
-						total_offset += filled - exact_order.notional();
+					if filled > exact_order.qty_notional * 0.99 {
+						total_offset += filled - exact_order.qty_notional;
 						return None;
 					}
 
-					exact_order.cut_size(filled);
+					exact_order.qty_notional -= filled;
 					Some(exact_order)
 				} else {
 					None
@@ -137,16 +136,18 @@ impl ProtocolOrders {
 			})
 			.collect();
 
-		orders.sort_by(|a, b| b.notional().partial_cmp(&a.notional()).unwrap_or(std::cmp::Ordering::Equal));
+		// redistribute the total size
+		orders.sort_by(|a, b| b.qty_notional.partial_cmp(&a.qty_notional).unwrap_or(std::cmp::Ordering::Equal));
 		let mut l = orders.len();
+		let individual_offset = total_offset / l as f64;
 		for i in (0..l).rev() {
-			if orders[i].notional() < total_offset / l as f64 {
+			if orders[i].qty_notional < individual_offset {
 				orders.remove(i);
-				total_offset -= orders[i].notional();
+				total_offset -= orders[i].qty_notional;
 				l -= 1;
 			} else {
 				// if reached this once, all following elements will also eval to true, so the total_offset is constant now.
-				orders[i].cut_size(total_offset);
+				orders[i].qty_notional -= individual_offset;
 			}
 		}
 		if orders.len() == 0 {
