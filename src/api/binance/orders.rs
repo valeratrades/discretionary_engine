@@ -21,6 +21,7 @@ impl BinanceOrder {
 		let type_params = self.order_type.into_params();
 		params.extend(type_params);
 
+		dbg!(&params);
 		params
 	}
 
@@ -70,7 +71,6 @@ impl BinanceOrderType {
 				let mut params = HashMap::<&'static str, String>::new();
 				params.insert("type", "STOP_MARKET".to_string());
 				params.insert("stopPrice", sm.stop_price.to_string());
-				dbg!(&params);
 				params
 			}
 		}

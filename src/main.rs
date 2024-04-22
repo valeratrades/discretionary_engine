@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
 pub mod api;
 use std::sync::Mutex;
 pub mod config;
