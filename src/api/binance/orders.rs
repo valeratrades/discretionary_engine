@@ -1,3 +1,4 @@
+use crate::api::binance;
 use crate::api::order_types::{Order, OrderType};
 use derive_new::new;
 use std::collections::HashMap;
@@ -24,13 +25,14 @@ impl BinanceOrder {
 	}
 
 	pub async fn from_standard(order: Order) -> Self {
-		let quantity_precision = crate::api::binance::futures_quantity_precision(&order.symbol.base).await.unwrap();
-		let factor = 10_f64.powi(quantity_precision as i32);
-		let coin_quantity_adjusted = (order.qty_notional * factor).round() / factor;
+		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
 
 		let order_type = match order.order_type {
 			OrderType::Market => BinanceOrderType::Market,
-			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new(sm.price)),
+			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new({
+				let price = binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap();
+				price
+			})),
 		};
 
 		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted);
@@ -68,6 +70,7 @@ impl BinanceOrderType {
 				let mut params = HashMap::<&'static str, String>::new();
 				params.insert("type", "STOP_MARKET".to_string());
 				params.insert("stopPrice", sm.stop_price.to_string());
+				dbg!(&params);
 				params
 			}
 		}

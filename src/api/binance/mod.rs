@@ -155,7 +155,8 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 	Ok(positions_map)
 }
 
-pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
+/// Returns (price_precision, quantity_precision)
+pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
 	let symbol_str = format!("{}USDT", coin.to_uppercase());
@@ -164,7 +165,7 @@ pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
 	let futures_exchange_info: FuturesExchangeInfo = r.json().await?;
 	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
-	Ok(symbol_info.quantityPrecision)
+	Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
 }
 
 /// submits an order, if successful, returns the order id
@@ -200,13 +201,25 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 	Ok(response)
 }
 
+/// Binance wants both qty and price in orders to always respect the minimum step of the price
+//TODO!!!: Store all needed exchange info locally
+pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
+	let (price_precision, _) = futures_precisions(coin).await?;
+	let factor = 10_f64.powi(price_precision as i32);
+	let adjusted = (price * factor).round() / factor;
+	Ok(adjusted)
+}
+
+pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
+	let (_, qty_precision) = futures_precisions(coin).await?;
+	let factor = 10_f64.powi(qty_precision as i32);
+	let adjusted = (qty * factor).round() / factor;
+	Ok(adjusted)
+}
+
 pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
 	assert!(order.qty_notional > 0.0);
-	dbg!(&order);
-	let order = Order {
-		order_type: crate::api::order_types::OrderType::Market,
-		..order
-	};
+	//FIXME: works with market orders but not StopMarket
 
 	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
 	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();

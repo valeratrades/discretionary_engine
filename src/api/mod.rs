@@ -27,14 +27,6 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	Ok(total_balance)
 }
 
-///NB: Temporary function that assumes BinanceFutures, and will be replaced with making the same request to a BinanceExchange struct, with preloaded values.
-pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<f64> {
-	let quantity_precision = binance::futures_quantity_precision(&coin).await?;
-	let factor = 10_f64.powi(quantity_precision as i32);
-	let quantity_adjusted = (quantity * factor).round() / factor;
-	Ok(quantity_adjusted)
-}
-
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
