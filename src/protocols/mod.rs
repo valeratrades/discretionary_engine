@@ -113,6 +113,8 @@ impl ProtocolOrders {
 
 	pub fn apply_mask(&self, filled_mask: HashMap<Uuid, f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder> {
 		let mut total_offset = 0.0;
+
+		// subtract filled
 		let mut orders: Vec<ConceptualOrder> = self
 			.fields
 			.iter()
@@ -126,7 +128,7 @@ impl ProtocolOrders {
 						return None;
 					}
 
-					exact_order.qty_notional = filled;
+					exact_order.qty_notional -= filled;
 					Some(exact_order)
 				} else {
 					None
@@ -134,16 +136,18 @@ impl ProtocolOrders {
 			})
 			.collect();
 
+		// redistribute the total size
 		orders.sort_by(|a, b| b.qty_notional.partial_cmp(&a.qty_notional).unwrap_or(std::cmp::Ordering::Equal));
 		let mut l = orders.len();
+		let individual_offset = total_offset / l as f64;
 		for i in (0..l).rev() {
-			if orders[i].qty_notional < total_offset / l as f64 {
+			if orders[i].qty_notional < individual_offset {
 				orders.remove(i);
 				total_offset -= orders[i].qty_notional;
 				l -= 1;
 			} else {
 				// if reached this once, all following elements will also eval to true, so the total_offset is constant now.
-				orders[i].qty_notional = total_offset;
+				orders[i].qty_notional -= individual_offset;
 			}
 		}
 		if orders.len() == 0 {

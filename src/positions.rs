@@ -1,4 +1,4 @@
-use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
+use crate::api::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::api::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
@@ -19,6 +19,7 @@ pub struct PositionSpec {
 	pub size_usdt: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct PositionAcquisition {
 	__spec: PositionSpec,
@@ -38,13 +39,8 @@ impl PositionAcquisition {
 	}
 
 	pub async fn do_acquisition(spec: PositionSpec) -> Result<Self> {
-		// is this not in config?
-		let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
-		let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
-		//let position = Position::new(Market::BinanceFutures, side, symbol.clone(), usdt_quantity, protocols, Utc::now());
 		let coin = spec.asset.clone();
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
-		info!(coin);
 
 		let current_price = binance::futures_price(&coin).await?;
 		let coin_quantity = spec.size_usdt / current_price;
@@ -57,16 +53,21 @@ impl PositionAcquisition {
 		};
 
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side.clone(), coin_quantity);
-		let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;
-		//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
-		loop {
-			let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
-			if order.status == binance::OrderStatus::Filled {
-				let order_notional = order.origQty.parse::<f64>()?;
-				current_state.acquired_notional += order_notional;
-				break;
-			}
-		}
+
+		let qty = order.qty_notional;
+		let _ = crate::api::binance::dirty_hardcoded_exec(order).await?;
+		current_state.acquired_notional += qty;
+
+		//let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;
+		////info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+		//loop {
+		//	let r = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
+		//	if r.status == binance::OrderStatus::Filled {
+		//		let order_notional = r.origQty.parse::<f64>()?;
+		//		current_state.acquired_notional += order_notional;
+		//		break;
+		//	}
+		//}
 
 		Ok(current_state)
 	}
@@ -81,21 +82,27 @@ pub struct PositionFollowup {
 
 /// Internal representation of desired orders. The actual orders are synchronized to this, so any details of actual execution are mostly irrelevant.
 /// Thus these orders have no actual ID; only being tagged with what protocol spawned them.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct TargetOrders {
 	stop_orders_total_notional: f64,
 	normal_orders_total_notional: f64,
 	market_orders_total_notional: f64,
 	//total_usd: f64,
 	orders: Vec<ConceptualOrder>,
+	hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>,
 }
 impl TargetOrders {
-	//TODO!!!!!!!!!: after updating orders internally, send a channeled message with new state of target_orders right from here \
-	// vec of actual orders can be created on the spot, as we don't care if we accidentially close exposure openned by a different order.
-	// If the distribution of orders to exact exchanges doesn't pertain after the start, there will just be a decision layer for whether we move an existing order in price, or open a new one on a different exchange.
-	// there are also some edge-cases where the order could be too small, and this should be handled on the exchange_api side.
-	// equally so, the maximum update frequency of orders set by exchange shall too be tracked by the execution algorithm.
-
+	pub fn new(hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>) -> Self {
+		Self {
+			stop_orders_total_notional: 0.0,
+			normal_orders_total_notional: 0.0,
+			market_orders_total_notional: 0.0,
+			orders: Vec::new(),
+			hub_tx,
+		}
+	}
+}
+impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
 	async fn update_orders(&mut self, orders: Vec<ConceptualOrder>, position_callback: PositionCallback) {
@@ -107,14 +114,15 @@ impl TargetOrders {
 			}
 			self.orders.push(order);
 		}
-		match crate::SENDER.send((self.orders.clone(), position_callback)).await {
+		match self.hub_tx.send((self.orders.clone(), position_callback)).await {
 			Ok(_) => {}
 			Err(e) => {
 				info!("Error sending orders: {:?}", e);
+				panic!(); //dbg
 			}
 		};
 	}
-	//TODO!!!!!!!!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
+	//TODO!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
 #[derive(Debug, Clone, new)]
@@ -125,7 +133,11 @@ pub struct PositionCallback {
 
 impl PositionFollowup {
 	#[instrument]
-	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>) -> Result<Self> {
+	pub async fn do_followup(
+		acquired: PositionAcquisition,
+		protocols: Vec<FollowupProtocol>,
+		hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>,
+	) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
 		for protocol in &protocols {
 			let subtype = protocol.get_subtype();
@@ -144,7 +156,7 @@ impl PositionFollowup {
 		let all_requested: Arc<Mutex<HashMap<String, ProtocolOrders>>> = Arc::new(Mutex::new(HashMap::new()));
 		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder>>>> = Arc::new(Mutex::new(HashMap::new()));
 		let mut closed_notional = 0.0;
-		let mut target_orders = TargetOrders::default();
+		let mut target_orders = TargetOrders::new(hub_tx);
 
 		let all_fills: Arc<Mutex<HashMap<Uuid, f64>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -242,7 +254,7 @@ impl PositionFollowup {
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
-					info!("{:?} sent orders: {:?}", protocol_orders.produced_by, protocol_orders.apply_mask(protocol_orders.empty_mask(), 0.0)); //dbg
+					//info!("{:?} sent orders: {:?}", protocol_orders.produced_by, protocol_orders.apply_mask(protocol_orders.empty_mask(), 0.0)); //dbg
 					all_requested.lock().unwrap().insert(protocol_orders.produced_by.clone(), protocol_orders.clone());
 					update_unrolled(protocol_orders.produced_by.clone());
 					recalculate_target_orders!();

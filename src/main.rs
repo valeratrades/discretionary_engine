@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate lazy_static;
 pub mod api;
 use std::sync::Mutex;
 pub mod config;
@@ -6,8 +8,9 @@ pub mod protocols;
 pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
-use lazy_static::lazy_static;
+//use lazy_static::lazy_static;
 use positions::*;
+use tracing::info;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -47,19 +50,19 @@ struct PositionArgs {
 	#[arg(short, long)]
 	followup_protocols_spec: Vec<String>,
 }
-
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
-lazy_static! {
-	pub static ref SENDER: tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> = {
-		let (tx, rx) = tokio::sync::mpsc::channel(32);
-		tokio::spawn(crate::api::hub_ish(rx));
-		tx
-	};
+
+fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
+	let (tx, rx) = tokio::sync::mpsc::channel(32);
+	tokio::spawn(crate::api::hub_ish(rx));
+	tx
 }
 
 #[tokio::main]
 async fn main() {
 	utils::init_subscriber();
+	let tx = init_hub();
+
 	let cli = Cli::parse();
 	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
@@ -91,9 +94,8 @@ async fn main() {
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
 			//let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
-			// currently followup does nothing
-			let followed = PositionFollowup::do_followup(acquired, followup_protocols).await.unwrap();
-			println!("{:?}", followed);
+			let followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
+			info!(?followed);
 		}
 	}
 }

@@ -6,6 +6,7 @@ use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
 use crate::config::AppConfig;
 use anyhow::Result;
 use order_types::{ConceptualOrder, Order};
+use tracing::{debug, info};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
@@ -39,7 +40,6 @@ pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<
 /// Uuid in the Receiver is of Position
 pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
 	//- init the runtime of exchanges
-	dbg!("hub started");
 
 	let mut stupid_filled_one = false;
 
@@ -81,7 +81,7 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
-						dirty_hardcoded_exec(order.clone()).await.unwrap();
+						binance::dirty_hardcoded_exec(order.clone()).await.unwrap();
 						stupid_filled_one = true;
 					}
 				}
@@ -100,30 +100,6 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 	// HashMap<Exchange, Vec<Order>> // On fill notif of an exchange, we find the according PositionCallback, by searching for ConceptualOrder with matching uuid
 
 	//+ hardcode following binance orders here
-}
-
-async fn dirty_hardcoded_exec(order_spec: Order) -> Result<()> {
-	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
-	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
-
-	let symbol = order_spec.symbol.clone();
-
-	let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order_spec.into())
-		.await
-		.unwrap();
-	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
-	loop {
-		let order = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string())
-			.await
-			.unwrap();
-		if order.status == binance::OrderStatus::Filled {
-			let order_notional = order.origQty.parse::<f64>().unwrap();
-			dbg!("Order filled: {:?}", order_notional);
-			break;
-		}
-	}
-
-	Ok(())
 }
 
 //pub fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
@@ -172,7 +148,7 @@ impl std::str::FromStr for Market {
 
 /// Contains information sufficient to identify the exact orderbook.
 ///```rust
-///let symbol = "BTC-USDT-BinanceFutures".parse::<Symbol>().unwrap();
+///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::api::Symbol>().unwrap();
 ///```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol {

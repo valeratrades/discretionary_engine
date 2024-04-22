@@ -2,6 +2,7 @@
 mod orders;
 
 pub use orders::*;
+use tracing::info;
 
 use crate::api::order_types::Order;
 use crate::api::Market;
@@ -167,7 +168,6 @@ pub async fn futures_quantity_precision(coin: &str) -> Result<usize> {
 }
 
 /// submits an order, if successful, returns the order id
-//TODO!!: make the symbol be from utils \
 pub async fn post_futures_order(key: String, secret: String, order: Order) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
@@ -198,6 +198,34 @@ pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symb
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
 	Ok(response)
+}
+
+pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
+	assert!(order.qty_notional > 0.0);
+	dbg!(&order);
+	let order = Order {
+		order_type: crate::api::order_types::OrderType::Market,
+		..order
+	};
+
+	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
+	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+
+	let symbol = order.symbol.clone();
+
+	let order_id = post_futures_order(full_key.clone(), full_secret.clone(), order).await.unwrap();
+
+	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
+	loop {
+		let r = poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
+		if r.status == OrderStatus::Filled {
+			let order_notional = r.origQty.parse::<f64>()?;
+			info!("Order filled: {:?}", order_notional);
+			break;
+		}
+	}
+
+	Ok(())
 }
 
 //=============================================================================
