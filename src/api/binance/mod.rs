@@ -176,11 +176,13 @@ pub async fn post_futures_order(key: String, secret: String, order: Order) -> Re
 	let params = binance_order.into_params();
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
+	dbg!(&r);
 	let __why_text_fn_consumes_self = format!("{:?}", r);
 	let response: FuturesPositionResponse = match r.json().await {
 		Ok(r) => r,
 		Err(e) => {
 			println!("Error: {:?}", e);
+			dbg!(&e);
 			println!("Response: {:?}", __why_text_fn_consumes_self);
 			return Err(e.into());
 		}

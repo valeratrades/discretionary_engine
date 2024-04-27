@@ -31,6 +31,7 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
 pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
 	let mut stupid_filled_one = false;

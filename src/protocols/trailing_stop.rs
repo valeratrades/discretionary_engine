@@ -76,7 +76,7 @@ impl Protocol for TrailingStopWrapper {
 			let price = binance::futures_price(&symbol.base).await.unwrap();
 			let mut top: f64 = price;
 			let mut bottom: f64 = price;
-			let side = position_spec.side.clone();
+			let position_side = position_spec.side.clone();
 
 			let url = url::Url::parse(&address).unwrap();
 			let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -85,12 +85,13 @@ impl Protocol for TrailingStopWrapper {
 			while let Some(msg) = read.next().await {
 				let data = msg.unwrap().into_data();
 				match serde_json::from_slice::<Value>(&data) {
+					//FIXME: returns order with a wrong side
 					Ok(json) => {
 						if let Some(price_str) = json.get("p") {
 							let price: f64 = price_str.as_str().unwrap().parse().unwrap();
 							if price < bottom {
 								bottom = price;
-								match side {
+								match position_side {
 									Side::Buy => {}
 									Side::Sell => {
 										let target_price = price + price * params.lock().unwrap().percent.abs();
@@ -100,10 +101,10 @@ impl Protocol for TrailingStopWrapper {
 							}
 							if price > top {
 								top = price;
-								match side {
+								match position_side {
 									Side::Buy => {
 										let target_price = price - price * params.lock().unwrap().percent.abs();
-										send_orders!(target_price, Side::Buy);
+										send_orders!(target_price, Side::Sell);
 									}
 									Side::Sell => {}
 								}
