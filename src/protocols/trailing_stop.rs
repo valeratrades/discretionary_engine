@@ -85,7 +85,6 @@ impl Protocol for TrailingStopWrapper {
 			while let Some(msg) = read.next().await {
 				let data = msg.unwrap().into_data();
 				match serde_json::from_slice::<Value>(&data) {
-					//FIXME: returns order with a wrong side
 					Ok(json) => {
 						if let Some(price_str) = json.get("p") {
 							let price: f64 = price_str.as_str().unwrap().parse().unwrap();

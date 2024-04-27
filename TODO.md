@@ -1,9 +1,15 @@
-- [ ] implement trailing stop on followup (hardcode everything for now)
-    - [x] test that we're printing correct orders from within attach
-    - [ ] define target order and execute them
+# Next Steps
+- [ ] local runtime for binance
 
-Also, probably possible to centralize the `FollowupProtocol` and `AcquisitionProtocol` under one umbrella, then have some tag or enum to distinguish.
+- [ ] init exchange info from within it. Test we can access min size for symbol of the order.
 
+- [ ] transition all interactions with binance to be passed to this runtime; make all calls to exchange info static.
+
+- [ ] make account info static
+
+- [ ] debug STOP_MARKET orders placement
+
+# General
 - [ ] transition acquisition to follow the protocols standard
 
 - [ ] dynamically pull max_order_size and max_leverage for all futures pairs

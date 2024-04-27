@@ -1,6 +1,8 @@
 #![allow(non_snake_case, dead_code)]
+pub mod info;
 mod orders;
 
+pub use info::FUTURES_EXCHANGE_INFO;
 pub use orders::*;
 use tracing::info;
 
@@ -162,7 +164,7 @@ pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
 	let symbol_str = format!("{}USDT", coin.to_uppercase());
 
 	let r = reqwest::get(url).await?;
-	let futures_exchange_info: FuturesExchangeInfo = r.json().await?;
+	let futures_exchange_info: info::FuturesExchangeInfo = r.json().await?;
 	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 	Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
@@ -182,7 +184,6 @@ pub async fn post_futures_order(key: String, secret: String, order: Order) -> Re
 		Ok(r) => r,
 		Err(e) => {
 			println!("Error: {:?}", e);
-			dbg!(&e);
 			println!("Response: {:?}", __why_text_fn_consumes_self);
 			return Err(e.into());
 		}
@@ -246,10 +247,6 @@ pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
 //=============================================================================
 // Response structs {{{
 //=============================================================================
-
-//? Should I be doing `impl get_url` on these? Unless we have high degree of shared feilds between the markets, this is a big "YES".
-//? What if in cases when the struct is shared, I just implement market_specific commands to retrieve the url?
-// Trying this out now. So far so good.
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum OrderStatus {
@@ -374,42 +371,6 @@ struct MarginUserAsset {
 	netAsset: String,
 }
 
-// FuturesExchangeInfo structs {{{
-#[derive(Debug, Deserialize, Serialize)]
-struct FuturesExchangeInfo {
-	exchangeFilters: Vec<String>,
-	rateLimits: Vec<RateLimit>,
-	serverTime: i64,
-	assets: Vec<Value>,
-	symbols: Vec<FuturesSymbol>,
-	timezone: String,
-}
-#[derive(Debug, Deserialize, Serialize)]
-struct RateLimit {
-	interval: String,
-	intervalNum: u32,
-	limit: u32,
-	rateLimitType: String,
-}
-
-// the thing with multiplying orders due to weird limits should be here.
-//#[derive(Debug, Deserialize, Serialize)]
-//#[allow(non_snake_case)]
-//struct SymbolFilter {
-//	filterType: String,
-//	maxPrice: String,
-//	minPrice: String,
-//	tickSize: String,
-//	maxQty: String,
-//	minQty: String,
-//	stepSize: String,
-//	limit: u32,
-//	notional: String,
-//	multiplierUp: String,
-//	multiplierDown: String,
-//	multiplierDecimal: u32,
-//}
-
 #[derive(Debug, Deserialize, Serialize)]
 struct FuturesSymbol {
 	symbol: String,
@@ -463,27 +424,3 @@ impl FuturesAllPositionsResponse {
 		base_url.join("/fapi/v2/positionRisk").unwrap()
 	}
 }
-
-#[derive(Serialize, Debug, Clone)]
-pub struct FuturesOrder {
-	pub symbol: String,
-	pub price: f64,
-	pub quantity: f64,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct ResponseKline {
-	open_time: i64,
-	open: String,
-	high: String,
-	low: String,
-	close: String,
-	volume: String,
-	close_time: u64,
-	quote_asset_volume: String,
-	number_of_trades: usize,
-	taker_buy_base_asset_volume: String,
-	taker_buy_quote_asset_volume: String,
-	ignore: String,
-}
-//,}}}

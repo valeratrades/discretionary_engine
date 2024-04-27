@@ -5,6 +5,7 @@ pub mod order_types;
 use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
 use crate::config::AppConfig;
 use anyhow::Result;
+use derive_new::new;
 use order_types::{ConceptualOrder, Order};
 use tracing::{debug, info};
 use url::Url;
@@ -30,9 +31,11 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
-pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+pub async fn hub(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
+
+	let ex = &crate::api::binance::info::FUTURES_EXCHANGE_INFO;
 
 	let mut stupid_filled_one = false;
 
@@ -74,6 +77,7 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
+						dbg!(ex.min_notional(order.symbol.clone()));
 						binance::dirty_hardcoded_exec(order.clone()).await.unwrap();
 						stupid_filled_one = true;
 					}
@@ -94,12 +98,6 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 
 	//+ hardcode following binance orders here
 }
-
-//pub fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
-//	let (tx, rx) = tokio::sync::mpsc::channel(32);
-//	tokio::spawn(crate::api::hub_ish(rx));
-//	tx
-//}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -143,11 +141,16 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::api::Symbol>().unwrap();
 ///```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, new)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,
 	pub market: Market,
+}
+impl Symbol {
+	pub fn ticker(&self) -> String {
+		format!("{}{}", self.base, self.quote)
+	}
 }
 impl std::fmt::Display for Symbol {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

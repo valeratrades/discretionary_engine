@@ -52,7 +52,7 @@ struct PositionArgs {
 
 fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
 	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	tokio::spawn(crate::api::hub_ish(rx));
+	tokio::spawn(crate::api::hub(rx));
 	tx
 }
 
