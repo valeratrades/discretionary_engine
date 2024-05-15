@@ -1,4 +1,4 @@
-# Discretionary Engine
+# Architecture
 ```mermaid
 flowchart TD
     subgraph cluster_position_1 ["Position I"]
@@ -37,3 +37,5 @@ flowchart TD
 ```
 
 TODO: https://matklad.github.io/2021/02/06/ARCHITECTURE.md.html
+
+

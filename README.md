@@ -1,3 +1,6 @@
+# Discretionary Engine
+Places and follows a position from a definition of _what the target position is_
+
 ## Usage
 Example query:
 ```sh
