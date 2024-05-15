@@ -7,7 +7,6 @@ flowchart TD
         Protocol1_Params1 --> S
         Protocol3_Params1 --> S
 
-
         F --> |"apply fill mask on ProtocolOrders
         objects protocols are sending,
         and refresh current suggested
