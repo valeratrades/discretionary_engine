@@ -1,4 +1,4 @@
-use crate::api::Symbol;
+use crate::exchange_apis::Symbol;
 use anyhow::Result;
 use derive_new::new;
 use uuid::Uuid;

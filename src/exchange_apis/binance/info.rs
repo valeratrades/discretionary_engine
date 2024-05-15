@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-use crate::api::{Market, Symbol};
+use crate::exchange_apis::{Market, Symbol};
 
 lazy_static::lazy_static! {
 	pub static ref FUTURES_EXCHANGE_INFO: FuturesExchangeInfo = {

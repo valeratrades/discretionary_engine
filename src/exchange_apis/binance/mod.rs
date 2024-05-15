@@ -8,8 +8,8 @@ use tokio::select;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::api::order_types::Order;
-use crate::api::Market;
+use crate::exchange_apis::order_types::Order;
+use crate::exchange_apis::Market;
 use crate::config::AppConfig;
 use anyhow::Result;
 use chrono::Utc;
@@ -119,7 +119,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 }
 
 pub async fn futures_price(asset: &str) -> Result<f64> {
-	let symbol = crate::api::Symbol {
+	let symbol = crate::exchange_apis::Symbol {
 		base: asset.to_string(),
 		quote: "USDT".to_string(),
 		market: Market::BinanceFutures,

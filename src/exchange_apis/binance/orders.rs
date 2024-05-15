@@ -1,5 +1,5 @@
-use crate::api::binance;
-use crate::api::order_types::{Order, OrderType};
+use crate::exchange_apis::binance;
+use crate::exchange_apis::order_types::{Order, OrderType};
 use derive_new::new;
 use std::collections::HashMap;
 use v_utils::trades::Side;

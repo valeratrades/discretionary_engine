@@ -53,7 +53,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 		binance::binance_runtime(config.clone(), todo!(), todo!()).await;
 	});
 
-	let ex = &crate::api::binance::info::FUTURES_EXCHANGE_INFO;
+	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
 	let mut stupid_filled_one = false;
 
