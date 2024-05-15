@@ -83,7 +83,7 @@ Once I have a reasonable core here, it will be possible to either integrate it i
 #### Best Practices
 
 <sup>
-This repository follows the best practices as outlined in https://github.com/valeratrades/.github/best_practices.
+This repository follows the best practices as outlined in https://github.com/valeratrades/.github/tree/master/best_practices.
 </sup>
 
 #### License
