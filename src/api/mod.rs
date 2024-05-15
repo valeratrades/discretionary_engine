@@ -28,12 +28,30 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	Ok(total_balance)
 }
 
+//? is there a conventional way to introduce these communication locks?
+#[derive(Clone, Debug, derive_new::new)]
+struct HubCallback {
+	key: Uuid,
+	fill_qty: f64,
+	order: Order,
+}
+
+#[derive(Clone, Debug, derive_new::new)]
+struct HubPassforward {
+	key: Uuid,
+	orders: Vec<Order>,
+}
+
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
-pub async fn hub(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
+
+	tokio::spawn(async move {
+		binance::binance_runtime(config.clone(), todo!(), todo!()).await;
+	});
 
 	let ex = &crate::api::binance::info::FUTURES_EXCHANGE_INFO;
 
@@ -78,7 +96,7 @@ pub async fn hub(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, Posi
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
 						dbg!(ex.min_notional(order.symbol.clone()));
-						binance::dirty_hardcoded_exec(order.clone()).await.unwrap();
+						binance::dirty_hardcoded_exec(order.clone(), &config).await.unwrap();
 						stupid_filled_one = true;
 					}
 				}
@@ -123,6 +141,11 @@ impl Market {
 		}
 	}
 }
+impl Default for Market {
+	fn default() -> Self {
+		Market::BinanceFutures
+	}
+}
 
 impl std::str::FromStr for Market {
 	type Err = anyhow::Error;
@@ -141,7 +164,7 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::api::Symbol>().unwrap();
 ///```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, new)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,

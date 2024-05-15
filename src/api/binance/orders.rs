@@ -25,10 +25,10 @@ impl BinanceOrder {
 		params
 	}
 
-	pub async fn from_standard(order: Order) -> Self {
+	pub async fn from_standard(order: &Order) -> Self {
 		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
 
-		let order_type = match order.order_type {
+		let order_type = match &order.order_type {
 			OrderType::Market => BinanceOrderType::Market,
 			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new({
 				let price = binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap();

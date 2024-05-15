@@ -1,5 +1,6 @@
 use crate::api::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::api::{binance, Symbol};
+use crate::config::AppConfig;
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
@@ -38,7 +39,7 @@ impl PositionAcquisition {
 		})
 	}
 
-	pub async fn do_acquisition(spec: PositionSpec) -> Result<Self> {
+	pub async fn do_acquisition(spec: PositionSpec, config: &AppConfig) -> Result<Self> {
 		let coin = spec.asset.clone();
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 
@@ -55,7 +56,7 @@ impl PositionAcquisition {
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side.clone(), coin_quantity);
 
 		let qty = order.qty_notional;
-		let _ = crate::api::binance::dirty_hardcoded_exec(order).await?;
+		let _ = crate::api::binance::dirty_hardcoded_exec(order, config).await?;
 		current_state.acquired_notional += qty;
 
 		//let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;

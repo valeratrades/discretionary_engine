@@ -4,10 +4,13 @@ mod orders;
 
 pub use info::FUTURES_EXCHANGE_INFO;
 pub use orders::*;
+use tokio::select;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::api::order_types::Order;
 use crate::api::Market;
+use crate::config::AppConfig;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -17,7 +20,11 @@ use serde_json::Number;
 use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use url::Url;
+
+use super::HubCallback;
+use super::HubPassforward;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -171,7 +178,7 @@ pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
 }
 
 /// submits an order, if successful, returns the order id
-pub async fn post_futures_order(key: String, secret: String, order: Order) -> Result<i64> {
+pub async fn post_futures_order(key: String, secret: String, order: &Order) -> Result<i64> {
 	let url = FuturesPositionResponse::get_url();
 
 	let binance_order = BinanceOrder::from_standard(order).await;
@@ -192,12 +199,13 @@ pub async fn post_futures_order(key: String, secret: String, order: Order) -> Re
 }
 
 /// Normally, the only cases where the return from this poll is going to be _reacted_ to, is when response.status == OrderStatus::Filled or an error is returned.
-pub async fn poll_futures_order(key: String, secret: String, order_id: i64, symbol: String) -> Result<FuturesPositionResponse> {
+//TODO!: translate to websockets
+pub async fn poll_futures_order(key: String, secret: String, binance_order: &BinanceOrder) -> Result<FuturesPositionResponse> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", format!("{}", symbol));
-	params.insert("orderId", format!("{}", order_id));
+	params.insert("symbol", format!("{}", &binance_order.order.symbol));
+	params.insert("orderId", format!("{}", &binance_order.binance_order_id));
 
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
@@ -220,20 +228,21 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
-pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
+pub async fn dirty_hardcoded_exec(order: Order, config: &AppConfig) -> Result<()> {
 	assert!(order.qty_notional > 0.0);
-	//FIXME: works with market orders but not StopMarket
-
-	let full_key = std::env::var("BINANCE_TIGER_FULL_KEY").unwrap();
-	let full_secret = std::env::var("BINANCE_TIGER_FULL_SECRET").unwrap();
+	//FIXME: works with Market orders but not StopMarket
 
 	let symbol = order.symbol.clone();
 
-	let order_id = post_futures_order(full_key.clone(), full_secret.clone(), order).await.unwrap();
+	let full_key = config.binance.full_key.clone();
+	let full_secret = config.binance.full_secret.clone();
+
+	let order_id = post_futures_order(full_key.clone(), full_secret.clone(), &order).await.unwrap();
+	let binance_order = BinanceOrder::from_standard(&order).await;
 
 	//info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
 	loop {
-		let r = poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
+		let r = poll_futures_order(full_key.clone(), full_secret.clone(), &binance_order).await?;
 		if r.status == OrderStatus::Filled {
 			let order_notional = r.origQty.parse::<f64>()?;
 			info!("Order filled: {:?}", order_notional);
@@ -242,6 +251,57 @@ pub async fn dirty_hardcoded_exec(order: Order) -> Result<()> {
 	}
 
 	Ok(())
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+struct BinancePlacedOrder {
+	order: Order,
+	binance_order_id: String,
+}
+
+///NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
+pub async fn binance_runtime(
+	config: AppConfig,
+	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
+	hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
+) {
+	let full_key = config.binance.full_key.clone();
+	let full_secret = config.binance.full_secret.clone();
+	let currently_deployed: Arc<RwLock<Vec<BinancePlacedOrder>>> = Arc::new(RwLock::new(Vec::new()));
+
+	let mut last_received_fill_key = Uuid::new_v4();
+	let mut last_processed_fill_key = Uuid::new_v4();
+
+	tokio::spawn(async move {
+		//- spawn for fills. On recv: send to local_fills (last_received_fill_key, BinancePlacedOrder, received_info), so as to be able to snapshot the next incoming immediately
+
+		last_received_fill_key = Uuid::new_v4();
+		todo!()
+	});
+
+	loop {
+		select! {
+			_ = if last_received_fill_key == last_processed_fill_key => {
+				Some(target_orders) = hub_rx.recv() => {
+					//- take down all open orders
+
+					//- update
+					todo!();
+				},
+			} else {future::pending()},
+			while let Some(fills) = local_fills_rx.recv() => {
+
+				last_processed_fill_key = fills.0;
+				todo!();
+			},
+		}
+	}
+	// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
+	//Binance docs: currently only LIMIT order modification is supported
+
+	//- must be aware of all active binance orders
+
+	//- ability to modify and poll currently oustanding orders
 }
 
 //=============================================================================
