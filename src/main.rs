@@ -50,17 +50,14 @@ struct PositionArgs {
 }
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
-fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
+fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
 	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	tokio::spawn(crate::api::hub(rx));
+	tokio::spawn(crate::api::hub(config.clone(), rx));
 	tx
 }
 
 #[tokio::main]
 async fn main() {
-	utils::init_subscriber();
-	let tx = init_hub();
-
 	let cli = Cli::parse();
 	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
@@ -69,6 +66,8 @@ async fn main() {
 			std::process::exit(1);
 		}
 	};
+	utils::init_subscriber();
+	let tx = init_hub(config.clone());
 	//let noconfirm = cli.noconfirm;
 
 	match cli.command {

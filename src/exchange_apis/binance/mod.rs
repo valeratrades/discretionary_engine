@@ -204,7 +204,8 @@ pub async fn poll_futures_order(key: String, secret: String, binance_order: &Bin
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", format!("{}", &binance_order.order.symbol));
+	//FIX: What? we need to have one here a type for polling binance or pass binance_order_id directly
+	params.insert("symbol", format!("{}", &binance_order.symbol));
 	params.insert("orderId", format!("{}", &binance_order.binance_order_id));
 
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
