@@ -1,6 +1,6 @@
+use crate::config::AppConfig;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::exchange_apis::{binance, Symbol};
-use crate::config::AppConfig;
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
@@ -12,7 +12,7 @@ use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
-/// What the Position _*is*_
+/// What the Position *is*_
 #[derive(Debug, Clone, new)]
 pub struct PositionSpec {
 	pub asset: String,

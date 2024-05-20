@@ -10,15 +10,16 @@ pub struct BinanceOrder {
 	pub symbol: String,
 	pub side: Side,
 	pub qty_notional: f64,
+	pub binance_id: Option<i64>,
 }
 impl BinanceOrder {
-	pub fn into_params(self) -> HashMap<&'static str, String> {
+	pub fn to_params(&self) -> HashMap<&'static str, String> {
 		let mut params = HashMap::<&'static str, String>::new();
-		params.insert("symbol", self.symbol);
+		params.insert("symbol", self.symbol.clone());
 		params.insert("side", self.side.to_string());
 		params.insert("quantity", format!("{}", self.qty_notional));
 
-		let type_params = self.order_type.into_params();
+		let type_params = self.order_type.to_params();
 		params.extend(type_params);
 
 		dbg!(&params);
@@ -36,7 +37,7 @@ impl BinanceOrder {
 			})),
 		};
 
-		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted);
+		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted, None);
 
 		binance_order
 	}
@@ -60,7 +61,7 @@ pub struct BinanceStopMarket {
 }
 
 impl BinanceOrderType {
-	fn into_params(self) -> HashMap<&'static str, String> {
+	fn to_params(&self) -> HashMap<&'static str, String> {
 		match self {
 			BinanceOrderType::Market => {
 				let mut params = HashMap::<&'static str, String>::new();

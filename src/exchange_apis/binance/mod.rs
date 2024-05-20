@@ -1,19 +1,14 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
 mod orders;
-
-pub use info::FUTURES_EXCHANGE_INFO;
-pub use orders::*;
-use tokio::select;
-use tracing::info;
-use uuid::Uuid;
-
+use crate::config::AppConfig;
 use crate::exchange_apis::order_types::Order;
 use crate::exchange_apis::Market;
-use crate::config::AppConfig;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
+pub use info::FUTURES_EXCHANGE_INFO;
+pub use orders::*;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
@@ -21,11 +16,13 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use tokio::select;
+use tracing::info;
 use url::Url;
+use uuid::Uuid;
 
 use super::HubCallback;
 use super::HubPassforward;
-
 type HmacSha256 = Hmac<Sha256>;
 
 #[allow(dead_code)]
@@ -42,16 +39,16 @@ pub struct Binance {
 	futures_symbols: HashMap<String, FuturesSymbol>,
 }
 
-pub async fn signed_request(
+pub async fn signed_request<S: AsRef<str>>(
 	http_method: HttpMethod,
 	endpoint_str: &str,
 	mut params: HashMap<&'static str, String>,
-	key: String,
-	secret: String,
+	key: S,
+	secret: S,
 ) -> Result<reqwest::Response> {
 	let mut headers = HeaderMap::new();
 	headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
-	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(&key).unwrap());
+	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(key.as_ref()).unwrap());
 	let client = reqwest::Client::builder().default_headers(headers).build()?;
 
 	let time_ms = Utc::now().timestamp_millis();
@@ -59,7 +56,7 @@ pub async fn signed_request(
 
 	let query_string = serde_urlencoded::to_string(&params)?;
 
-	let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+	let mut mac = HmacSha256::new_from_slice(secret.as_ref().as_bytes()).unwrap();
 	mac.update(query_string.as_bytes());
 	let mac_bytes = mac.finalize().into_bytes();
 	let signature = hex::encode(mac_bytes);
@@ -149,6 +146,23 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	Ok(price)
 }
 
+pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>) -> Result<()> {
+	let base_url = Market::BinanceFutures.get_base_url();
+	let url = base_url.join("/fapi/v1/order").unwrap();
+
+	let handles = orders.iter().map(|o| {
+		let mut params = HashMap::<&str, String>::new();
+		params.insert("symbol", o.symbol.clone());
+		params.insert("orderId", o.binance_id.unwrap().to_string());
+		signed_request(HttpMethod::DELETE, url.as_str(), params, key.clone(), secret.clone())
+	});
+	for handle in handles {
+		let _ = handle.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
@@ -177,12 +191,11 @@ pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
 	Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
 }
 
-/// submits an order, if successful, returns the order id
-pub async fn post_futures_order(key: String, secret: String, order: &Order) -> Result<i64> {
+pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order) -> Result<BinanceOrder> {
 	let url = FuturesPositionResponse::get_url();
 
-	let binance_order = BinanceOrder::from_standard(order).await;
-	let params = binance_order.into_params();
+	let mut binance_order = BinanceOrder::from_standard(order).await;
+	let params = binance_order.to_params();
 
 	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
 	dbg!(&r);
@@ -195,18 +208,18 @@ pub async fn post_futures_order(key: String, secret: String, order: &Order) -> R
 			return Err(e.into());
 		}
 	};
-	Ok(response.orderId)
+	binance_order.binance_id = Some(response.orderId);
+	Ok(binance_order)
 }
 
 /// Normally, the only cases where the return from this poll is going to be _reacted_ to, is when response.status == OrderStatus::Filled or an error is returned.
 //TODO!: translate to websockets
-pub async fn poll_futures_order(key: String, secret: String, binance_order: &BinanceOrder) -> Result<FuturesPositionResponse> {
+pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order: &BinanceOrder) -> Result<FuturesPositionResponse> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
-	//FIX: What? we need to have one here a type for polling binance or pass binance_order_id directly
 	params.insert("symbol", format!("{}", &binance_order.symbol));
-	params.insert("orderId", format!("{}", &binance_order.binance_order_id));
+	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
@@ -254,47 +267,75 @@ pub async fn dirty_hardcoded_exec(order: Order, config: &AppConfig) -> Result<()
 	Ok(())
 }
 
-#[derive(Clone, Debug, Default, derive_new::new)]
-struct BinancePlacedOrder {
-	order: Order,
-	binance_order_id: String,
-}
-
 ///NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(
 	config: AppConfig,
 	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
-	hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
+	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
 ) {
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
-	let currently_deployed: Arc<RwLock<Vec<BinancePlacedOrder>>> = Arc::new(RwLock::new(Vec::new()));
+	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
 	let mut last_received_fill_key = Uuid::new_v4();
 	let mut last_processed_fill_key = Uuid::new_v4();
 
+	let (mut local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
+	let currently_deployed_clone = currently_deployed.clone();
+	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
 	tokio::spawn(async move {
-		//- spawn for fills. On recv: send to local_fills (last_received_fill_key, BinancePlacedOrder, received_info), so as to be able to snapshot the next incoming immediately
+		//TODO!!!: make a websocket
+		loop {
+			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-		last_received_fill_key = Uuid::new_v4();
-		todo!()
+			let orders: Vec<_> = {
+				let currently_deployed_read = currently_deployed_clone.read().unwrap();
+				currently_deployed_read.iter().cloned().collect()
+			};
+			for order in orders {
+				let r = poll_futures_order(&full_key_clone, &full_secret_clone, &order).await.unwrap();
+				if r.status == OrderStatus::Filled {
+					last_received_fill_key = Uuid::new_v4();
+					local_fills_tx.send((last_received_fill_key, order.clone(), r.clone())).await.unwrap();
+				}
+			}
+		}
 	});
 
 	loop {
 		select! {
-			_ = if last_received_fill_key == last_processed_fill_key => {
-				Some(target_orders) = hub_rx.recv() => {
-					//- take down all open orders
+			Ok(_) = hub_rx.changed(), if last_received_fill_key == last_processed_fill_key => {
+				let target_orders: Vec<Order>;
+				{
+					let hub_passforward = hub_rx.borrow();
+					last_received_fill_key = hub_passforward.key.clone(); //dbg
+					target_orders = match hub_passforward.key == last_received_fill_key {
+						true => hub_passforward.orders.clone(), //?  take()
+						false => {
+							break;
+						},
+					};
+				}
 
-					//- update
-					todo!();
-				},
-			} else {future::pending()},
-			while let Some(fills) = local_fills_rx.recv() => {
+				close_orders(full_key.clone(), full_secret.clone(), currently_deployed.read().unwrap().clone()).await.unwrap();
 
-				last_processed_fill_key = fills.0;
-				todo!();
+				let mut just_deployed = Vec::new();
+				for o in target_orders {
+					let b = post_futures_order(full_key.clone(), full_secret.clone(), &o).await.unwrap();
+					just_deployed.push(b);
+				}
+				{
+					let mut current_lock = currently_deployed.write().unwrap();
+					*current_lock = just_deployed;
+				}
 			},
+			_ = async {
+					while let Some(fills) = local_fills_rx.recv().await {
+						last_processed_fill_key = fills.0;
+						//let order_notional = r.origQty.parse::<f64>()?;
+						println!("Fills: {:?} on order: {:?}", fills.1, fills.2);
+					}
+			} => {},
 		}
 	}
 	// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
@@ -309,7 +350,7 @@ pub async fn binance_runtime(
 // Response structs {{{
 //=============================================================================
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum OrderStatus {
 	#[serde(rename = "NEW")]
 	New,
@@ -325,7 +366,7 @@ pub enum OrderStatus {
 	ExpiredInMatch,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FuturesPositionResponse {
 	pub clientOrderId: Option<String>,
 	pub cumQty: Option<String>,

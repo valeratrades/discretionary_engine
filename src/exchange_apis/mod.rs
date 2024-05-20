@@ -49,8 +49,9 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
+	let config_clone = config.clone();
 	tokio::spawn(async move {
-		binance::binance_runtime(config.clone(), todo!(), todo!()).await;
+		binance::binance_runtime(config_clone, todo!(), todo!()).await;
 	});
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
@@ -95,7 +96,6 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
-						dbg!(ex.min_notional(order.symbol.clone()));
 						binance::dirty_hardcoded_exec(order.clone(), &config).await.unwrap();
 						stupid_filled_one = true;
 					}
