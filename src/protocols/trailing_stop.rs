@@ -129,6 +129,12 @@ impl Protocol for TrailingStopWrapper {
 	}
 }
 
+impl TrailingStop {
+	fn data_source(&self) -> String {
+		unimplemented!()
+	}
+}
+
 #[derive(Debug, Clone, CompactFormat)]
 pub struct TrailingStop {
 	percent: f64,

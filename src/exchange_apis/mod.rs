@@ -7,7 +7,6 @@ use crate::config::AppConfig;
 use anyhow::Result;
 use derive_new::new;
 use order_types::{ConceptualOrder, Order};
-use tracing::{debug, info};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
@@ -30,14 +29,14 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 
 //? is there a conventional way to introduce these communication locks?
 #[derive(Clone, Debug, derive_new::new)]
-struct HubCallback {
+pub struct HubCallback {
 	key: Uuid,
 	fill_qty: f64,
 	order: Order,
 }
 
 #[derive(Clone, Debug, derive_new::new)]
-struct HubPassforward {
+pub struct HubPassforward {
 	key: Uuid,
 	orders: Vec<Order>,
 }
