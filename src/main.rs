@@ -1,5 +1,5 @@
 #![allow(clippy::get_first)]
-#![allow(clippy::len_zero)]
+//#![allow(clippy::len_zero)]
 
 pub mod config;
 pub mod exchange_apis;
