@@ -27,28 +27,17 @@ An example config can be found in ./examples/config.toml
 
 - orders are placed immediately (not that far off, as most of the time we will spam the thing until it accepts, and only other action that will need to be taken is to prevent any increases in exposure while we have any mismatches).
 
-# TODO for next version
-
-- [x] is there a pattern to connect members of two enums?
-    If yes, implement it, otherwise make them HashMap<str, String>
-
-- [x] impl all `ProtocolCache` for Followups
-
-- [ ] impl all `FollowupProtocol` for Followups
-
-... To make price requests sync, and not have to deal with async traits, I'm making a compound orderbook implementation as a separate project now...
-
 
 ## State
-Currently I am rewriting handling and initialization of exchange interactions in a separate crate.
-Once I have a reasonable core here, it will be possible to either integrate it into here, or the other way around.
+Number one priority is getting NRSR up.
+Once done, will be able to merge other parts of the project like handling and initialization of exchange interactions (currently in a separate crate).
 
 <br>
 
 #### Best Practices
 
 <sup>
-This repository follows the best practices as outlined in https://github.com/valeratrades/.github/tree/master/best_practices.
+This repository follows [my best practices](<https://github.com/valeratrades/.github/tree/master/best_practices>).
 </sup>
 
 #### License
