@@ -1,8 +1,4 @@
-use crate::exchange_apis::{
-	binance::{self},
-	order_types::*,
-	Market, Symbol,
-};
+use crate::exchange_apis::{order_types::*, Market, Symbol};
 use crate::positions::PositionSpec;
 use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
@@ -222,7 +218,9 @@ mod tests {
 	#[tokio::test]
 	async fn test_trailing_stop() {
 		let percent = 0.02;
-		let ts = TrailingStopWrapper::from_str(&format!("ts:p{percent}")).unwrap().set_data_source(DataSource::Test);
+		let ts = TrailingStopWrapper::from_str(&format!("ts:p{percent}"))
+			.unwrap()
+			.set_data_source(DataSource::Test);
 
 		//TODO: use fake crate to distinguish between args that matter and that don't
 		let position_spec = PositionSpec::new("BTC".to_owned(), Side::Buy, 1.0);
@@ -241,10 +239,26 @@ mod tests {
 		//TODO: figure out passing of the test data instead of using values hardcoded in DataSource::listen() self::Test match arm.
 		let multiplier = heuristic(percent, Side::Buy);
 		let expected_data = [
-			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)), Side::Sell, 1.0)],
-			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.5 * multiplier)), Side::Sell, 1.0)],
-			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.5 * multiplier)), Side::Sell, 1.0)],
-			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.6 * multiplier)), Side::Sell, 1.0)],
+			[(
+				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)),
+				Side::Sell,
+				1.0,
+			)],
+			[(
+				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.5 * multiplier)),
+				Side::Sell,
+				1.0,
+			)],
+			[(
+				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.5 * multiplier)),
+				Side::Sell,
+				1.0,
+			)],
+			[(
+				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.6 * multiplier)),
+				Side::Sell,
+				1.0,
+			)],
 		];
 
 		for (i, data) in received_data.iter().enumerate() {
