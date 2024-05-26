@@ -30,6 +30,7 @@ pub struct PositionAcquisition {
 }
 impl PositionAcquisition {
 	//dbg
+	#[allow(clippy::unused_async)]
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
 			__spec: spec,
@@ -53,10 +54,10 @@ impl PositionAcquisition {
 			protocols_spec: None,
 		};
 
-		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side.clone(), coin_quantity);
+		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
 		let qty = order.qty_notional;
-		let _ = crate::exchange_apis::binance::dirty_hardcoded_exec(order, config).await?;
+		crate::exchange_apis::binance::dirty_hardcoded_exec(order, config).await?;
 		current_state.acquired_notional += qty;
 
 		//let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;

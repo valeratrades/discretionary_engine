@@ -135,7 +135,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	let prices: Vec<serde_json::Value> = r.json().await?;
 	let price = prices
 		.iter()
-		.find(|x| x.get("symbol").unwrap().as_str().unwrap().to_string() == symbol.to_string())
+		.find(|x| *x.get("symbol").unwrap().as_str().unwrap() == symbol.to_string())
 		.unwrap()
 		.get("price")
 		.unwrap()
@@ -218,7 +218,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
-	params.insert("symbol", format!("{}", &binance_order.symbol));
+	params.insert("symbol", binance_order.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 
 	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
@@ -308,7 +308,7 @@ pub async fn binance_runtime(
 				let target_orders: Vec<Order>;
 				{
 					let hub_passforward = hub_rx.borrow();
-					last_received_fill_key = hub_passforward.key.clone(); //dbg
+					last_received_fill_key = hub_passforward.key; //dbg
 					target_orders = match hub_passforward.key == last_received_fill_key {
 						true => hub_passforward.orders.clone(), //?  take()
 						false => {
@@ -317,7 +317,11 @@ pub async fn binance_runtime(
 					};
 				}
 
-				close_orders(full_key.clone(), full_secret.clone(), currently_deployed.read().unwrap().clone()).await.unwrap();
+				let currently_deployed_clone;
+				{
+					currently_deployed_clone = currently_deployed.read().unwrap().clone();
+				}
+				close_orders(full_key.clone(), full_secret.clone(), currently_deployed_clone).await.unwrap();
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {

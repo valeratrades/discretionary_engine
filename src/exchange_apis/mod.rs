@@ -15,9 +15,10 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
 	let read_secret = config.binance.read_secret.clone();
 
-	let mut handlers = Vec::new();
-	handlers.push(binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures));
-	handlers.push(binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot));
+	let mut handlers = vec![
+		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures),
+		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot),
+	];
 
 	let mut total_balance = 0.0;
 	for handler in handlers {
@@ -70,18 +71,18 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 			for o in vec {
 				match &o.order_type {
 					ConceptualOrderType::Market(_) => {
-						let order = Order::new(o.id.uuid.clone(), order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
-						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
+						let order = Order::new(o.id.uuid, order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
+						actual_orders.entry(Market::BinanceFutures).or_default().push(order);
 					}
 					ConceptualOrderType::StopMarket(stop_market) => {
 						let order = Order::new(
-							o.id.uuid.clone(),
+							o.id.uuid,
 							order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
 							o.symbol.clone(),
 							o.side,
 							o.qty_notional,
 						);
-						actual_orders.entry(Market::BinanceFutures).or_insert_with(Vec::new).push(order);
+						actual_orders.entry(Market::BinanceFutures).or_default().push(order);
 					}
 					_ => panic!("Unsupported order type"),
 				}
@@ -118,8 +119,9 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Market {
+	#[default]
 	BinanceFutures,
 	BinanceSpot,
 	BinanceMargin,
@@ -139,11 +141,6 @@ impl Market {
 			Market::BinanceSpot => symbol.to_owned().to_uppercase() + "USDT",
 			Market::BinanceMargin => symbol.to_owned().to_uppercase() + "USDT",
 		}
-	}
-}
-impl Default for Market {
-	fn default() -> Self {
-		Market::BinanceFutures
 	}
 }
 

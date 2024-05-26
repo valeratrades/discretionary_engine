@@ -25,7 +25,7 @@ impl FromStr for TrailingStopWrapper {
 	type Err = anyhow::Error;
 
 	fn from_str(spec: &str) -> Result<Self> {
-		let ts = TrailingStop::from_str(&spec)?;
+		let ts = TrailingStop::from_str(spec)?;
 
 		Ok(Self {
 			params: Arc::new(Mutex::new(ts)),
@@ -51,7 +51,7 @@ impl DataSource {
 	async fn listen(&self, address: &str, tx: tokio::sync::mpsc::Sender<f64>) -> Result<()> {
 		match self {
 			DataSource::Default => {
-				let url = url::Url::parse(&address).unwrap();
+				let url = url::Url::parse(address).unwrap();
 
 				let (ws_stream, _) = connect_async(url).await.unwrap();
 				let (_, mut read) = ws_stream.split();
@@ -103,7 +103,7 @@ impl Protocol for TrailingStopWrapper {
 		// a thing that uniquely marks all the semantic orders of the grid the protocol may want to place.
 		let mut order_mask: HashMap<Uuid, Option<ConceptualOrderPercents>> = HashMap::new();
 		let stop_market_uuid = Uuid::new_v4();
-		order_mask.insert(stop_market_uuid.clone(), None);
+		order_mask.insert(stop_market_uuid, None);
 
 		macro_rules! send_orders {
 			($target_price:expr, $side:expr) => {{
@@ -128,13 +128,13 @@ impl Protocol for TrailingStopWrapper {
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
 		let address_clone = address.clone();
-		let data_source_clone = self.data_source.clone();
+		let data_source_clone = self.data_source;
 		tokio::spawn(async move {
-			let _ = data_source_clone.listen(&address_clone, tx).await.unwrap();
+			data_source_clone.listen(&address_clone, tx).await.unwrap();
 		});
 
 		tokio::spawn(async move {
-			let position_side = position_spec.side.clone();
+			let position_side = position_spec.side;
 			let mut top = 0.0;
 			let mut bottom = 0.0;
 
@@ -202,7 +202,7 @@ mod tests {
 	//TODO!!!: figure out how to make ide integration for expected values here
 	#[track_caller]
 	/// [2] is the percent of total controlled (can be any value, as long as proportion with other values in expected is correct)
-	fn check_protocol_orders(got: &ProtocolOrders, expected: Vec<(ConceptualOrderType, Side, f64)>) {
+	fn check_protocol_orders(got: &ProtocolOrders, expected: &[(ConceptualOrderType, Side, f64)]) {
 		let total_controlled_sum_expected = expected.iter().map(|(_, _, qty)| qty).sum();
 		let empty_mask = got.empty_mask();
 		// don't really like this, as we accidentially are testing the ProtocolOrders layer implementation too.
@@ -236,20 +236,19 @@ mod tests {
 		while let Some(data) = rx.recv().await {
 			received_data.push(data);
 		}
-		println!("{:?}", received_data);
 
 		//let test_data = vec![100.0, 100.5, 102.5, 100.0, 101.0, 97.0, 102.6];
 		//TODO: figure out passing of the test data instead of using values hardcoded in DataSource::listen() self::Test match arm.
 		let multiplier = heuristic(percent, Side::Buy);
-		let expected_data = vec![
-			vec![(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)), Side::Sell, 1.0)],
-			vec![(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.5 * multiplier)), Side::Sell, 1.0)],
-			vec![(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.5 * multiplier)), Side::Sell, 1.0)],
-			vec![(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.6 * multiplier)), Side::Sell, 1.0)],
+		let expected_data = [
+			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)), Side::Sell, 1.0)],
+			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.5 * multiplier)), Side::Sell, 1.0)],
+			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.5 * multiplier)), Side::Sell, 1.0)],
+			[(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.6 * multiplier)), Side::Sell, 1.0)],
 		];
 
 		for (i, data) in received_data.iter().enumerate() {
-			check_protocol_orders(data, expected_data.get(i).unwrap().clone());
+			check_protocol_orders(data, expected_data.get(i).unwrap());
 		}
 	}
 }

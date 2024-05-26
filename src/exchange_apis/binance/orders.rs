@@ -32,14 +32,11 @@ impl BinanceOrder {
 		let order_type = match &order.order_type {
 			OrderType::Market => BinanceOrderType::Market,
 			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new({
-				let price = binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap();
-				price
+				binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap()
 			})),
 		};
 
-		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted, None);
-
-		binance_order
+		Self::new(order_type, order.symbol.to_string(), order.side, coin_quantity_adjusted, None)
 	}
 }
 

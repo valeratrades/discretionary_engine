@@ -56,8 +56,10 @@ impl FollowupProtocols {
 pub enum FollowupProtocol {
 	TrailingStop(TrailingStopWrapper),
 }
-impl FollowupProtocol {
-	pub fn from_str(spec: &str) -> Result<Self> {
+impl FromStr for FollowupProtocol {
+	type Err = anyhow::Error;
+
+	fn from_str(spec: &str) -> Result<Self> {
 		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
 			Ok(FollowupProtocol::TrailingStop(ts))
 		} else {
@@ -120,7 +122,7 @@ impl ProtocolOrders {
 			.iter()
 			.filter_map(|(uuid, order)| {
 				if let Some(o) = order.clone() {
-					let mut exact_order = o.to_exact(total_controlled_notional, self.produced_by.clone(), uuid.clone());
+					let mut exact_order = o.to_exact(total_controlled_notional, self.produced_by.clone(), *uuid);
 					let filled = *filled_mask.get(uuid).unwrap_or(&0.0);
 
 					if filled > exact_order.qty_notional * 0.99 {

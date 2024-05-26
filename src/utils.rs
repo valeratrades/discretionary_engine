@@ -8,6 +8,7 @@ use tracing_subscriber::{
 	EnvFilter, Registry,
 };
 
+///# Panics
 pub fn init_subscriber() {
 	let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info"));
 

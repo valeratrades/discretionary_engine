@@ -18,8 +18,9 @@ pub struct Order {
 }
 
 ///NB: id of all orders must match uuid field of parent ConceptualOrder if any
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum OrderType {
+	#[default]
 	Market,
 	StopMarket(StopMarketOrder),
 	//Limit(LimitOrder),
@@ -29,11 +30,6 @@ pub enum OrderType {
 	//Reverse(ReverseOrder),
 	//ScaledOrder(ScaledOrder),
 	//StopMarket(StopMarketOrder),
-}
-impl Default for OrderType {
-	fn default() -> Self {
-		OrderType::Market
-	}
 }
 
 #[derive(Clone, Debug, PartialEq, new)]

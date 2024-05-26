@@ -17,6 +17,12 @@ edition = "2021"
 # and we don't rely on it for debugging that much.
 debug = 0
 
+# doesn't seem to be picked up by clippy as of today
+[lints.clippy]
+cmp_float = "allow"
+len_zero = "allow"
+get_zero = "allow"
+
 [package.metadata.cargo-machete]
 ignored = ["v_utils_macros", "serde_with", "tracing-futures"]
 

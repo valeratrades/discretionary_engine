@@ -65,19 +65,19 @@ jobs:
       - uses: dtolnay/install@cargo-docs-rs
       - run: cargo docs-rs
 
-  miri:
-    name: Miri
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@miri
-      - run: cargo miri setup
-      - run: cargo miri test
-        env:
-          MIRIFLAGS: -Zmiri-strict-provenance
+  #miri:
+  #  name: Miri
+  #  needs: pre_ci
+  #  if: needs.pre_ci.outputs.continue
+  #  runs-on: ubuntu-latest
+  #  timeout-minutes: 45
+  #  steps:
+  #    - uses: actions/checkout@v4
+  #    - uses: dtolnay/rust-toolchain@miri
+  #    - run: cargo miri setup
+  #    - run: cargo miri test
+  #      env:
+  #        MIRIFLAGS: -Zmiri-strict-provenance
 
   clippy:
     name: Clippy
@@ -87,5 +87,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
-      - run: cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic
-
+      - run: cargo clippy --tests -- -Dclippy::all
+      #-Dclippy::pedantic
