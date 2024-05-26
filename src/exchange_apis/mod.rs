@@ -162,7 +162,7 @@ impl std::str::FromStr for Market {
 
 /// Contains information sufficient to identify the exact orderbook.
 ///```rust
-///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::api::Symbol>().unwrap();
+///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
 ///```
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new)]
 pub struct Symbol {
