@@ -1,4 +1,5 @@
-use crate::api::order_types::{Order, OrderType};
+use crate::exchange_apis::binance;
+use crate::exchange_apis::order_types::{Order, OrderType};
 use derive_new::new;
 use std::collections::HashMap;
 use v_utils::trades::Side;
@@ -9,31 +10,34 @@ pub struct BinanceOrder {
 	pub symbol: String,
 	pub side: Side,
 	pub qty_notional: f64,
+	pub binance_id: Option<i64>,
 }
 impl BinanceOrder {
-	pub fn into_params(self) -> HashMap<&'static str, String> {
+	pub fn to_params(&self) -> HashMap<&'static str, String> {
 		let mut params = HashMap::<&'static str, String>::new();
-		params.insert("symbol", self.symbol);
+		params.insert("symbol", self.symbol.clone());
 		params.insert("side", self.side.to_string());
 		params.insert("quantity", format!("{}", self.qty_notional));
 
-		let type_params = self.order_type.into_params();
+		let type_params = self.order_type.to_params();
 		params.extend(type_params);
 
+		dbg!(&params);
 		params
 	}
 
-	pub async fn from_standard(order: Order) -> Self {
-		let quantity_precision = crate::api::binance::futures_quantity_precision(&order.symbol.base).await.unwrap();
-		let factor = 10_f64.powi(quantity_precision as i32);
-		let coin_quantity_adjusted = (order.qty_notional * factor).round() / factor;
+	pub async fn from_standard(order: &Order) -> Self {
+		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
 
-		let order_type = match order.order_type {
+		let order_type = match &order.order_type {
 			OrderType::Market => BinanceOrderType::Market,
-			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new(sm.price)),
+			OrderType::StopMarket(sm) => BinanceOrderType::StopMarket(BinanceStopMarket::new({
+				let price = binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap();
+				price
+			})),
 		};
 
-		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted);
+		let binance_order = Self::new(order_type, order.symbol.to_string(), order.side.clone(), coin_quantity_adjusted, None);
 
 		binance_order
 	}
@@ -57,7 +61,7 @@ pub struct BinanceStopMarket {
 }
 
 impl BinanceOrderType {
-	fn into_params(self) -> HashMap<&'static str, String> {
+	fn to_params(&self) -> HashMap<&'static str, String> {
 		match self {
 			BinanceOrderType::Market => {
 				let mut params = HashMap::<&'static str, String>::new();

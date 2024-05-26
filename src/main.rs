@@ -1,8 +1,5 @@
-#[macro_use]
-extern crate lazy_static;
-pub mod api;
-use std::sync::Mutex;
 pub mod config;
+pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
@@ -52,17 +49,14 @@ struct PositionArgs {
 }
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
-fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
+fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<exchange_apis::order_types::ConceptualOrder>, positions::PositionCallback)> {
 	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	tokio::spawn(crate::api::hub_ish(rx));
+	tokio::spawn(exchange_apis::hub(config.clone(), rx));
 	tx
 }
 
 #[tokio::main]
 async fn main() {
-	utils::init_subscriber();
-	let tx = init_hub();
-
 	let cli = Cli::parse();
 	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
@@ -71,6 +65,8 @@ async fn main() {
 			std::process::exit(1);
 		}
 	};
+	utils::init_subscriber();
+	let tx = init_hub(config.clone());
 	//let noconfirm = cli.noconfirm;
 
 	match cli.command {
@@ -79,7 +75,7 @@ async fn main() {
 			// update acquisition and followup protocols on it
 			// they themselves decide whether cache needs to be updated/created
 
-			let balance = api::compile_total_balance(config.clone()).await.unwrap();
+			let balance = exchange_apis::compile_total_balance(config.clone()).await.unwrap();
 			let (side, target_size) = match position_args.size {
 				s if s > 0.0 => (Side::Buy, s * balance),
 				s if s < 0.0 => (Side::Sell, -s * balance),

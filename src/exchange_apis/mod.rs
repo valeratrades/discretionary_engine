@@ -5,8 +5,8 @@ pub mod order_types;
 use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
 use crate::config::AppConfig;
 use anyhow::Result;
+use derive_new::new;
 use order_types::{ConceptualOrder, Order};
-use tracing::{debug, info};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
@@ -27,19 +27,34 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	Ok(total_balance)
 }
 
-///NB: Temporary function that assumes BinanceFutures, and will be replaced with making the same request to a BinanceExchange struct, with preloaded values.
-pub async fn round_to_required_precision(coin: String, quantity: f64) -> Result<f64> {
-	let quantity_precision = binance::futures_quantity_precision(&coin).await?;
-	let factor = 10_f64.powi(quantity_precision as i32);
-	let quantity_adjusted = (quantity * factor).round() / factor;
-	Ok(quantity_adjusted)
+//? is there a conventional way to introduce these communication locks?
+#[derive(Clone, Debug, derive_new::new)]
+pub struct HubCallback {
+	key: Uuid,
+	fill_qty: f64,
+	order: Order,
+}
+
+#[derive(Clone, Debug, derive_new::new)]
+pub struct HubPassforward {
+	key: Uuid,
+	orders: Vec<Order>,
 }
 
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
-pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
+
+	//TODO!!!!!!: \
+	//let config_clone = config.clone();
+	//tokio::spawn(async move {
+	//	binance::binance_runtime(config_clone, todo!(), todo!()).await;
+	//});
+
+	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
 	let mut stupid_filled_one = false;
 
@@ -81,7 +96,7 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
 						let order = vec.get(0).unwrap();
-						binance::dirty_hardcoded_exec(order.clone()).await.unwrap();
+						binance::dirty_hardcoded_exec(order.clone(), &config).await.unwrap();
 						stupid_filled_one = true;
 					}
 				}
@@ -101,12 +116,6 @@ pub async fn hub_ish(mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, 
 
 	//+ hardcode following binance orders here
 }
-
-//pub fn init_hub() -> tokio::sync::mpsc::Sender<(Vec<api::order_types::ConceptualOrder>, positions::PositionCallback)> {
-//	let (tx, rx) = tokio::sync::mpsc::channel(32);
-//	tokio::spawn(crate::api::hub_ish(rx));
-//	tx
-//}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -132,6 +141,11 @@ impl Market {
 		}
 	}
 }
+impl Default for Market {
+	fn default() -> Self {
+		Market::BinanceFutures
+	}
+}
 
 impl std::str::FromStr for Market {
 	type Err = anyhow::Error;
@@ -150,11 +164,16 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::api::Symbol>().unwrap();
 ///```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,
 	pub market: Market,
+}
+impl Symbol {
+	pub fn ticker(&self) -> String {
+		format!("{}{}", self.base, self.quote)
+	}
 }
 impl std::fmt::Display for Symbol {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

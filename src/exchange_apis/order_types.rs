@@ -1,4 +1,4 @@
-use crate::api::Symbol;
+use crate::exchange_apis::Symbol;
 use anyhow::Result;
 use derive_new::new;
 use uuid::Uuid;
@@ -8,7 +8,7 @@ use v_utils::trades::Side;
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
-#[derive(Clone, Debug, PartialEq, new)]
+#[derive(Clone, Debug, PartialEq, new, Default)]
 pub struct Order {
 	pub id: Uuid,
 	pub order_type: OrderType,
@@ -29,6 +29,11 @@ pub enum OrderType {
 	//Reverse(ReverseOrder),
 	//ScaledOrder(ScaledOrder),
 	//StopMarket(StopMarketOrder),
+}
+impl Default for OrderType {
+	fn default() -> Self {
+		OrderType::Market
+	}
 }
 
 #[derive(Clone, Debug, PartialEq, new)]

@@ -1,5 +1,5 @@
 mod trailing_stop;
-use crate::api::order_types::{ConceptualOrder, ConceptualOrderPercents};
+use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents};
 use crate::positions::PositionSpec;
 use anyhow::Result;
 use derive_new::new;

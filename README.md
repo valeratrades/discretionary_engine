@@ -1,40 +1,5 @@
 # Discretionary Engine
-```mermaid
-flowchart TD
-    subgraph cluster_position_1 ["Position I"]
-        Protocol1_Params1 --> S
-        Protocol3_Params1 --> S
-        S --> |"Knowing how much
-        each protocol manages,
-        convert suggested orders,
-        (size as % of total under
-        protocol's management),
-        into notional sizes.
-        After choose up to
-        target position size
-        from them, so as to not
-        risk having additional
-        stale exposure"| Hub
-        F --> |"apply fill mask on ProtocolOrders
-        objects protocols are sending,
-        and refresh current suggested
-        orders on Position"| S
-        S["All suggested orders for this Position"]
-        F["Fill port of the Position"]
-    end
-
-    PositionII["Position II"] --> Hub
-    PositionIII["Position III"] --> Hub
-    Hub -->|"fill"| F
-    Hub --> BinanceFutures
-    BinanceFutures -->|"fill"| Hub
-    Hub --> BinanceSpot
-    BinanceSpot -->|"fill"| Hub
-    Hub --> BybitFutures
-    BybitFutures -->|"fill"| Hub
-    Hub --> Coinbase
-    Coinbase -->|"fill"| Hub
-```
+Places and follows a position from a definition of _what the target position is_
 
 ## Usage
 Example query:
@@ -77,3 +42,27 @@ An example config can be found in ./examples/config.toml
 ## State
 Currently I am rewriting handling and initialization of exchange interactions in a separate crate.
 Once I have a reasonable core here, it will be possible to either integrate it into here, or the other way around.
+
+<br>
+
+#### Best Practices
+
+<sup>
+This repository follows the best practices as outlined in https://github.com/valeratrades/.github/tree/master/best_practices.
+</sup>
+
+#### License
+
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
+
+<br>
+
+<sub>
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
+</sub>
+
