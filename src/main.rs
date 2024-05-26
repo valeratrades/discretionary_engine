@@ -73,10 +73,6 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			// init position
-			// update acquisition and followup protocols on it
-			// they themselves decide whether cache needs to be updated/created
-
 			let balance = exchange_apis::compile_total_balance(config.clone()).await.unwrap();
 			let (side, target_size) = match position_args.size {
 				s if s > 0.0 => (Side::Buy, s * balance),
