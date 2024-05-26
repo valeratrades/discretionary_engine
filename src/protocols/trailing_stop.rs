@@ -239,6 +239,7 @@ mod tests {
 		println!("{:?}", received_data);
 
 		//let test_data = vec![100.0, 100.5, 102.5, 100.0, 101.0, 97.0, 102.6];
+		//TODO: figure out passing of the test data instead of using values hardcoded in DataSource::listen() self::Test match arm.
 		let multiplier = heuristic(percent, Side::Buy);
 		let expected_data = vec![
 			vec![(ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)), Side::Sell, 1.0)],
