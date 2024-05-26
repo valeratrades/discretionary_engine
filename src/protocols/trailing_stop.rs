@@ -130,8 +130,7 @@ impl Protocol for TrailingStopWrapper {
 			let _ = data_source_clone.listen(&address_clone, tx).await.unwrap();
 		});
 
-		let runtime = tokio::runtime::Runtime::new().unwrap();
-		runtime.block_on(async {
+		tokio::spawn(async move {
 			let position_side = position_spec.side.clone();
 			let init_price = rx.recv().await.unwrap();
 			let mut top: f64 = init_price;
