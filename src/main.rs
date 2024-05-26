@@ -8,7 +8,6 @@ pub mod protocols;
 pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
-//use lazy_static::lazy_static;
 use positions::*;
 use tracing::info;
 use v_utils::{
