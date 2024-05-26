@@ -48,10 +48,11 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	let config_clone = config.clone();
-	tokio::spawn(async move {
-		binance::binance_runtime(config_clone, todo!(), todo!()).await;
-	});
+	//TODO!!!!!!: \
+	//let config_clone = config.clone();
+	//tokio::spawn(async move {
+	//	binance::binance_runtime(config_clone, todo!(), todo!()).await;
+	//});
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
