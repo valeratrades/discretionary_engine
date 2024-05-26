@@ -1,4 +1,4 @@
-//#![allow(clippy::get_first)]
+#![allow(clippy::get_first)]
 //#![allow(clippy::len_zero)]
 
 pub mod config;
