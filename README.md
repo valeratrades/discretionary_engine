@@ -37,7 +37,7 @@ Once done, will be able to merge other parts of the project like handling and in
 #### Best Practices
 
 <sup>
-This repository follows [my best practices](<https://github.com/valeratrades/.github/tree/master/best_practices>).
+This repository follows <a href="https://github.com/valeratrades/.github/tree/master/best_practices">my best practices</a>.
 </sup>
 
 #### License
