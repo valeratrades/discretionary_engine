@@ -100,13 +100,15 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Install tokei
-      run: sudo apt-get install tokei
+      run: |
+        sudo wget -qO tokei.tar.gz https://github.com/XAMPPRocky/tokei/releases/latest/download/tokei-x86_64-unknown-linux-gnu.tar.gz
+        sudo tar xf tokei.tar.gz -C /usr/local/bin
 
     - name: Run tokei and save output to json file
-      run: tokei -o json > tokei_output.json
+      run: /usr/local/bin/tokei -o json > tokei_output.json
 
     - name: Install jq
-      run: sudo apt-get install jq
+      run: sudo apt-get install -y jq
 
     - name: Check Rust comments
       run: |
