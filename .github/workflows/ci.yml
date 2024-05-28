@@ -90,3 +90,31 @@ jobs:
       - uses: dtolnay/rust-toolchain@clippy
       - run: cargo clippy --tests -- -Dclippy::all
       #-Dclippy::pedantic
+
+  tokei:
+    name: Reasonable Amount of Comments
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Install tokei
+      run: sudo apt-get install tokei
+
+    - name: Run tokei and save output to json file
+      run: tokei -o json > tokei_output.json
+
+    - name: Install jq
+      run: sudo apt-get install jq
+
+    - name: Check Rust comments
+      run: |
+        comments=$(jq '.Rust.comments' tokei_output.json)
+        code=$(jq '.Rust.code' tokei_output.json)
+        if [ $(($comments + 10)) -ge $code ]; then
+          echo "Number of comments is not at least 10 less than number of code in Rust."
+          exit 1
+        else
+          echo "Check passed: Number of comments is at least 10 less than number of code in Rust."
+        fi
