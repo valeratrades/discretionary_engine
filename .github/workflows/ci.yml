@@ -125,6 +125,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install cargo-machete
+      run: |
+        cargo install cargo-machete
+
     - name: Cargo Machete
       run: |
         cargo machete
