@@ -10,6 +10,10 @@
 **/_*
 .local.sh
 **/TODO.md
+commit-message.txt
+commit_message.txt
+commit-message
+commit_message
 
 ## Vim
 *.sw[po]
