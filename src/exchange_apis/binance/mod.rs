@@ -1,6 +1,5 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
-use std::borrow::Borrow;
 mod orders;
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::Order;

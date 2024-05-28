@@ -157,3 +157,32 @@ impl ProtocolOrders {
 		orders
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::exchange_apis::{
+		order_types::{ConceptualMarket, ConceptualOrderType},
+		Market, Symbol,
+	};
+	use v_utils::trades::Side;
+
+	#[test]
+	fn test_apply_mask() {
+		let orders = ProtocolOrders::new(
+			"test".to_string(),
+			vec![Some(ConceptualOrderPercents::new(
+				ConceptualOrderType::Market(ConceptualMarket::new(0.0)),
+				Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
+				Side::Buy,
+				0.5,
+			))],
+		);
+
+		let filled_mask = vec![0.1];
+		let total_controlled_notional = 1.0;
+		let got = orders.apply_mask(&filled_mask, total_controlled_notional);
+		assert_eq!(got.len(), 1);
+		assert_eq!(got[0].qty_notional, 0.4);
+	}
+}

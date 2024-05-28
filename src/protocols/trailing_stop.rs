@@ -253,6 +253,8 @@ mod tests {
 			)],
 		];
 
+		// instead of this want to be printing the expected and got values, then use expect-test framework
+
 		for (i, data) in received_data.iter().enumerate() {
 			check_protocol_orders(data, expected_data.get(i).unwrap());
 		}
