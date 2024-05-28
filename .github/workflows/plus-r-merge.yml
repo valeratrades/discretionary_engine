@@ -1,7 +1,7 @@
 name: +r Merge
 
 on:
-  issue_comment:
+  pull_request_review_comment:
     types: [created]
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       with:
         script: |
           const { owner, repo } = context.repo;
-          const issue_number = context.issue.number;
+          const issue_number = context.payload.pull_request.number;
           
           const comments = await github.rest.issues.listComments({
             owner,
@@ -43,7 +43,7 @@ jobs:
             repo,
             branch,
             per_page: 1,
-            status: 'success',
+            status: 'completed',
           });
 
           return runs.data.workflow_runs.length > 0 && runs.data.workflow_runs[0].conclusion === 'success';
