@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js (example setup, change according to your project)
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run tests
+      run: npm test
+
+  check-and-merge:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success() || github.event_name == 'issue_comment'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Check last comment for +r
+      id: check_comment
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { data: comments } = await github.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+          });
+          const lastComment = comments[comments.length - 1];
+          return lastComment.body.trim() === '+r';
+
+    - name: Set up Git credentials
+      if: steps.check_comment.outputs.result == 'true'
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: Merge to master
+      if: steps.check_comment.outputs.result == 'true'
+      run: |
+        git checkout master
+        git merge protocol_orders_switch_to_vec
+        git push origin master
