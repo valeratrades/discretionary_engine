@@ -119,3 +119,17 @@ jobs:
         else
           echo "Check passed: Number of comments is less than 10% of code"
         fi
+
+  machete:
+    name: Cargo Machete
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Cargo Machete
+      run: |
+        cargo machete
+        exit_code=$?
+        if [ $exit_code = 0 ]; then
+          echo "Found unused dependencies"
+          exit $exit_code
+        fi
