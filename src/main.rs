@@ -1,5 +1,6 @@
 #![allow(clippy::get_first)]
 #![allow(clippy::len_zero)]
+#![feature(trait_alias)]
 
 pub mod config;
 pub mod exchange_apis;
@@ -51,12 +52,6 @@ struct PositionArgs {
 }
 // Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
-fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<exchange_apis::order_types::ConceptualOrder>, positions::PositionCallback)> {
-	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	tokio::spawn(exchange_apis::hub(config.clone(), rx));
-	tx
-}
-
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
@@ -68,7 +63,7 @@ async fn main() {
 		}
 	};
 	utils::init_subscriber();
-	let tx = init_hub(config.clone());
+	let tx = exchange_apis::init_hub(config.clone());
 	//let noconfirm = cli.noconfirm;
 
 	match cli.command {

@@ -1,5 +1,5 @@
 mod trailing_stop;
-use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents};
+use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 use crate::positions::PositionSpec;
 use anyhow::Result;
 use derive_new::new;
@@ -9,7 +9,6 @@ use std::str::FromStr;
 use tokio::sync::mpsc;
 use tracing::error;
 pub use trailing_stop::TrailingStopWrapper;
-use uuid::Uuid;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
@@ -111,17 +110,17 @@ impl ProtocolOrders {
 		vec![0.; self.__orders.len()]
 	}
 
-	pub fn apply_mask(&self, filled_mask: &Vec<f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder> {
+	pub fn apply_mask(&self, filled_mask: &Vec<f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let mut total_offset = 0.0;
 
 		// subtract filled
-		let mut orders: Vec<ConceptualOrder> = self
+		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
 			.__orders
 			.iter()
 			.enumerate()
 			.filter_map(|(i, order)| {
 				if let Some(o) = order.clone() {
-					let mut exact_order = o.to_exact(total_controlled_notional, self.protocol_id.clone(), i);
+					let mut exact_order = o.to_exact(total_controlled_notional, ProtocolOrderId::new(self.protocol_id.clone(), i));
 					let filled = *filled_mask.get(i).unwrap_or(&0.0);
 
 					if filled > exact_order.qty_notional * 0.99 {

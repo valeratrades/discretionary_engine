@@ -1,16 +1,18 @@
 use crate::exchange_apis::Symbol;
 use anyhow::Result;
 use derive_new::new;
-use uuid::Uuid;
+use std::hash::Hash;
 use v_utils::trades::Side;
 
 //TODO!: Move order_types to v_utils when stable
 
 //TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
+pub trait IdRequirements = Hash + Clone + PartialEq + Default;
+
 #[derive(Clone, Debug, PartialEq, new, Default)]
-pub struct Order {
-	pub id: Uuid,
+pub struct Order<Id: IdRequirements> {
+	pub id: Id,
 	pub order_type: OrderType,
 	pub symbol: Symbol,
 	pub side: Side,
@@ -41,22 +43,22 @@ pub struct StopMarketOrder {
 // Conceptual Orders
 //=============================================================================
 
-#[derive(Debug, Hash, Clone, PartialEq, new)]
+#[derive(Default, Debug, Hash, Clone, PartialEq, new)]
 pub struct ProtocolOrderId {
 	pub protocol_id: String,
 	pub ordinal: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, new)]
-pub struct ConceptualOrder {
-	pub id: ProtocolOrderId,
+pub struct ConceptualOrder<Id: IdRequirements> {
+	pub id: Id,
 	pub order_type: ConceptualOrderType,
 	pub symbol: Symbol,
 	pub side: Side,
 	pub qty_notional: f64,
 }
 
-impl ConceptualOrder {
+impl<Id: IdRequirements> ConceptualOrder<Id> {
 	pub fn price(&self) -> Result<f64> {
 		match &self.order_type {
 			ConceptualOrderType::Market(_) => anyhow::bail!("Market orders don't have a price"),
@@ -102,9 +104,9 @@ pub struct ConceptualOrderPercents {
 	pub qty_percent_of_controlled: f64,
 }
 impl ConceptualOrderPercents {
-	pub fn to_exact(self, total_controled_size: f64, protocol_id: String, ordinal: usize) -> ConceptualOrder {
+	pub fn to_exact<Id: IdRequirements>(self, total_controled_size: f64, id: Id) -> ConceptualOrder<Id> {
 		ConceptualOrder {
-			id: ProtocolOrderId::new(protocol_id, ordinal),
+			id,
 			order_type: self.order_type,
 			symbol: self.symbol,
 			side: self.side,

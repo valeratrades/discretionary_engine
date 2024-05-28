@@ -195,7 +195,7 @@ mod tests {
 		let empty_mask = got.empty_mask();
 		// don't really like this, as we accidentially are testing the ProtocolOrders layer implementation too.
 		//? Could I change protocols to output a Vec<ConceptualOrder> of a fixed size instead; having the ProtocolOrders conversion applied on top?
-		let got_orders = got.apply_mask(empty_mask, total_controlled_sum_expected);
+		let got_orders = got.apply_mask(&empty_mask, total_controlled_sum_expected);
 
 		assert_eq!(got_orders.len(), expected.len());
 		for (i, go) in got_orders.iter().enumerate() {

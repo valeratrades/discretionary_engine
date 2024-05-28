@@ -1,9 +1,11 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
+use std::borrow::Borrow;
 mod orders;
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::Order;
 use crate::exchange_apis::Market;
+use crate::PositionOrderId;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -21,6 +23,7 @@ use tracing::info;
 use url::Url;
 use uuid::Uuid;
 
+use super::order_types::IdRequirements;
 use super::HubCallback;
 use super::HubPassforward;
 type HmacSha256 = Hmac<Sha256>;
@@ -191,7 +194,7 @@ pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
 	Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
 }
 
-pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order) -> Result<BinanceOrder> {
+pub async fn post_futures_order<S: AsRef<str>, Id: IdRequirements>(key: S, secret: S, order: &Order<Id>) -> Result<BinanceOrder> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut binance_order = BinanceOrder::from_standard(order).await;
@@ -242,7 +245,7 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
-pub async fn dirty_hardcoded_exec(order: Order, config: &AppConfig) -> Result<()> {
+pub async fn dirty_hardcoded_exec<Id: IdRequirements>(order: Order<Id>, config: &AppConfig) -> Result<()> {
 	assert!(order.qty_notional > 0.0);
 	//FIXME: works with Market orders but not StopMarket
 
@@ -305,7 +308,7 @@ pub async fn binance_runtime(
 	loop {
 		select! {
 			Ok(_) = hub_rx.changed(), if last_received_fill_key == last_processed_fill_key => {
-				let target_orders: Vec<Order>;
+				let target_orders: Vec<Order<PositionOrderId>>;
 				{
 					let hub_passforward = hub_rx.borrow();
 					last_received_fill_key = hub_passforward.key; //dbg
