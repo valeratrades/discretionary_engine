@@ -43,8 +43,8 @@ pub struct StopMarketOrder {
 
 #[derive(Debug, Hash, Clone, PartialEq, new)]
 pub struct ProtocolOrderId {
-	pub produced_by: String,
-	pub uuid: Uuid,
+	pub protocol_id: String,
+	pub ordinal: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, new)]
@@ -102,9 +102,9 @@ pub struct ConceptualOrderPercents {
 	pub qty_percent_of_controlled: f64,
 }
 impl ConceptualOrderPercents {
-	pub fn to_exact(self, total_controled_size: f64, produced_by: String, uuid: Uuid) -> ConceptualOrder {
+	pub fn to_exact(self, total_controled_size: f64, protocol_id: String, ordinal: usize) -> ConceptualOrder {
 		ConceptualOrder {
-			id: ProtocolOrderId::new(produced_by, uuid),
+			id: ProtocolOrderId::new(protocol_id, ordinal),
 			order_type: self.order_type,
 			symbol: self.symbol,
 			side: self.side,
