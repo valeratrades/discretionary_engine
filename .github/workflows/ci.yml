@@ -101,8 +101,10 @@ jobs:
 
     - name: Install tokei
       run: |
-        sudo wget -qO tokei.tar.gz https://github.com/XAMPPRocky/tokei/archive/refs/tags/v13.0.0-alpha.1.tar.gz 
-        sudo tar xf tokei.tar.gz -C /usr/local/bin
+        mkdir tokei
+        sudo wget -qO ./tokei/tokei.tar.gz https://github.com/XAMPPRocky/tokei/archive/refs/tags/v13.0.0-alpha.1.tar.gz 
+        sudo tar xf ./tokei/tokei.tar.gz -C ./tokei/ --strip-components=1
+        ./tokei/tokei --version || { echo "Tokei installation failed"; exit 1; }
 
     - name: Run tokei and save output to json file
       run: /usr/local/bin/tokei -o json > tokei_output.json
