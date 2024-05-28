@@ -4,6 +4,7 @@ use crate::positions::PositionSpec;
 use anyhow::Result;
 use derive_new::new;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str::FromStr;
 use tokio::sync::mpsc;
 use tracing::error;
@@ -88,6 +89,7 @@ impl FollowupProtocol {
 }
 
 pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<FollowupProtocol>> {
+	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();
 	for spec in protocol_specs {
 		let protocol = FollowupProtocol::from_str(&spec)?;

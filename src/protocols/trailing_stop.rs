@@ -185,12 +185,13 @@ fn heuristic(percent: f64, side: Side) -> f64 {
 	base.ln()
 }
 
+//? could I move the computation over the ProcessedData to be implemented on TrailingStop?
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default)]
 pub struct TrailingStop {
 	percent: f64,
 }
 
-//? should I move this higher up? Could compile times, and standardizee the check function.
+//? should I move this higher up? Could compile times, and standardize the check function.
 #[cfg(test)]
 mod tests {
 	use super::*;
