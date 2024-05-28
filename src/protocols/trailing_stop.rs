@@ -4,11 +4,10 @@ use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
-use uuid::Uuid;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
@@ -91,31 +90,23 @@ impl Protocol for TrailingStopWrapper {
 		};
 		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
 
-		//- while let Some(_) = self.data_source(&address).await
-
 		let params = self.params.clone();
 		let position_spec = position_spec.clone();
 
-		// a thing that uniquely marks all the semantic orders of the grid the protocol may want to place.
-		let mut order_mask: HashMap<Uuid, Option<ConceptualOrderPercents>> = HashMap::new();
-		let stop_market_uuid = Uuid::new_v4();
-		order_mask.insert(stop_market_uuid, None);
-
+		let order_mask: Vec<Option<ConceptualOrderPercents>> = vec![None; 1];
 		macro_rules! send_orders {
 			($target_price:expr, $side:expr) => {{
 				let protocol_spec = params.lock().unwrap().to_string();
 				let mut orders = order_mask.clone();
 
 				let sm = ConceptualStopMarket::new(1.0, $target_price);
-				orders.insert(
-					stop_market_uuid,
-					Some(ConceptualOrderPercents::new(
-						ConceptualOrderType::StopMarket(sm),
-						symbol.clone(),
-						$side,
-						1.0,
-					)),
-				);
+				let order = Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::StopMarket(sm),
+					symbol.clone(),
+					$side,
+					1.0,
+				));
+				orders[0] = order;
 
 				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
 				tx_orders.send(protocol_orders).await.unwrap();
@@ -204,7 +195,7 @@ mod tests {
 		let empty_mask = got.empty_mask();
 		// don't really like this, as we accidentially are testing the ProtocolOrders layer implementation too.
 		//? Could I change protocols to output a Vec<ConceptualOrder> of a fixed size instead; having the ProtocolOrders conversion applied on top?
-		let got_orders = got.apply_mask(empty_mask, total_controlled_sum_expected);
+		let got_orders = got.apply_mask(&empty_mask, total_controlled_sum_expected);
 
 		assert_eq!(got_orders.len(), expected.len());
 		for (i, go) in got_orders.iter().enumerate() {

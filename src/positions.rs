@@ -90,11 +90,11 @@ struct TargetOrders {
 	normal_orders_total_notional: f64,
 	market_orders_total_notional: f64,
 	//total_usd: f64,
-	orders: Vec<ConceptualOrder>,
-	hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>,
+	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
 }
 impl TargetOrders {
-	pub fn new(hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>) -> Self {
+	pub fn new(hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Self {
 		Self {
 			stop_orders_total_notional: 0.0,
 			normal_orders_total_notional: 0.0,
@@ -107,7 +107,7 @@ impl TargetOrders {
 impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
-	async fn update_orders(&mut self, orders: Vec<ConceptualOrder>, position_callback: PositionCallback) {
+	async fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
 		for order in orders.into_iter() {
 			match order.order_type {
 				ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
@@ -138,7 +138,7 @@ impl PositionFollowup {
 	pub async fn do_followup(
 		acquired: PositionAcquisition,
 		protocols: Vec<FollowupProtocol>,
-		hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder>, PositionCallback)>,
+		hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
 	) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
 		for protocol in &protocols {
@@ -156,26 +156,25 @@ impl PositionFollowup {
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let all_requested: Arc<Mutex<HashMap<String, ProtocolOrders>>> = Arc::new(Mutex::new(HashMap::new()));
-		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder>>>> = Arc::new(Mutex::new(HashMap::new()));
+		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder<ProtocolOrderId>>>>> = Arc::new(Mutex::new(HashMap::new()));
 		let mut closed_notional = 0.0;
 		let mut target_orders = TargetOrders::new(hub_tx);
 
-		let all_fills: Arc<Mutex<HashMap<Uuid, f64>>> = Arc::new(Mutex::new(HashMap::new()));
+		let all_fills: Arc<Mutex<HashMap<String, Vec<f64>>>> = Arc::new(Mutex::new(HashMap::new()));
 
-		let update_unrolled = |update_on: String| {
-			let protocol = FollowupProtocol::from_str(&update_on).unwrap();
+		let update_unrolled = |update_on_protocol: String| {
+			let protocol = FollowupProtocol::from_str(&update_on_protocol).unwrap();
 			let subtype = protocol.get_subtype();
 			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
 			let total_controlled_size = acquired.acquired_notional * size_multiplier;
 
-			let mut mask = all_requested.lock().unwrap()[&update_on].empty_mask();
-			for (key, _value) in mask.clone() {
-				if all_fills.lock().unwrap().contains_key(&key) {
-					mask.insert(key, *all_fills.lock().unwrap().get(&key).unwrap());
-				}
+			let mask: Vec<f64>;
+			{
+				let all_fills_guard = all_fills.lock().unwrap();
+				mask = all_fills_guard.get(&update_on_protocol).unwrap().to_vec();
 			}
-			let order_batch = all_requested.lock().unwrap()[&update_on].apply_mask(mask, total_controlled_size);
-			all_requested_unrolled.lock().unwrap().insert(update_on, order_batch);
+			let order_batch = all_requested.lock().unwrap()[&update_on_protocol].apply_mask(&mask, total_controlled_size);
+			all_requested_unrolled.lock().unwrap().insert(update_on_protocol, order_batch);
 		};
 
 		macro_rules! recalculate_target_orders {
@@ -193,10 +192,10 @@ impl PositionFollowup {
 
 				let mut left_to_target_full_notional = acquired.acquired_notional - closed_notional;
 				let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
-				let mut new_target_orders: Vec<ConceptualOrder> = Vec::new();
+				let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
 
 				// orders should be all of the same conceptual type (no idea how to enforce it)
-				let mut update_target_orders = |orders: Vec<ConceptualOrder>| {
+				let mut update_target_orders = |orders: Vec<ConceptualOrder<ProtocolOrderId>>| {
 					for order in orders {
 						let notional = order.qty_notional;
 						let compare_against = match order.order_type {
@@ -257,8 +256,8 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					//info!("{:?} sent orders: {:?}", protocol_orders.produced_by, protocol_orders.apply_mask(protocol_orders.empty_mask(), 0.0)); //dbg
-					all_requested.lock().unwrap().insert(protocol_orders.produced_by.clone(), protocol_orders.clone());
-					update_unrolled(protocol_orders.produced_by.clone());
+					all_requested.lock().unwrap().insert(protocol_orders.protocol_id.clone(), protocol_orders.clone());
+					update_unrolled(protocol_orders.protocol_id.clone());
 					recalculate_target_orders!();
 				},
 				Some(fills_vec) = rx_fills.recv() => {
@@ -266,8 +265,17 @@ impl PositionFollowup {
 					for f in fills_vec {
 						let (protocol_order_id, filled_notional) = f;
 						closed_notional += filled_notional;
-						all_fills.lock().unwrap().insert(protocol_order_id.uuid, filled_notional);
-						update_unrolled(protocol_order_id.produced_by.clone());
+						{
+							let mut all_fills_guard = all_fills.lock().unwrap();
+							let protocol_fills = all_fills_guard.entry(protocol_order_id.protocol_id.clone()).or_insert_with(|| {
+								let protocol_id = protocol_order_id.protocol_id.clone();
+								all_requested.lock().unwrap().get(&protocol_id).unwrap().empty_mask()
+							});
+
+							protocol_fills[protocol_order_id.ordinal] += filled_notional;
+						}
+
+						update_unrolled(protocol_order_id.protocol_id.clone());
 					}
 					recalculate_target_orders!();
 				},
@@ -280,6 +288,18 @@ impl PositionFollowup {
 			protocols_spec: protocols,
 			closed_notional,
 		})
+	}
+}
+
+#[derive(Clone, Debug, Default, derive_new::new, PartialEq, Hash)]
+pub struct PositionOrderId {
+	position_id: Uuid,
+	protocol_id: String,
+	ordinal: usize,
+}
+impl PositionOrderId {
+	pub fn new_from_proid(position_id: Uuid, poid: ProtocolOrderId) -> Self {
+		Self::new(position_id, poid.protocol_id, poid.ordinal)
 	}
 }
 

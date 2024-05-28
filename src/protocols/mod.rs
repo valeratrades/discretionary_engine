@@ -1,5 +1,5 @@
 mod trailing_stop;
-use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents};
+use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 use crate::positions::PositionSpec;
 use anyhow::Result;
 use derive_new::new;
@@ -9,7 +9,6 @@ use std::str::FromStr;
 use tokio::sync::mpsc;
 use tracing::error;
 pub use trailing_stop::TrailingStopWrapper;
-use uuid::Uuid;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
@@ -103,29 +102,26 @@ pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Follo
 ///NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
 #[derive(Debug, Clone, new)]
 pub struct ProtocolOrders {
-	pub produced_by: String,
-	fields: HashMap<Uuid, Option<ConceptualOrderPercents>>,
+	pub protocol_id: String,
+	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
 impl ProtocolOrders {
-	pub fn empty_mask(&self) -> HashMap<Uuid, f64> {
-		let mut mask = HashMap::new();
-		for (key, _value) in self.fields.clone() {
-			mask.insert(key, 0.0);
-		}
-		mask
+	pub fn empty_mask(&self) -> Vec<f64> {
+		vec![0.; self.__orders.len()]
 	}
 
-	pub fn apply_mask(&self, filled_mask: HashMap<Uuid, f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder> {
+	pub fn apply_mask(&self, filled_mask: &[f64], total_controlled_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let mut total_offset = 0.0;
 
 		// subtract filled
-		let mut orders: Vec<ConceptualOrder> = self
-			.fields
+		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
+			.__orders
 			.iter()
-			.filter_map(|(uuid, order)| {
+			.enumerate()
+			.filter_map(|(i, order)| {
 				if let Some(o) = order.clone() {
-					let mut exact_order = o.to_exact(total_controlled_notional, self.produced_by.clone(), *uuid);
-					let filled = *filled_mask.get(uuid).unwrap_or(&0.0);
+					let mut exact_order = o.to_exact(total_controlled_notional, ProtocolOrderId::new(self.protocol_id.clone(), i));
+					let filled = *filled_mask.get(i).unwrap_or(&0.0);
 
 					if filled > exact_order.qty_notional * 0.99 {
 						total_offset += filled - exact_order.qty_notional;

@@ -1,5 +1,5 @@
 use crate::exchange_apis::binance;
-use crate::exchange_apis::order_types::{Order, OrderType};
+use crate::exchange_apis::order_types::{IdRequirements, Order, OrderType};
 use derive_new::new;
 use std::collections::HashMap;
 use v_utils::trades::Side;
@@ -26,7 +26,7 @@ impl BinanceOrder {
 		params
 	}
 
-	pub async fn from_standard(order: &Order) -> Self {
+	pub async fn from_standard<Id: IdRequirements>(order: &Order<Id>) -> Self {
 		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
 
 		let order_type = match &order.order_type {

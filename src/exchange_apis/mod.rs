@@ -1,5 +1,5 @@
 pub mod binance;
-use crate::positions::PositionCallback;
+use crate::{positions::PositionCallback, PositionOrderId};
 use std::collections::HashMap;
 pub mod order_types;
 use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
@@ -33,19 +33,28 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 pub struct HubCallback {
 	key: Uuid,
 	fill_qty: f64,
-	order: Order,
+	order: Order<PositionOrderId>,
 }
 
 #[derive(Clone, Debug, derive_new::new)]
 pub struct HubPassforward {
 	key: Uuid,
-	orders: Vec<Order>,
+	orders: Vec<Order<PositionOrderId>>,
 }
+
+pub fn init_hub(
+	config: AppConfig,
+) -> tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)> {
+	let (tx, rx) = tokio::sync::mpsc::channel(32);
+	tokio::spawn(hub(config.clone(), rx));
+	tx
+}
+
 
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
-pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder>, PositionCallback)>) {
+pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
@@ -60,23 +69,25 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 	let mut stupid_filled_one = false;
 
 	let mut callback: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
-	let mut known_orders: HashMap<Uuid, Vec<ConceptualOrder>> = HashMap::new();
+	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
+	let mut target_orders: Vec<Order<PositionOrderId>> = Vec::new();
 
 	while let Some((new_orders, position_callback)) = rx.recv().await {
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
-		known_orders.insert(position_callback.position_uuid, new_orders);
+		requested_orders.insert(position_callback.position_uuid, new_orders);
 
-		let mut actual_orders: HashMap<Market, Vec<Order>> = HashMap::new();
-		for (key, vec) in known_orders.iter() {
+		let mut actual_orders: HashMap<Market, Vec<Order<PositionOrderId>>> = HashMap::new();
+		for (key, vec) in requested_orders.iter() {
 			for o in vec {
+				let position_order_id = PositionOrderId::new_from_proid(*key, o.id.clone());
 				match &o.order_type {
 					ConceptualOrderType::Market(_) => {
-						let order = Order::new(o.id.uuid, order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
+						let order = Order::new(position_order_id, order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
 						actual_orders.entry(Market::BinanceFutures).or_default().push(order);
 					}
 					ConceptualOrderType::StopMarket(stop_market) => {
 						let order = Order::new(
-							o.id.uuid,
+							position_order_id,
 							order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
 							o.symbol.clone(),
 							o.side,
