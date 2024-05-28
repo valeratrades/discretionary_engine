@@ -3,8 +3,6 @@ name: +r Merge
 on:
   issue_comment:
     types: [created]
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 jobs:
   check-and-merge:
@@ -19,12 +17,16 @@ jobs:
       uses: actions/github-script@v6
       with:
         script: |
-          const { data: comments } = await github.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          
+          const comments = await github.rest.issues.listComments({
+            owner,
+            repo,
+            issue_number,
           });
-          const lastComment = comments[comments.length - 1];
+
+          const lastComment = comments.data[comments.data.length - 1];
           return lastComment.body.trim() === '+r';
 
     - name: Get the status of the last workflow run
@@ -36,7 +38,7 @@ jobs:
           const repo = context.repo.repo;
           const branch = context.payload.pull_request.head.ref;
 
-          const runs = await github.actions.listWorkflowRunsForRepo({
+          const runs = await github.rest.actions.listWorkflowRunsForRepo({
             owner,
             repo,
             branch,
@@ -44,11 +46,7 @@ jobs:
             status: 'success',
           });
 
-          if (runs.data.workflow_runs.length > 0) {
-            return runs.data.workflow_runs[0].status === 'completed';
-          } else {
-            return false;
-          }
+          return runs.data.workflow_runs.length > 0 && runs.data.workflow_runs[0].conclusion === 'success';
 
     - name: Set up Git credentials
       if: steps.check_comment.outputs.result == 'true' && steps.check_workflow.outputs.result == 'true'
@@ -62,4 +60,3 @@ jobs:
         git checkout master
         git merge ${{ github.head_ref }}
         git push origin master
-
