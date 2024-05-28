@@ -110,7 +110,7 @@ impl ProtocolOrders {
 		vec![0.; self.__orders.len()]
 	}
 
-	pub fn apply_mask(&self, filled_mask: &Vec<f64>, total_controlled_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn apply_mask(&self, filled_mask: &[f64], total_controlled_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let mut total_offset = 0.0;
 
 		// subtract filled
