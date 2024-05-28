@@ -101,7 +101,7 @@ jobs:
 
     - name: Install tokei
       run: |
-        sudo wget -qO tokei.tar.gz https://github.com/XAMPPRocky/tokei/releases/latest/download/tokei-x86_64-unknown-linux-gnu.tar.gz
+        sudo wget -qO tokei.tar.gz https://github.com/XAMPPRocky/tokei/archive/refs/tags/v13.0.0-alpha.1.tar.gz 
         sudo tar xf tokei.tar.gz -C /usr/local/bin
 
     - name: Run tokei and save output to json file
@@ -114,9 +114,9 @@ jobs:
       run: |
         comments=$(jq '.Rust.comments' tokei_output.json)
         code=$(jq '.Rust.code' tokei_output.json)
-        if [ $(($comments + 10)) -ge $code ]; then
-          echo "Number of comments is not at least 10 less than number of code in Rust."
+        if [ $(($comments * 10)) > $code ]; then
+          echo "Number of comments should be less than 10% of code"
           exit 1
         else
-          echo "Check passed: Number of comments is at least 10 less than number of code in Rust."
+          echo "Check passed: Number of comments is less than 10% of code"
         fi
