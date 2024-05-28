@@ -113,7 +113,7 @@ jobs:
       run: |
         comments=$(jq '.Rust.comments' tokei_output.json)
         code=$(jq '.Rust.code' tokei_output.json)
-        if [ $(($comments * 10)) > $code ]; then
+        if [ $((comments * 10)) -ge $code ]; then
           echo "Number of comments should be less than 10% of code"
           exit 1
         else
