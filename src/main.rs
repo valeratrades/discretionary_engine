@@ -1,5 +1,3 @@
-#![allow(clippy::get_first)]
-#![allow(clippy::len_zero)]
 #![feature(trait_alias)]
 
 pub mod config;

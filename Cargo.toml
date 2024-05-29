@@ -25,7 +25,6 @@ rust-version = "1.80.0"
 # and we don't rely on it for debugging that much.
 debug = 0
 
-# doesn't seem to be picked up by clippy as of today
 [lints.clippy]
 cmp_float = "allow"
 len_zero = "allow"
