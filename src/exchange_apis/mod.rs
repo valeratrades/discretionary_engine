@@ -7,6 +7,7 @@ use crate::config::AppConfig;
 use anyhow::Result;
 use derive_new::new;
 use order_types::{ConceptualOrder, Order};
+use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
@@ -42,14 +43,11 @@ pub struct HubPassforward {
 	orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(
-	config: AppConfig,
-) -> tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)> {
+pub fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)> {
 	let (tx, rx) = tokio::sync::mpsc::channel(32);
 	tokio::spawn(hub(config.clone(), rx));
 	tx
 }
-
 
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
@@ -130,7 +128,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Market {
 	#[default]
 	BinanceFutures,
@@ -172,7 +170,7 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
 ///```
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new, Serialize, Deserialize)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,

@@ -1,6 +1,7 @@
 use crate::exchange_apis::Symbol;
 use anyhow::Result;
 use derive_new::new;
+use serde::Serialize;
 use std::hash::Hash;
 use v_utils::trades::Side;
 
@@ -69,7 +70,7 @@ impl<Id: IdRequirements> ConceptualOrder<Id> {
 }
 
 /// Generics for defining order types and their whereabouts. Details of execution do not concern us here. We are only trying to specify what we are trying to capture.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ConceptualOrderType {
 	Market(ConceptualMarket),
 	Limit(ConceptualLimit),
@@ -77,26 +78,26 @@ pub enum ConceptualOrderType {
 }
 
 /// Will be executed via above-the-price limits most of the time to prevent excessive slippages.
-#[derive(Debug, Clone, PartialEq, new)]
+#[derive(Debug, Clone, PartialEq, new, Serialize)]
 pub struct ConceptualMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, new)]
+#[derive(Debug, Clone, PartialEq, new, Serialize)]
 pub struct ConceptualStopMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 	pub price: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, new)]
+#[derive(Debug, Clone, PartialEq, new, Serialize)]
 pub struct ConceptualLimit {
 	pub price: f64,
 	pub limit_only: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, new)]
+#[derive(Debug, Clone, PartialEq, new, Serialize)]
 pub struct ConceptualOrderPercents {
 	pub order_type: ConceptualOrderType,
 	pub symbol: Symbol,

@@ -227,36 +227,82 @@ mod tests {
 			received_data.push(data);
 		}
 
-		//let test_data = vec![100.0, 100.5, 102.5, 100.0, 101.0, 97.0, 102.6];
-		//TODO: figure out passing of the test data instead of using values hardcoded in DataSource::listen() self::Test match arm.
-		let multiplier = heuristic(percent, Side::Buy);
-		let expected_data = [
-			[(
-				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.0 * multiplier)),
-				Side::Sell,
-				1.0,
-			)],
-			[(
-				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 100.5 * multiplier)),
-				Side::Sell,
-				1.0,
-			)],
-			[(
-				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.5 * multiplier)),
-				Side::Sell,
-				1.0,
-			)],
-			[(
-				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.0, 102.6 * multiplier)),
-				Side::Sell,
-				1.0,
-			)],
-		];
+		let received_data_inner_orders = received_data.iter().map(|x| x.__orders.clone()).collect::<Vec<_>>();
 
-		// instead of this want to be printing the expected and got values, then use expect-test framework
-
-		for (i, data) in received_data.iter().enumerate() {
-			check_protocol_orders(data, expected_data.get(i).unwrap());
-		}
+		insta::assert_json_snapshot!(
+			received_data_inner_orders,
+			@r###"
+  [
+    [
+      {
+        "order_type": {
+          "StopMarket": {
+            "maximum_slippage_percent": 1.0,
+            "price": -2.0202707317519466
+          }
+        },
+        "symbol": {
+          "base": "BTC",
+          "quote": "USDT",
+          "market": "BinanceFutures"
+        },
+        "side": "Sell",
+        "qty_percent_of_controlled": 1.0
+      }
+    ],
+    [
+      {
+        "order_type": {
+          "StopMarket": {
+            "maximum_slippage_percent": 1.0,
+            "price": -2.0303720854107064
+          }
+        },
+        "symbol": {
+          "base": "BTC",
+          "quote": "USDT",
+          "market": "BinanceFutures"
+        },
+        "side": "Sell",
+        "qty_percent_of_controlled": 1.0
+      }
+    ],
+    [
+      {
+        "order_type": {
+          "StopMarket": {
+            "maximum_slippage_percent": 1.0,
+            "price": -2.0707775000457453
+          }
+        },
+        "symbol": {
+          "base": "BTC",
+          "quote": "USDT",
+          "market": "BinanceFutures"
+        },
+        "side": "Sell",
+        "qty_percent_of_controlled": 1.0
+      }
+    ],
+    [
+      {
+        "order_type": {
+          "StopMarket": {
+            "maximum_slippage_percent": 1.0,
+            "price": -2.072797770777497
+          }
+        },
+        "symbol": {
+          "base": "BTC",
+          "quote": "USDT",
+          "market": "BinanceFutures"
+        },
+        "side": "Sell",
+        "qty_percent_of_controlled": 1.0
+      }
+    ]
+  ]
+  "###,
+		);
 	}
 }
