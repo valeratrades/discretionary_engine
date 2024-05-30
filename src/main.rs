@@ -1,3 +1,5 @@
+#![allow(clippy::len_zero)] // wait, so are the ones in Cargo.toml not enough?
+#![allow(clippy::get_first)]
 #![feature(trait_alias)]
 
 pub mod config;
