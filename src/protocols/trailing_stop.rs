@@ -187,25 +187,6 @@ pub struct TrailingStop {
 mod tests {
 	use super::*;
 
-	//TODO!!!: figure out how to make ide integration for expected values here
-	#[track_caller]
-	/// [2] is the percent of total controlled (can be any value, as long as proportion with other values in expected is correct)
-	fn check_protocol_orders(got: &ProtocolOrders, expected: &[(ConceptualOrderType, Side, f64)]) {
-		let total_controlled_sum_expected = expected.iter().map(|(_, _, qty)| qty).sum();
-		let empty_mask = got.empty_mask();
-		// don't really like this, as we accidentially are testing the ProtocolOrders layer implementation too.
-		//? Could I change protocols to output a Vec<ConceptualOrder> of a fixed size instead; having the ProtocolOrders conversion applied on top?
-		let got_orders = got.apply_mask(&empty_mask, total_controlled_sum_expected);
-
-		assert_eq!(got_orders.len(), expected.len());
-		for (i, go) in got_orders.iter().enumerate() {
-			let (exp_order_type, exp_side, exp_qty) = expected.get(i).unwrap();
-			assert_eq!(go.order_type, *exp_order_type);
-			assert_eq!(go.side, *exp_side);
-			assert_eq!(go.qty_notional, *exp_qty);
-		}
-	}
-
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]
 	async fn test_trailing_stop() {
