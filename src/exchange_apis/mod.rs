@@ -220,14 +220,14 @@ mod tests {
 	fn test_hub_process() {
 		let from_orders = vec![
 			ConceptualOrder {
-				id: PositionOrderId::new(Uuid::new_v4(), "ts:p0.02".to_string(), 0),
+				id: PositionOrderId::new(Uuid::parse_str("058a3b5d-7ce0-465c-9339-b43261e99b19").unwrap(), "ts:p0.02".to_string(), 0),
 				order_type: ConceptualOrderType::Market(ConceptualMarket::default()),
 				symbol: Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
 				side: Side::Buy,
 				qty_notional: 100.0,
 			},
 			ConceptualOrder {
-				id: PositionOrderId::new(Uuid::new_v4(), "ts:p0.02".to_string(), 1),
+				id: PositionOrderId::new(Uuid::parse_str("86acfda1-ef53-4bae-9f20-bbad6cbc8504").unwrap(), "ts:p0.02".to_string(), 1),
 				order_type: ConceptualOrderType::StopMarket(ConceptualStopMarket::default()),
 				symbol: Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
 				side: Side::Buy,
