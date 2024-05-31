@@ -1,7 +1,7 @@
 use crate::exchange_apis::Symbol;
 use anyhow::Result;
 use derive_new::new;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use v_utils::trades::Side;
 
@@ -11,7 +11,7 @@ use v_utils::trades::Side;
 
 pub trait IdRequirements = Hash + Clone + PartialEq + Default;
 
-#[derive(Clone, Debug, PartialEq, new, Default)]
+#[derive(Clone, Debug, PartialEq, new, Default, Serialize, Deserialize)]
 pub struct Order<Id: IdRequirements> {
 	pub id: Id,
 	pub order_type: OrderType,
@@ -21,7 +21,7 @@ pub struct Order<Id: IdRequirements> {
 }
 
 ///NB: id of all orders must match uuid field of parent ConceptualOrder if any
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub enum OrderType {
 	#[default]
 	Market,
@@ -35,7 +35,7 @@ pub enum OrderType {
 	//StopMarket(StopMarketOrder),
 }
 
-#[derive(Clone, Debug, PartialEq, new)]
+#[derive(Clone, Debug, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct StopMarketOrder {
 	pub price: f64,
 }
@@ -44,13 +44,13 @@ pub struct StopMarketOrder {
 // Conceptual Orders
 //=============================================================================
 
-#[derive(Default, Debug, Hash, Clone, PartialEq, new)]
+#[derive(Debug, Hash, Clone, Default, PartialEq, new, Serialize, Deserialize)]
 pub struct ProtocolOrderId {
 	pub protocol_id: String,
 	pub ordinal: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, new)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualOrder<Id: IdRequirements> {
 	pub id: Id,
 	pub order_type: ConceptualOrderType,
@@ -70,34 +70,39 @@ impl<Id: IdRequirements> ConceptualOrder<Id> {
 }
 
 /// Generics for defining order types and their whereabouts. Details of execution do not concern us here. We are only trying to specify what we are trying to capture.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConceptualOrderType {
 	Market(ConceptualMarket),
 	Limit(ConceptualLimit),
 	StopMarket(ConceptualStopMarket),
 }
+impl Default for ConceptualOrderType {
+	fn default() -> Self {
+		ConceptualOrderType::Market(ConceptualMarket::default())
+	}
+}
 
 /// Will be executed via above-the-price limits most of the time to prevent excessive slippages.
-#[derive(Debug, Clone, PartialEq, new, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, new, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualStopMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 	pub price: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, new, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualLimit {
 	pub price: f64,
 	pub limit_only: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, new, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualOrderPercents {
 	pub order_type: ConceptualOrderType,
 	pub symbol: Symbol,

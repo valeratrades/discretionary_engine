@@ -1,6 +1,7 @@
 #![allow(clippy::len_zero)] // wait, so are the ones in Cargo.toml not enough?
 #![allow(clippy::get_first)]
 #![feature(trait_alias)]
+#![feature(type_changing_struct_update)]
 
 pub mod config;
 pub mod exchange_apis;

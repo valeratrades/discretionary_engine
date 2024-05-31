@@ -2,7 +2,7 @@ pub mod binance;
 use crate::{positions::PositionCallback, PositionOrderId};
 use std::collections::HashMap;
 pub mod order_types;
-use self::order_types::{ConceptualOrderType, OrderType, ProtocolOrderId};
+use self::order_types::{ConceptualOrderType, ProtocolOrderId};
 use crate::config::AppConfig;
 use anyhow::Result;
 use derive_new::new;
@@ -68,45 +68,29 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 
 	let mut callback: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
-	let mut target_orders: Vec<Order<PositionOrderId>> = Vec::new();
 
 	while let Some((new_orders, position_callback)) = rx.recv().await {
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
 		requested_orders.insert(position_callback.position_uuid, new_orders);
+		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
+		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
+			.into_iter()
+			.map(|o| {
+				let new_id = PositionOrderId::new_from_proid(Uuid::new_v4(), o.id);
+				ConceptualOrder { id: new_id, ..o }
+			})
+			.collect();
 
-		let mut actual_orders: HashMap<Market, Vec<Order<PositionOrderId>>> = HashMap::new();
-		for (key, vec) in requested_orders.iter() {
-			for o in vec {
-				let position_order_id = PositionOrderId::new_from_proid(*key, o.id.clone());
-				match &o.order_type {
-					ConceptualOrderType::Market(_) => {
-						let order = Order::new(position_order_id, order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
-						actual_orders.entry(Market::BinanceFutures).or_default().push(order);
-					}
-					ConceptualOrderType::StopMarket(stop_market) => {
-						let order = Order::new(
-							position_order_id,
-							order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
-							o.symbol.clone(),
-							o.side,
-							o.qty_notional,
-						);
-						actual_orders.entry(Market::BinanceFutures).or_default().push(order);
-					}
-					_ => panic!("Unsupported order type"),
-				}
-			}
-		}
+		let target_orders = hub_process_orders(flat_requested_orders_position_id);
 
-		for (key, vec) in actual_orders.iter() {
-			match key {
+		for to in target_orders.iter() {
+			match to.symbol.market {
 				Market::BinanceSpot => todo!(),
 				Market::BinanceMargin => todo!(),
 				Market::BinanceFutures => {
 					//TODO!!!!!!: generalize and move to the binance module
 					if !stupid_filled_one {
-						let order = vec.get(0).unwrap();
-						binance::dirty_hardcoded_exec(order.clone(), &config).await.unwrap();
+						binance::dirty_hardcoded_exec(to.clone(), &config).await.unwrap();
 						stupid_filled_one = true;
 					}
 				}
@@ -125,6 +109,32 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 	// HashMap<Exchange, Vec<Order>> // On fill notif of an exchange, we find the according PositionCallback, by searching for ConceptualOrder with matching uuid
 
 	//+ hardcode following binance orders here
+}
+
+//HACK
+/// Thing that applies all the logic for deciding on how to best express ensemble of requeested orders.
+fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) -> Vec<Order<PositionOrderId>> {
+	let mut orders: Vec<Order<PositionOrderId>> = Vec::new();
+	for o in conceptual_orders {
+		match &o.order_type {
+			ConceptualOrderType::Market(_) => {
+				let order = Order::new(o.id, order_types::OrderType::Market, o.symbol.clone(), o.side, o.qty_notional);
+				orders.push(order);
+			}
+			ConceptualOrderType::StopMarket(stop_market) => {
+				let order = Order::new(
+					o.id,
+					order_types::OrderType::StopMarket(order_types::StopMarketOrder::new(stop_market.price)),
+					o.symbol.clone(),
+					o.side,
+					o.qty_notional,
+				);
+				orders.push(order);
+			}
+			_ => panic!("Unsupported order type"),
+		}
+	}
+	orders
 }
 
 #[allow(dead_code)]
@@ -196,5 +206,73 @@ impl std::str::FromStr for Symbol {
 			quote: split.get(1).unwrap().to_string(),
 			market: Market::from_str(split.get(2).unwrap())?,
 		})
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::exchange_apis::Market;
+	use order_types::{ConceptualMarket, ConceptualOrderType, ConceptualStopMarket};
+	use v_utils::trades::Side;
+
+	#[test]
+	fn test_hub_process() {
+		let from_orders = vec![
+			ConceptualOrder {
+				id: PositionOrderId::new(Uuid::new_v4(), "ts:p0.02".to_string(), 0),
+				order_type: ConceptualOrderType::Market(ConceptualMarket::default()),
+				symbol: Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
+				side: Side::Buy,
+				qty_notional: 100.0,
+			},
+			ConceptualOrder {
+				id: PositionOrderId::new(Uuid::new_v4(), "ts:p0.02".to_string(), 1),
+				order_type: ConceptualOrderType::StopMarket(ConceptualStopMarket::default()),
+				symbol: Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
+				side: Side::Buy,
+				qty_notional: 100.0,
+			},
+		];
+
+		let converted = hub_process_orders(from_orders);
+		insta::assert_json_snapshot!(converted, @r###"
+  [
+    {
+      "id": {
+        "position_id": "058a3b5d-7ce0-465c-9339-b43261e99b19",
+        "protocol_id": "ts:p0.02",
+        "ordinal": 0
+      },
+      "order_type": "Market",
+      "symbol": {
+        "base": "BTC",
+        "quote": "USDT",
+        "market": "BinanceFutures"
+      },
+      "side": "Buy",
+      "qty_notional": 100.0
+    },
+    {
+      "id": {
+        "position_id": "86acfda1-ef53-4bae-9f20-bbad6cbc8504",
+        "protocol_id": "ts:p0.02",
+        "ordinal": 1
+      },
+      "order_type": {
+        "StopMarket": {
+          "price": 0.0
+        }
+      },
+      "symbol": {
+        "base": "BTC",
+        "quote": "USDT",
+        "market": "BinanceFutures"
+      },
+      "side": "Buy",
+      "qty_notional": 100.0
+    }
+  ]
+  "###);
 	}
 }

@@ -4,6 +4,7 @@ use crate::exchange_apis::{binance, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -291,11 +292,11 @@ impl PositionFollowup {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, derive_new::new, PartialEq, Hash, Serialize, Deserialize)]
 pub struct PositionOrderId {
-	position_id: Uuid,
-	protocol_id: String,
-	ordinal: usize,
+	pub position_id: Uuid,
+	pub protocol_id: String,
+	pub ordinal: usize,
 }
 impl PositionOrderId {
 	pub fn new_from_proid(position_id: Uuid, poid: ProtocolOrderId) -> Self {

@@ -54,7 +54,7 @@ tracing = { version = "^0.1.40", features = ["log", "std", "async-await"] }
 tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry", "env-filter"] }
 tracing-bunyan-formatter = "0.3.9"
 #tracing-futures = "0.2.5"
-uuid = { version = "1.8.0", features = ["v4"] }
+uuid = { version = "^1.8.0", features = ["serde", "v4"] }
 config = "0.14.0"
 v_utils_macros = "1.2.2"
 lazy_static = "1.4.0"
