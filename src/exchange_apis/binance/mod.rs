@@ -282,7 +282,7 @@ pub async fn binance_runtime(
 	let mut last_received_fill_key = Uuid::new_v4();
 	let mut last_processed_fill_key = Uuid::new_v4();
 
-	let (mut local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
+	let (local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
 	tokio::spawn(async move {
@@ -318,6 +318,8 @@ pub async fn binance_runtime(
 						},
 					};
 				}
+				dbg!(&target_orders);
+				continue; //dbg
 
 				let currently_deployed_clone;
 				{

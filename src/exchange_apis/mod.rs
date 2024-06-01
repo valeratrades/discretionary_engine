@@ -30,14 +30,14 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 }
 
 //? is there a conventional way to introduce these communication locks?
-#[derive(Clone, Debug, derive_new::new)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubCallback {
 	key: Uuid,
 	fill_qty: f64,
 	order: Order<PositionOrderId>,
 }
 
-#[derive(Clone, Debug, derive_new::new)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubPassforward {
 	key: Uuid,
 	orders: Vec<Order<PositionOrderId>>,
@@ -52,15 +52,16 @@ pub fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<ConceptualO
 //TODO!!: All positions should have ability to clone tx to this
 /// Currently hard-codes for a single position.
 /// Uuid in the Receiver is of Position
-pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) {
+pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Result<()> {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	//TODO!!!!!!: \
-	//let config_clone = config.clone();
-	//tokio::spawn(async move {
-	//	binance::binance_runtime(config_clone, todo!(), todo!()).await;
-	//});
+	let (fills_tx, fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
+	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubPassforward>(HubPassforward::default());
+	let config_clone = config.clone();
+	tokio::spawn(async move {
+		binance::binance_runtime(config_clone, fills_tx, orders_rx).await;
+	});
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
@@ -83,32 +84,18 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 
 		let target_orders = hub_process_orders(flat_requested_orders_position_id);
 
-		for to in target_orders.iter() {
-			match to.symbol.market {
-				Market::BinanceSpot => todo!(),
-				Market::BinanceMargin => todo!(),
-				Market::BinanceFutures => {
-					//TODO!!!!!!: generalize and move to the binance module
-					if !stupid_filled_one {
-						binance::dirty_hardcoded_exec(to.clone(), &config).await.unwrap();
-						stupid_filled_one = true;
-					}
-				}
-			}
-		}
+		//HACK: all others are ignored for now
+		let binance_futures_orders = target_orders
+			.iter()
+			.filter(|o| o.symbol.market == Market::BinanceFutures)
+			.cloned()
+			.collect::<Vec<Order<PositionOrderId>>>();
+
+		let acceptance_token = Uuid::new_v4(); //HACK
+		orders_tx.send(HubPassforward::new(acceptance_token, binance_futures_orders))?;
 	}
 
-	//- translate all into exact actual orders on specific exchanges if we were placing them now.
-	// // each ActualOrder must pertain the id of the ConceptualOrder instance it is expressing
-
-	//- compare with the current, calculate the costs of moving (tx between exchanges, latency exposure, spinning the limit), produce final target actual orders for each exchange.
-
-	//- send the batch of new exact orders to the controlling runtime of each exchange.
-	// // these are started locally, as none can be initiated through other means.
-
-	// HashMap<Exchange, Vec<Order>> // On fill notif of an exchange, we find the according PositionCallback, by searching for ConceptualOrder with matching uuid
-
-	//+ hardcode following binance orders here
+	Ok(())
 }
 
 //HACK
