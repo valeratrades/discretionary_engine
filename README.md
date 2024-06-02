@@ -33,11 +33,6 @@ An example config can be found in ./examples/config.toml
 
 - orders are placed immediately (not that far off, as most of the time we will spam the thing until it accepts, and only other action that will need to be taken is to prevent any increases in exposure while we have any mismatches).
 
-
-## State
-Number one priority is getting NRSR up.
-Once done, will be able to merge other parts of the project like handling and initialization of exchange interactions (currently in a separate crate).
-
 <br>
 
 <sup>
