@@ -275,6 +275,7 @@ pub async fn binance_runtime(
 	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
 	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
 ) {
+	println!("dbg: binance_runtime started"); //dbg
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
@@ -289,6 +290,7 @@ pub async fn binance_runtime(
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+			println!("dbg: tik-tok"); //dbg
 
 			let orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
@@ -337,12 +339,13 @@ pub async fn binance_runtime(
 					*current_lock = just_deployed;
 				}
 			},
+			// this doesn't have to be async. But fucking select! macro has its own mini-language brewing which I ain't learning.
 			_ = async {
-					while let Some(fills) = local_fills_rx.recv().await {
-						last_processed_fill_key = fills.0;
-						//let order_notional = r.origQty.parse::<f64>()?;
-						println!("Fills: {:?} on order: {:?}", fills.1, fills.2);
-					}
+				while let Ok(fills) = local_fills_rx.try_recv() {
+					last_processed_fill_key = fills.0;
+					println!("Fills: {:?} on order: {:?}", fills.1, fills.2);
+				}
+				tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 			} => {},
 		}
 	}
