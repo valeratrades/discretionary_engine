@@ -169,12 +169,15 @@ impl PositionFollowup {
 			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
 			let total_controlled_size = acquired.acquired_notional * size_multiplier;
 
-			let mask: Vec<f64>;
-			{
+			let target_protocol_orders = &all_requested.lock().unwrap()[&update_on_protocol];
+			let mask: Vec<f64> = {
 				let all_fills_guard = all_fills.lock().unwrap();
-				mask = all_fills_guard.get(&update_on_protocol).unwrap().to_vec();
-			}
-			let order_batch = all_requested.lock().unwrap()[&update_on_protocol].apply_mask(&mask, total_controlled_size);
+				match all_fills_guard.get(&update_on_protocol) {
+					Some(mask) => mask.to_vec(),
+					None => target_protocol_orders.empty_mask(),
+				}
+			};
+			let order_batch = target_protocol_orders.apply_mask(&mask, total_controlled_size);
 			all_requested_unrolled.lock().unwrap().insert(update_on_protocol, order_batch);
 		};
 

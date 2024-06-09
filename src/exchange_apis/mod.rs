@@ -49,9 +49,6 @@ pub fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<ConceptualO
 	tx
 }
 
-//TODO!!: All positions should have ability to clone tx to this
-/// Currently hard-codes for a single position.
-/// Uuid in the Receiver is of Position
 pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Result<()> {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
