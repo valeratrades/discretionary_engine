@@ -10,7 +10,7 @@ use tracing_subscriber::{
 
 ///# Panics
 pub fn init_subscriber() {
-	let console_layer = console_subscriber::spawn();
+	//let console_layer = console_subscriber::spawn();
 	let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info"));
 
 	// Fucking rust. And No, you can't make this shit with any less duplication, without sacrificing your soul.
@@ -19,16 +19,16 @@ pub fn init_subscriber() {
 		let subscriber = Registry::default()
 			.with(env_filter)
 			.with(JsonStorageLayer)
-			.with(formatting_layer)
-			.with(console_layer);
+			//.with(console_layer)
+			.with(formatting_layer);
 		set_global_default(subscriber).expect("Failed to set subscriber");
 	} else {
 		let formatting_layer = BunyanFormattingLayer::new("discretionary_engine".into(), std::io::sink);
 		let subscriber = Registry::default()
 			.with(env_filter)
 			.with(JsonStorageLayer)
-			.with(formatting_layer)
-			.with(console_layer);
+			//.with(console_layer)
+			.with(formatting_layer);
 		set_global_default(subscriber).expect("Failed to set subscriber");
 	};
 
