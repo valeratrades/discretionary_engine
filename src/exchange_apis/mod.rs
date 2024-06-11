@@ -68,7 +68,6 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
 
 	while let Some((new_orders, position_callback)) = rx.recv().await {
-		dbg!(&new_orders);
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
 		requested_orders.insert(position_callback.position_uuid, new_orders);
 		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
@@ -91,7 +90,6 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 
 		let acceptance_token = Uuid::new_v4(); //HACK
 		let passforward = HubPassforward::new(acceptance_token, binance_futures_orders);
-		dbg!(&passforward);
 		orders_tx.send(passforward)?;
 	}
 

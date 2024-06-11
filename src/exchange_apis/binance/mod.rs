@@ -281,7 +281,7 @@ pub async fn binance_runtime(
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
 	let mut last_received_fill_key = Uuid::new_v4();
-	let mut last_processed_fill_key = Uuid::new_v4();
+	let mut last_processed_fill_key = last_received_fill_key;
 
 	let (local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();

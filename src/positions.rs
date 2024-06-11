@@ -263,8 +263,7 @@ impl PositionFollowup {
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
-					//info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
-					dbg!(&protocol_orders);
+					info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
 					all_requested.lock().unwrap().insert(protocol_orders.protocol_id.clone(), protocol_orders.clone());
 					update_unrolled(protocol_orders.protocol_id.clone());
 					recalculate_target_orders!();
