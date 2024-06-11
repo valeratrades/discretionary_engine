@@ -316,11 +316,13 @@ pub async fn binance_runtime(
 					target_orders = match hub_passforward.key == last_received_fill_key {
 						true => hub_passforward.orders.clone(), //?  take()
 						false => {
-							break;
+							continue;
 						},
 					};
 				}
 				dbg!(&target_orders);
+
+				last_processed_fill_key = last_received_fill_key; //dbg
 				continue; //dbg
 
 				let currently_deployed_clone;
