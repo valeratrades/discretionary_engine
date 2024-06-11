@@ -46,9 +46,7 @@ impl DataSource {
 	async fn listen(&self, address: &str, tx: tokio::sync::mpsc::Sender<f64>) -> Result<()> {
 		match self {
 			DataSource::Default => {
-				let url = url::Url::parse(address).unwrap();
-
-				let (ws_stream, _) = connect_async(url).await.unwrap();
+				let (ws_stream, _) = connect_async(address).await.unwrap();
 				let (_, mut read) = ws_stream.split();
 
 				while let Some(msg) = read.next().await {
