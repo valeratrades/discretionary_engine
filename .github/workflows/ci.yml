@@ -132,7 +132,7 @@ jobs:
       run: |
         cargo machete
         exit_code=$?
-        if [ $exit_code = 0 ]; then
+        if [ $exit_code = 1 ]; then
           echo "Found unused dependencies"
           exit $exit_code
         fi
@@ -150,7 +150,7 @@ jobs:
       run: |
         cargo sort -c
         exit_code=$?
-        if [ $exit_code = 0 ]; then
+        if [ $exit_code = 1 ]; then
           echo "Cargo.toml is not sorted. Run `cargo sort` to fix it."
           exit $exit_code
         fi
