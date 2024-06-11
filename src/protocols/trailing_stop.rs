@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
+use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
@@ -129,7 +130,7 @@ impl Protocol for TrailingStopWrapper {
 					match position_side {
 						Side::Buy => {}
 						Side::Sell => {
-							let target_price = price * heuristic(params.lock().unwrap().percent, Side::Sell);
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
 							send_orders!(target_price, Side::Buy);
 						}
 					}
@@ -138,7 +139,7 @@ impl Protocol for TrailingStopWrapper {
 					top = price;
 					match position_side {
 						Side::Buy => {
-							let target_price = price * heuristic(params.lock().unwrap().percent, Side::Buy);
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
 							send_orders!(target_price, Side::Sell);
 						}
 						Side::Sell => {}
@@ -177,7 +178,7 @@ fn heuristic(percent: f64, side: Side) -> f64 {
 //? could I move the computation over the ProcessedData to be implemented on TrailingStop?
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default)]
 pub struct TrailingStop {
-	percent: f64,
+	percent: Percent,
 }
 
 //? should I move this higher up? Could compile times, and standardize the check function.

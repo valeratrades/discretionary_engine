@@ -109,13 +109,17 @@ impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
 	async fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
-		for order in orders.into_iter() {
-			match order.order_type {
-				ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
-				ConceptualOrderType::Limit(_) => self.normal_orders_total_notional += order.qty_notional,
-				ConceptualOrderType::Market(_) => self.market_orders_total_notional += order.qty_notional,
+		{
+			let mut new_orders = Vec::new();
+			for order in orders.into_iter() {
+				match order.order_type {
+					ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
+					ConceptualOrderType::Limit(_) => self.normal_orders_total_notional += order.qty_notional,
+					ConceptualOrderType::Market(_) => self.market_orders_total_notional += order.qty_notional,
+				}
+				new_orders.push(order);
 			}
-			self.orders.push(order);
+			self.orders = new_orders;
 		}
 		match self.hub_tx.send((self.orders.clone(), position_callback)).await {
 			Ok(_) => {}
@@ -259,7 +263,8 @@ impl PositionFollowup {
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
-					//info!("{:?} sent orders: {:?}", protocol_orders.produced_by, protocol_orders.apply_mask(protocol_orders.empty_mask(), 0.0)); //dbg
+					//info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
+					dbg!(&protocol_orders);
 					all_requested.lock().unwrap().insert(protocol_orders.protocol_id.clone(), protocol_orders.clone());
 					update_unrolled(protocol_orders.protocol_id.clone());
 					recalculate_target_orders!();
