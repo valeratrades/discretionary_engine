@@ -188,7 +188,7 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<PositionOrderId>) -> Result<BinanceOrder> {
 	let url = FuturesPositionResponse::get_url();
 
-	let mut binance_order = BinanceOrder::from_standard(order).await;
+	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
 	let params = binance_order.to_params();
 
 	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;

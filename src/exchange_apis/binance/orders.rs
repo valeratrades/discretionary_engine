@@ -36,8 +36,10 @@ impl BinanceOrder {
 		params
 	}
 
-	pub async fn from_standard(order: &Order<PositionOrderId>) -> Self {
+	//HACK: should be referencing preloaded values
+	pub async fn from_standard(mut order: Order<PositionOrderId>) -> Self {
 		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
+		order.qty_notional = coin_quantity_adjusted;
 
 		let order_type = match &order.order_type {
 			OrderType::Market => OrderType::Market,
@@ -45,7 +47,8 @@ impl BinanceOrder {
 				binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap()
 			})),
 		};
+		order.order_type = order_type;
 
-		Self::new(order.clone(), None)
+		Self::new(order, None)
 	}
 }
