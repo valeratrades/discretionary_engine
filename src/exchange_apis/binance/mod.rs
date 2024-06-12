@@ -6,6 +6,7 @@ use crate::exchange_apis::order_types::Order;
 use crate::exchange_apis::Market;
 use crate::PositionOrderId;
 use anyhow::Result;
+use v_utils::io::confirm;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 pub use info::FUTURES_EXCHANGE_INFO;
@@ -144,7 +145,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 		.as_str()
 		.unwrap()
 		.parse::<f64>()?;
-
+	
 	Ok(price)
 }
 
@@ -320,10 +321,9 @@ pub async fn binance_runtime(
 						},
 					};
 				}
-				dbg!(&target_orders);
+				dbg!(&target_orders, &currently_deployed);
 
 				last_processed_fill_key = last_received_fill_key; //dbg
-				continue; //dbg
 
 				let currently_deployed_clone;
 				{
@@ -340,7 +340,12 @@ pub async fn binance_runtime(
 					let mut current_lock = currently_deployed.write().unwrap();
 					*current_lock = just_deployed;
 				}
+
+				if !confirm("step") {
+					break;
+				}
 			},
+			
 			// this doesn't have to be async. But fucking select! macro has its own mini-language brewing which I ain't learning.
 			_ = async {
 				while let Ok(fills) = local_fills_rx.try_recv() {
