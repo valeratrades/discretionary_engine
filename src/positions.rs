@@ -58,7 +58,8 @@ impl PositionAcquisition {
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
 		let qty = order.qty_notional;
-		crate::exchange_apis::binance::dirty_hardcoded_exec(order, config).await?;
+		todo!();
+		//crate::exchange_apis::binance::dirty_hardcoded_exec(order, config).await?;
 		current_state.acquired_notional += qty;
 
 		//let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;
