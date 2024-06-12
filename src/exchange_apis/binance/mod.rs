@@ -29,21 +29,13 @@ use super::HubPassforward;
 type HmacSha256 = Hmac<Sha256>;
 
 #[allow(dead_code)]
-pub enum HttpMethod {
-	GET,
-	POST,
-	PUT,
-	DELETE,
-}
-
-#[allow(dead_code)]
 pub struct Binance {
 	// And so then many calls will be replaced with just finding info here.
 	futures_symbols: HashMap<String, FuturesSymbol>,
 }
 
 pub async fn signed_request<S: AsRef<str>>(
-	http_method: HttpMethod,
+	http_method: reqwest::Method,
 	endpoint_str: &str,
 	mut params: HashMap<&'static str, String>,
 	key: S,
@@ -65,12 +57,8 @@ pub async fn signed_request<S: AsRef<str>>(
 	let signature = hex::encode(mac_bytes);
 
 	let url = format!("{}?{}&signature={}", endpoint_str, query_string, signature);
+	let r = client.request(http_method, &url).send().await?;
 
-	let r = match http_method {
-		HttpMethod::GET => client.get(&url).send().await?,
-		HttpMethod::POST => client.post(&url).send().await?,
-		_ => panic!("Not implemented"),
-	};
 	Ok(r)
 }
 
@@ -81,7 +69,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("fapi/v2/balance")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let asset_balances: Vec<FuturesBalance> = r.json().await?;
 
 			let mut total_balance = 0.0;
@@ -94,7 +82,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/api/v3/account")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let account_details: SpotAccountDetails = r.json().await?;
 			let asset_balances = account_details.balances;
 
@@ -109,7 +97,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let account_details: MarginAccountDetails = r.json().await?;
 			let total_balance: f64 = account_details.TotalCollateralValueInUSDT.parse()?;
 
@@ -157,7 +145,7 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.symbol.clone());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
-		signed_request(HttpMethod::DELETE, url.as_str(), params, key.clone(), secret.clone())
+		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
 	for handle in handles {
 		let _ = handle.await?;
@@ -169,7 +157,7 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
-	let r = signed_request(HttpMethod::GET, url.as_str(), HashMap::new(), key, secret).await?;
+	let r = signed_request(reqwest::Method::GET, url.as_str(), HashMap::new(), key, secret).await?;
 	let positions: Vec<FuturesAllPositionsResponse> = r.json().await?;
 
 	let mut positions_map = HashMap::<String, f64>::new();
@@ -200,7 +188,7 @@ pub async fn post_futures_order<S: AsRef<str>, Id: IdRequirements>(key: S, secre
 	let mut binance_order = BinanceOrder::from_standard(order).await;
 	let params = binance_order.to_params();
 
-	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
+	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
 	dbg!(&r);
 	let __why_text_fn_consumes_self = format!("{:?}", r);
 	let response: FuturesPositionResponse = match r.json().await {
@@ -224,7 +212,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	params.insert("symbol", binance_order.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 
-	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
 	Ok(response)
 }

@@ -35,8 +35,8 @@ impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
 			__spec: spec,
-			target_notional: 10.0,
-			acquired_notional: 10.0,
+			target_notional: 20.0,
+			acquired_notional: 20.0,
 			protocols_spec: None,
 		})
 	}
