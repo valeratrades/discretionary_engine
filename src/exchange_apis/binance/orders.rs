@@ -16,7 +16,7 @@ impl BinanceOrder {
 		params.insert("side", self.base_info.side.to_string());
 		params.insert("quantity", format!("{}", self.base_info.qty_notional));
 
-		let type_params = match self.base_info.order_type {
+		let type_params = match &self.base_info.order_type {
 			OrderType::Market => {
 				let mut params = HashMap::<&'static str, String>::new();
 				params.insert("type", "MARKET".to_string());
