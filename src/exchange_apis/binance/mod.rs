@@ -170,16 +170,19 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 }
 
 /// Returns (price_precision, quantity_precision)
-pub async fn futures_precisions(coin: &str) -> Result<(u32, usize)> {
+pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output = Result<(u32, usize)>> + Send + Sync + 'static> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
 	let symbol_str = format!("{}USDT", coin.to_uppercase());
 
-	let r = reqwest::get(url).await?;
-	let futures_exchange_info: info::FuturesExchangeInfo = r.json().await?;
-	let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
+	Ok(async move {
+		let r = reqwest::get(url).await?;
 
-	Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
+		let futures_exchange_info: info::FuturesExchangeInfo = r.json().await?;
+		let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
+
+		Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
+	})
 }
 
 pub async fn post_futures_order<S: AsRef<str>, Id: IdRequirements>(key: S, secret: S, order: &Order<Id>) -> Result<BinanceOrder> {
@@ -220,14 +223,14 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 /// Binance wants both qty and price in orders to always respect the minimum step of the price
 //TODO!!!: Store all needed exchange info locally
 pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
-	let (price_precision, _) = futures_precisions(coin).await?;
+	let (price_precision, _) = futures_precisions(coin)?.await?;
 	let factor = 10_f64.powi(price_precision as i32);
 	let adjusted = (price * factor).round() / factor;
 	Ok(adjusted)
 }
 
 pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
-	let (_, qty_precision) = futures_precisions(coin).await?;
+	let (_, qty_precision) = futures_precisions(coin)?.await?;
 	let factor = 10_f64.powi(qty_precision as i32);
 	let adjusted = (qty * factor).round() / factor;
 	Ok(adjusted)
