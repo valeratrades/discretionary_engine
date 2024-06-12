@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
+use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
 use v_utils::trades::Side;
 
@@ -129,7 +130,7 @@ impl Protocol for TrailingStopWrapper {
 					match position_side {
 						Side::Buy => {}
 						Side::Sell => {
-							let target_price = price * heuristic(params.lock().unwrap().percent, Side::Sell);
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
 							send_orders!(target_price, Side::Buy);
 						}
 					}
@@ -138,7 +139,7 @@ impl Protocol for TrailingStopWrapper {
 					top = price;
 					match position_side {
 						Side::Buy => {
-							let target_price = price * heuristic(params.lock().unwrap().percent, Side::Buy);
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
 							send_orders!(target_price, Side::Sell);
 						}
 						Side::Sell => {}
@@ -171,13 +172,12 @@ fn heuristic(percent: f64, side: Side) -> f64 {
 		Side::Buy => 1.0 - percent.abs(),
 		Side::Sell => 1.0 + percent.abs(),
 	};
-	base.ln()
+	1.0 + base.ln()
 }
 
-//? could I move the computation over the ProcessedData to be implemented on TrailingStop?
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default)]
 pub struct TrailingStop {
-	percent: f64,
+	percent: Percent,
 }
 
 //? should I move this higher up? Could compile times, and standardize the check function.
@@ -193,7 +193,6 @@ mod tests {
 			.unwrap()
 			.set_data_source(DataSource::Test);
 
-		//TODO: use fake crate to distinguish between args that matter and that don't
 		let position_spec = PositionSpec::new("BTC".to_owned(), Side::Buy, 1.0);
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel(32);
@@ -217,7 +216,7 @@ mod tests {
         "order_type": {
           "StopMarket": {
             "maximum_slippage_percent": 1.0,
-            "price": -2.0202707317519466
+            "price": 97.97972926824805
           }
         },
         "symbol": {
@@ -234,7 +233,7 @@ mod tests {
         "order_type": {
           "StopMarket": {
             "maximum_slippage_percent": 1.0,
-            "price": -2.0303720854107064
+            "price": 98.4696279145893
           }
         },
         "symbol": {
@@ -251,7 +250,7 @@ mod tests {
         "order_type": {
           "StopMarket": {
             "maximum_slippage_percent": 1.0,
-            "price": -2.0707775000457453
+            "price": 100.42922249995425
           }
         },
         "symbol": {
@@ -268,7 +267,7 @@ mod tests {
         "order_type": {
           "StopMarket": {
             "maximum_slippage_percent": 1.0,
-            "price": -2.072797770777497
+            "price": 100.5272022292225
           }
         },
         "symbol": {

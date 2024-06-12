@@ -35,8 +35,8 @@ impl PositionAcquisition {
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
 			__spec: spec,
-			target_notional: 10.0,
-			acquired_notional: 10.0,
+			target_notional: 20.0,
+			acquired_notional: 20.0,
 			protocols_spec: None,
 		})
 	}
@@ -109,13 +109,17 @@ impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
 	async fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
-		for order in orders.into_iter() {
-			match order.order_type {
-				ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
-				ConceptualOrderType::Limit(_) => self.normal_orders_total_notional += order.qty_notional,
-				ConceptualOrderType::Market(_) => self.market_orders_total_notional += order.qty_notional,
+		{
+			let mut new_orders = Vec::new();
+			for order in orders.into_iter() {
+				match order.order_type {
+					ConceptualOrderType::StopMarket(_) => self.stop_orders_total_notional += order.qty_notional,
+					ConceptualOrderType::Limit(_) => self.normal_orders_total_notional += order.qty_notional,
+					ConceptualOrderType::Market(_) => self.market_orders_total_notional += order.qty_notional,
+				}
+				new_orders.push(order);
 			}
-			self.orders.push(order);
+			self.orders = new_orders;
 		}
 		match self.hub_tx.send((self.orders.clone(), position_callback)).await {
 			Ok(_) => {}
@@ -169,12 +173,15 @@ impl PositionFollowup {
 			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
 			let total_controlled_size = acquired.acquired_notional * size_multiplier;
 
-			let mask: Vec<f64>;
-			{
+			let target_protocol_orders = &all_requested.lock().unwrap()[&update_on_protocol];
+			let mask: Vec<f64> = {
 				let all_fills_guard = all_fills.lock().unwrap();
-				mask = all_fills_guard.get(&update_on_protocol).unwrap().to_vec();
-			}
-			let order_batch = all_requested.lock().unwrap()[&update_on_protocol].apply_mask(&mask, total_controlled_size);
+				match all_fills_guard.get(&update_on_protocol) {
+					Some(mask) => mask.to_vec(),
+					None => target_protocol_orders.empty_mask(),
+				}
+			};
+			let order_batch = target_protocol_orders.apply_mask(&mask, total_controlled_size);
 			all_requested_unrolled.lock().unwrap().insert(update_on_protocol, order_batch);
 		};
 
@@ -256,7 +263,7 @@ impl PositionFollowup {
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
-					//info!("{:?} sent orders: {:?}", protocol_orders.produced_by, protocol_orders.apply_mask(protocol_orders.empty_mask(), 0.0)); //dbg
+					info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
 					all_requested.lock().unwrap().insert(protocol_orders.protocol_id.clone(), protocol_orders.clone());
 					update_unrolled(protocol_orders.protocol_id.clone());
 					recalculate_target_orders!();

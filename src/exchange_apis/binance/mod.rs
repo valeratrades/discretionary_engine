@@ -6,6 +6,7 @@ use crate::exchange_apis::order_types::Order;
 use crate::exchange_apis::Market;
 use crate::PositionOrderId;
 use anyhow::Result;
+use v_utils::io::confirm;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 pub use info::FUTURES_EXCHANGE_INFO;
@@ -28,21 +29,13 @@ use super::HubPassforward;
 type HmacSha256 = Hmac<Sha256>;
 
 #[allow(dead_code)]
-pub enum HttpMethod {
-	GET,
-	POST,
-	PUT,
-	DELETE,
-}
-
-#[allow(dead_code)]
 pub struct Binance {
 	// And so then many calls will be replaced with just finding info here.
 	futures_symbols: HashMap<String, FuturesSymbol>,
 }
 
 pub async fn signed_request<S: AsRef<str>>(
-	http_method: HttpMethod,
+	http_method: reqwest::Method,
 	endpoint_str: &str,
 	mut params: HashMap<&'static str, String>,
 	key: S,
@@ -64,12 +57,8 @@ pub async fn signed_request<S: AsRef<str>>(
 	let signature = hex::encode(mac_bytes);
 
 	let url = format!("{}?{}&signature={}", endpoint_str, query_string, signature);
+	let r = client.request(http_method, &url).send().await?;
 
-	let r = match http_method {
-		HttpMethod::GET => client.get(&url).send().await?,
-		HttpMethod::POST => client.post(&url).send().await?,
-		_ => panic!("Not implemented"),
-	};
 	Ok(r)
 }
 
@@ -80,7 +69,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("fapi/v2/balance")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let asset_balances: Vec<FuturesBalance> = r.json().await?;
 
 			let mut total_balance = 0.0;
@@ -93,7 +82,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/api/v3/account")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let account_details: SpotAccountDetails = r.json().await?;
 			let asset_balances = account_details.balances;
 
@@ -108,7 +97,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let base_url = market.get_base_url();
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
-			let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 			let account_details: MarginAccountDetails = r.json().await?;
 			let total_balance: f64 = account_details.TotalCollateralValueInUSDT.parse()?;
 
@@ -144,7 +133,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 		.as_str()
 		.unwrap()
 		.parse::<f64>()?;
-
+	
 	Ok(price)
 }
 
@@ -156,7 +145,7 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.symbol.clone());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
-		signed_request(HttpMethod::DELETE, url.as_str(), params, key.clone(), secret.clone())
+		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
 	for handle in handles {
 		let _ = handle.await?;
@@ -168,7 +157,7 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
-	let r = signed_request(HttpMethod::GET, url.as_str(), HashMap::new(), key, secret).await?;
+	let r = signed_request(reqwest::Method::GET, url.as_str(), HashMap::new(), key, secret).await?;
 	let positions: Vec<FuturesAllPositionsResponse> = r.json().await?;
 
 	let mut positions_map = HashMap::<String, f64>::new();
@@ -199,7 +188,7 @@ pub async fn post_futures_order<S: AsRef<str>, Id: IdRequirements>(key: S, secre
 	let mut binance_order = BinanceOrder::from_standard(order).await;
 	let params = binance_order.to_params();
 
-	let r = signed_request(HttpMethod::POST, url.as_str(), params, key, secret).await?;
+	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
 	dbg!(&r);
 	let __why_text_fn_consumes_self = format!("{:?}", r);
 	let response: FuturesPositionResponse = match r.json().await {
@@ -223,7 +212,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	params.insert("symbol", binance_order.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 
-	let r = signed_request(HttpMethod::GET, url.as_str(), params, key, secret).await?;
+	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = r.json().await?;
 	Ok(response)
 }
@@ -275,20 +264,22 @@ pub async fn binance_runtime(
 	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
 	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
 ) {
+	println!("dbg: binance_runtime started"); //dbg
 	let full_key = config.binance.full_key.clone();
 	let full_secret = config.binance.full_secret.clone();
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
 	let mut last_received_fill_key = Uuid::new_v4();
-	let mut last_processed_fill_key = Uuid::new_v4();
+	let mut last_processed_fill_key = last_received_fill_key;
 
-	let (mut local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
+	let (local_fills_tx, mut local_fills_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
 	tokio::spawn(async move {
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+			println!("dbg: tik-tok"); //dbg
 
 			let orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
@@ -314,10 +305,13 @@ pub async fn binance_runtime(
 					target_orders = match hub_passforward.key == last_received_fill_key {
 						true => hub_passforward.orders.clone(), //?  take()
 						false => {
-							break;
+							continue;
 						},
 					};
 				}
+				dbg!(&target_orders, &currently_deployed);
+
+				last_processed_fill_key = last_received_fill_key; //dbg
 
 				let currently_deployed_clone;
 				{
@@ -334,13 +328,19 @@ pub async fn binance_runtime(
 					let mut current_lock = currently_deployed.write().unwrap();
 					*current_lock = just_deployed;
 				}
+
+				if !confirm("step") {
+					break;
+				}
 			},
+			
+			// this doesn't have to be async. But fucking select! macro has its own mini-language brewing which I ain't learning.
 			_ = async {
-					while let Some(fills) = local_fills_rx.recv().await {
-						last_processed_fill_key = fills.0;
-						//let order_notional = r.origQty.parse::<f64>()?;
-						println!("Fills: {:?} on order: {:?}", fills.1, fills.2);
-					}
+				while let Ok(fills) = local_fills_rx.try_recv() {
+					last_processed_fill_key = fills.0;
+					println!("Fills: {:?} on order: {:?}", fills.1, fills.2);
+				}
+				tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 			} => {},
 		}
 	}
