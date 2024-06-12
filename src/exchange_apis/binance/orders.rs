@@ -1,15 +1,23 @@
 use crate::exchange_apis::binance;
 use crate::exchange_apis::order_types::{Order, OrderType, StopMarketOrder};
 use crate::positions::PositionOrderId;
-use derive_new::new;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct BinanceOrder {
 	pub base_info: Order<PositionOrderId>,
 	pub binance_id: Option<i64>,
+	pub notional_filled: f64,
 }
 impl BinanceOrder {
+	pub fn new(base_info: Order<PositionOrderId>) -> Self {
+		Self {
+			base_info,
+			..Default::default()
+		}
+	}
+
 	pub fn to_params(&self) -> HashMap<&'static str, String> {
 		let mut params = HashMap::<&'static str, String>::new();
 		params.insert("symbol", self.base_info.symbol.to_string());
@@ -49,6 +57,6 @@ impl BinanceOrder {
 		};
 		order.order_type = order_type;
 
-		Self::new(order, None)
+		Self::new(order)
 	}
 }

@@ -2,11 +2,9 @@
 pub mod info;
 mod orders;
 use crate::config::AppConfig;
-use crate::exchange_apis::{Market, order_types::Order};
+use crate::exchange_apis::{order_types::Order, Market};
 use crate::PositionOrderId;
 use anyhow::Result;
-use tracing::trace;
-use v_utils::io::confirm;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 pub use info::FUTURES_EXCHANGE_INFO;
@@ -19,7 +17,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::select;
-use tracing::info;
+use tracing::trace;
 use url::Url;
 use uuid::Uuid;
 
@@ -133,7 +131,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 		.as_str()
 		.unwrap()
 		.parse::<f64>()?;
-	
+
 	Ok(price)
 }
 
@@ -237,7 +235,6 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
-
 ///NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(
 	config: AppConfig,
@@ -259,15 +256,21 @@ pub async fn binance_runtime(
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+			dbg!(&"poll orders tick");
 
 			let orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
 				currently_deployed_read.iter().cloned().collect()
 			};
-			for order in orders {
+			for (i, order) in orders.iter().enumerate() {
 				let r = poll_futures_order(&full_key_clone, &full_secret_clone, &order).await.unwrap();
-				if r.status == OrderStatus::Filled {
-					temp_fills_stack_tx.send((Uuid::new_v4(), order.base_info.clone(), r.clone())).await.unwrap();
+				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
+				let executed_qty = r.executedQty.parse::<f64>().unwrap();
+				if executed_qty != order.notional_filled {
+					{
+						currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
+					}
+					temp_fills_stack_tx.send((Uuid::new_v4(), order.base_info.clone(), executed_qty)).await.unwrap();
 				}
 			}
 		}
@@ -295,6 +298,9 @@ pub async fn binance_runtime(
 				{
 					currently_deployed_clone = currently_deployed.read().unwrap().clone();
 				}
+
+			// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
+			//Binance docs: currently only LIMIT order modification is supported
 				close_orders(full_key.clone(), full_secret.clone(), currently_deployed_clone).await.unwrap();
 
 				let mut just_deployed = Vec::new();
@@ -306,34 +312,23 @@ pub async fn binance_runtime(
 					let mut current_lock = currently_deployed.write().unwrap();
 					*current_lock = just_deployed;
 				}
-
-				if !confirm("step") {
-					break;
-				}
 			},
-			
-			// this doesn't have to be async. But fucking select! macro has its own mini-language brewing which I ain't learning.
+
 			_ = async {
 				while let Ok(fills) = temp_fills_stack_rx.try_recv() {
 					let fill_key = fills.0;
 					let order = fills.1;
-					let total_fill_notional = fills.2.cumQuote.parse::<f64>().unwrap();
+					let total_fill_notional = fills.2;
+					dbg!(&fill_key, &order, &total_fill_notional);
 
-					//NB: order could have been slightly altered, due to call to `apply_quantity_precision` during BinanceOrder construction
 					let callback = HubCallback::new(fill_key.clone(), total_fill_notional, order);
-					hub_callback.send(callback);
+					hub_callback.send(callback).await.unwrap();
 					last_reported_fill_key = fill_key;
 				}
 				tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 			} => {},
 		}
 	}
-	// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
-	//Binance docs: currently only LIMIT order modification is supported
-
-	//- must be aware of all active binance orders
-
-	//- ability to modify and poll currently oustanding orders
 }
 
 //=============================================================================
@@ -360,8 +355,8 @@ pub enum OrderStatus {
 pub struct FuturesPositionResponse {
 	pub clientOrderId: Option<String>,
 	pub cumQty: Option<String>, // weird field, included at random (json api things)
-	pub cumQuote: String, // total filled quote asset
-	pub executedQty: String, // total filled base asset
+	pub cumQuote: String,       // total filled quote asset
+	pub executedQty: String,    // total filled base asset
 	pub orderId: i64,
 	pub avgPrice: Option<String>,
 	pub origQty: String,

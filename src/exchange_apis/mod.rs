@@ -62,8 +62,6 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
-	let mut stupid_filled_one = false;
-
 	let mut callback: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
 
@@ -74,7 +72,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
 			.into_iter()
 			.map(|o| {
-				let new_id = PositionOrderId::new_from_proid(Uuid::new_v4(), o.id);
+				let new_id = PositionOrderId::new_from_protocol_id(Uuid::new_v4(), o.id);
 				ConceptualOrder { id: new_id, ..o }
 			})
 			.collect();
@@ -97,7 +95,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 }
 
 //HACK
-/// Thing that applies all the logic for deciding on how to best express ensemble of requeested orders.
+/// Thing that applies all the logic for deciding on how to best express ensemble of requested orders.
 fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) -> Vec<Order<PositionOrderId>> {
 	let mut orders: Vec<Order<PositionOrderId>> = Vec::new();
 	for o in conceptual_orders {

@@ -307,7 +307,7 @@ pub struct PositionOrderId {
 	pub ordinal: usize,
 }
 impl PositionOrderId {
-	pub fn new_from_proid(position_id: Uuid, poid: ProtocolOrderId) -> Self {
+	pub fn new_from_protocol_id(position_id: Uuid, poid: ProtocolOrderId) -> Self {
 		Self::new(position_id, poid.protocol_id, poid.ordinal)
 	}
 }
