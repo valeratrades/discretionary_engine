@@ -1,14 +1,15 @@
 use crate::config::AppConfig;
+use crate::exchange_apis::order_types::Fill;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::exchange_apis::{binance, HubPayload, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
-use tokio::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::select;
+use tokio::sync::mpsc;
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
@@ -128,17 +129,13 @@ impl TargetOrders {
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionCallback {
-	key: Uuid,
-	fills: Vec<(ProtocolOrderId, f64)>,
+	pub last_fill_key: Uuid,
+	fills: Vec<Fill<ProtocolOrderId>>,
 }
 
 impl PositionFollowup {
 	#[instrument]
-	pub async fn do_followup(
-		acquired: PositionAcquisition,
-		protocols: Vec<FollowupProtocol>,
-		hub_tx: mpsc::Sender<HubPayload>,
-	) -> Result<Self> {
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>, hub_tx: mpsc::Sender<HubPayload>) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
 		for protocol in &protocols {
 			let subtype = protocol.get_subtype();
@@ -158,6 +155,7 @@ impl PositionFollowup {
 		let mut target_orders = TargetOrders::default();
 
 		let all_fills: Arc<Mutex<HashMap<String, Vec<f64>>>> = Arc::new(Mutex::new(HashMap::new()));
+		let mut last_fill_key = Uuid::default();
 
 		let update_unrolled = |update_on_protocol: String| {
 			let protocol = FollowupProtocol::from_str(&update_on_protocol).unwrap();
@@ -246,8 +244,8 @@ impl PositionFollowup {
 				update_target_orders(limit_orders);
 
 				let updated_orders = target_orders.update_orders(new_target_orders);
-	
-				let hub_payload = HubPayload::new(acquired.__spec.id, updated_orders, tx_fills.clone());
+
+				let hub_payload = HubPayload::new(last_fill_key, acquired.__spec.id, updated_orders, tx_fills.clone());
 				match hub_tx.send(hub_payload).await {
 					Ok(_) => {}
 					Err(e) => {
@@ -271,20 +269,20 @@ impl PositionFollowup {
 				},
 				Some(position_callback) = rx_fills.recv() => {
 					info!("Received position callback: {position_callback:?}",);
+					last_fill_key = position_callback.last_fill_key;
 					for f in &position_callback.fills {
-						let (protocol_order_id, filled_notional) = f;
-						closed_notional += filled_notional;
+						closed_notional += f.filled_notional;
 						{
 							let mut all_fills_guard = all_fills.lock().unwrap();
-							let protocol_fills = all_fills_guard.entry(protocol_order_id.protocol_id.clone()).or_insert_with(|| {
-								let protocol_id = protocol_order_id.protocol_id.clone();
+							let protocol_fills = all_fills_guard.entry(f.id.protocol_id.clone()).or_insert_with(|| {
+								let protocol_id = f.id.protocol_id.clone();
 								all_requested.lock().unwrap().get(&protocol_id).unwrap().empty_mask()
 							});
 
-							protocol_fills[protocol_order_id.ordinal] += filled_notional;
+							protocol_fills[f.id.ordinal] += f.filled_notional;
 						}
 
-						update_unrolled(protocol_order_id.protocol_id.clone());
+						update_unrolled(f.id.protocol_id.clone());
 					}
 					recalculate_target_orders!();
 				},

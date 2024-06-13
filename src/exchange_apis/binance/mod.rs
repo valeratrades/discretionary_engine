@@ -2,8 +2,8 @@
 pub mod info;
 mod orders;
 use crate::config::AppConfig;
-use crate::positions::PositionCallback;
-use tokio::sync::mpsc;
+use crate::exchange_apis::order_types::Fill;
+use crate::exchange_apis::HubCallback;
 use crate::exchange_apis::{order_types::Order, Market};
 use crate::PositionOrderId;
 use anyhow::Result;
@@ -19,12 +19,12 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::select;
+use tokio::sync::mpsc;
 use tracing::trace;
 use url::Url;
 use uuid::Uuid;
 
 use super::order_types::IdRequirements;
-use super::HubCallback;
 use super::HubPassforward;
 type HmacSha256 = Hmac<Sha256>;
 
@@ -237,11 +237,7 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
-pub async fn binance_runtime(
-	config: AppConfig,
-	hub_callback: mpsc::Sender<HubCallback>,
-	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
-) {
+pub async fn binance_runtime(config: AppConfig, hub_callback: mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
 	trace!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::new_v4();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
@@ -321,8 +317,9 @@ pub async fn binance_runtime(
 					let order = fills.1;
 					let total_fill_notional = fills.2;
 					dbg!(&fill_key, &order, &total_fill_notional);
+					let fills = vec![Fill::new(order.id, total_fill_notional)];
 
-					let callback = HubCallback::new(fill_key, total_fill_notional, order);
+					let callback = HubCallback::new(fill_key, fills);
 					hub_callback.send(callback).await.unwrap();
 					last_reported_fill_key = fill_key;
 				}

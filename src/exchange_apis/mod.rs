@@ -1,4 +1,6 @@
 pub mod binance;
+use std::sync::{Arc, Mutex};
+use crate::exchange_apis::order_types::Fill;
 use crate::{positions::PositionCallback, PositionOrderId};
 use std::collections::HashMap;
 pub mod order_types;
@@ -8,6 +10,7 @@ use anyhow::Result;
 use derive_new::new;
 use order_types::{ConceptualOrder, Order};
 use serde::{Deserialize, Serialize};
+use tracing::trace;
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
@@ -17,7 +20,7 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
 	let read_secret = config.binance.read_secret.clone();
 
-	let mut handlers = vec![
+	let handlers = vec![
 		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures),
 		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot),
 	];
@@ -32,9 +35,8 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubCallback {
-	key: Uuid,
-	fill_qty: f64,
-	order: Order<PositionOrderId>,
+	last_fill_key: Uuid,
+	fills: Vec<Fill<PositionOrderId>>,
 }
 
 #[derive(Clone, Debug, Default, derive_new::new)]
@@ -45,6 +47,7 @@ pub struct HubPassforward {
 
 #[derive(Clone, Debug, derive_new::new)]
 pub struct HubPayload {
+	last_fill_key: Uuid,
 	position_id: Uuid,
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	position_callback: mpsc::Sender<PositionCallback>,
@@ -56,24 +59,58 @@ pub fn init_hub(config: AppConfig) -> mpsc::Sender<HubPayload> {
 	tx
 }
 
+/// The hub is the central point of the system, it receives all orders and processes them.
 pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubPayload>) -> Result<()> {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	let (fills_tx, fills_rx) = mpsc::channel::<HubCallback>(256);
+	let (fills_tx, mut fills_rx) = mpsc::channel::<HubCallback>(256);
+
 	let (orders_tx, orders_rx) = watch::channel::<HubPassforward>(HubPassforward::default());
 	let config_clone = config.clone();
 	tokio::spawn(async move {
 		binance::binance_runtime(config_clone, fills_tx, orders_rx).await;
 	});
+	let mut last_fill_key = Uuid::default();
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
-	let mut callback: HashMap<Uuid, mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
+	let position_txs: Arc<Mutex<HashMap<Uuid, mpsc::Sender<PositionCallback>>>> = Arc::new(Mutex::new(HashMap::new()));
+	let position_txs_clone = position_txs.clone();
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
 
+	tokio::spawn(async move {
+		// listen to fills_rx, on each fill update last fill key and send it to the position callback
+		while let Some(callback) = fills_rx.recv().await {
+			last_fill_key = callback.last_fill_key.clone();
+
+			let mut temp_map: HashMap<Uuid, Vec<Fill<ProtocolOrderId>>> = HashMap::new();
+			for fill in callback.fills {
+				let position_fills = temp_map.entry(fill.id.position_id).or_insert_with(Vec::new);
+				position_fills.push(Fill::new(ProtocolOrderId::from(fill.id), fill.filled_notional));
+			}
+
+			for (k, v) in temp_map {
+				let position_tx: mpsc::Sender<PositionCallback>;
+				{
+					position_tx = position_txs.lock().unwrap().get(&k).unwrap().clone();
+				}
+				position_tx.send(PositionCallback::new(last_fill_key.clone(), v)).await.unwrap();
+			}
+		}
+	});
+
 	while let Some(hub_payload) = rx.recv().await {
+		{
+			//TODO: change so that the position provides callback only the first time it calls
+			position_txs_clone.lock().unwrap().insert(hub_payload.position_id, hub_payload.position_callback);
+		}
+
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
+		if hub_payload.last_fill_key != last_fill_key {
+			trace!("payload submission with old fills data");
+			continue;
+		}
 		requested_orders.insert(hub_payload.position_id, hub_payload.orders);
 		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
 		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders

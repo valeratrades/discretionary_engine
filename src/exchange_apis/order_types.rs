@@ -1,4 +1,4 @@
-use crate::exchange_apis::Symbol;
+use crate::{exchange_apis::Symbol, PositionOrderId};
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,12 @@ pub struct Order<Id: IdRequirements> {
 	pub symbol: Symbol,
 	pub side: Side,
 	pub qty_notional: f64,
+}
+
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize, PartialEq)]
+pub struct Fill<Id: IdRequirements> {
+	pub id: Id,
+	pub filled_notional: f64,
 }
 
 ///NB: id of all orders must match uuid field of parent ConceptualOrder if any
@@ -48,6 +54,14 @@ pub struct StopMarketOrder {
 pub struct ProtocolOrderId {
 	pub protocol_id: String,
 	pub ordinal: usize,
+}
+impl From<PositionOrderId> for ProtocolOrderId {
+	fn from(p: PositionOrderId) -> Self {
+		Self {
+			protocol_id: p.protocol_id,
+			ordinal: p.ordinal,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
