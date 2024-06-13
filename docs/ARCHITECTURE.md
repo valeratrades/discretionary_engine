@@ -1,56 +1,81 @@
 # Architecture
 ```mermaid
 flowchart TD
-    Hub["Hub"]
+  Hub["Hub"]
 
-    subgraph positions ["POSITIONS"]
-        subgraph cluster_position_1 ["Position I"]
-            Protocol1_Params1 --> S
-            Protocol3_Params1 --> S
+  subgraph positions ["POSITIONS"]
+    subgraph cluster_position_1 ["Position I"]
+      Protocol1_Params1 --> S
+      Protocol3_Params1 --> S
 
-            F --> |"apply fill mask on ProtocolOrders
-            objects protocols are sending,
-            and refresh current suggested
-            orders on Position"| S
+      F --> |"apply fill mask on ProtocolOrders
+      objects protocols are sending,
+      and refresh current suggested
+      orders on Position"| S
 
-            S["All suggested orders for this Position"]
+      S["All suggested orders for this Position"]
 
-            F["Fill port of the Position"]
-        end
-        PositionII["Position II"]
-        PositionIII["Position III"]
+      F["Fill port of the Position"]
     end
-    PositionII --> Hub
-    PositionIII --> Hub
-    S --> |"Knowing how much
-    each protocol manages,
-    convert suggested orders,
-    (size as % of total under
-    protocol's management),
-    into notional sizes.
-    After choose up to
-    target position size
-    from them, so as to not
-    risk having additional
-    stale exposure"| Hub
-    Hub -->|"fill"| F
+    PositionII["Position II"]
+    PositionIII["Position III"]
+  end
+  PositionII --> Hub
+  PositionIII --> Hub
+  S --> |"Knowing how much
+  each protocol manages,
+  convert suggested orders,
+  (size as % of total under
+  protocol's management),
+  into notional sizes.
+  After choose up to
+  target position size
+  from them, so as to not
+  risk having additional
+  stale exposure"| Hub
+  Hub -->|"fill"| F
 
+  subgraph cluster_exchanges ["Exchange API modules"]
+    direction TB
+    BinanceFutures
+    BinanceSpot
+    BybitFutures
+    Coinbase
+  end
 
-    subgraph cluster_exchanges ["Exchange API modules"]
-        BinanceFutures
-        BinanceSpot
-        BybitFutures
-        Coinbase
-    end
+  Hub --> BinanceFutures
+  Hub --> BinanceSpot
+  Hub --> BybitFutures
+  Hub --> Coinbase
+
+  subgraph cluster_position_1_fills
+    direction TB
+    BinanceFutures -.->|"fill"| cluster_position_1
+    BinanceSpot -.->|"fill"| cluster_position_1
+    BybitFutures -.->|"fill"| cluster_position_1
+    Coinbase -.->|"fill"| cluster_position_1
+  end
   
-    BinanceFutures -->|"fill"| Hub
-    BinanceSpot -->|"fill"| Hub
-    BybitFutures -->|"fill"| Hub
-    Coinbase -->|"fill"| Hub
-    Hub --> BinanceFutures
-    Hub --> BinanceSpot
-    Hub --> BybitFutures
-    Hub --> Coinbase
+  subgraph cluster_position_2_fills
+    direction TB
+    BinanceFutures -.->|"fill"| PositionII
+    BinanceSpot -.->|"fill"| PositionII
+    BybitFutures -.->|"fill"| PositionII
+    Coinbase -.->|"fill"| PositionII
+  end
+  
+  subgraph cluster_position_3_fills
+    direction TB
+    BinanceFutures -.->|"fill"| PositionIII
+    BinanceSpot -.->|"fill"| PositionIII
+    BybitFutures -.->|"fill"| PositionIII
+    Coinbase -.->|"fill"| PositionIII
+  end
+
+  style BinanceFutures fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
+  style BinanceSpot fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
+  style BybitFutures fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
+  style Coinbase fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
 ```
 
 ### `main.rs`
