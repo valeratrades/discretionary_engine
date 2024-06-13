@@ -263,7 +263,7 @@ pub async fn binance_runtime(
 				currently_deployed_read.iter().cloned().collect()
 			};
 			for (i, order) in orders.iter().enumerate() {
-				let r = poll_futures_order(&full_key_clone, &full_secret_clone, &order).await.unwrap();
+				let r = poll_futures_order(&full_key_clone, &full_secret_clone, order).await.unwrap();
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
 				let executed_qty = r.executedQty.parse::<f64>().unwrap();
 				if executed_qty != order.notional_filled {
@@ -321,7 +321,7 @@ pub async fn binance_runtime(
 					let total_fill_notional = fills.2;
 					dbg!(&fill_key, &order, &total_fill_notional);
 
-					let callback = HubCallback::new(fill_key.clone(), total_fill_notional, order);
+					let callback = HubCallback::new(fill_key, total_fill_notional, order);
 					hub_callback.send(callback).await.unwrap();
 					last_reported_fill_key = fill_key;
 				}
