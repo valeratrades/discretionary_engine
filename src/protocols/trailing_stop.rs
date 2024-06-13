@@ -44,7 +44,7 @@ pub enum DataSource {
 	Test,
 }
 impl DataSource {
-	async fn listen(&self, address: &str, tx: tokio::sync::mpsc::Sender<f64>) -> Result<()> {
+	async fn listen(&self, address: &str, tx: mpsc::Sender<f64>) -> Result<()> {
 		match self {
 			DataSource::Default => {
 				let (ws_stream, _) = connect_async(address).await.unwrap();
@@ -112,7 +112,7 @@ impl Protocol for TrailingStopWrapper {
 			}};
 		}
 
-		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
+		let (tx, mut rx) = mpsc::channel::<f64>(256);
 		let address_clone = address.clone();
 		let data_source_clone = self.data_source;
 		tokio::spawn(async move {
@@ -195,7 +195,7 @@ mod tests {
 
 		let position_spec = PositionSpec::new("BTC".to_owned(), Side::Buy, 1.0);
 
-		let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+		let (tx, mut rx) = mpsc::channel(32);
 		tokio::spawn(async move {
 			ts.attach(tx, &position_spec).unwrap();
 		});

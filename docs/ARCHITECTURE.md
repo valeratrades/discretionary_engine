@@ -47,31 +47,11 @@ flowchart TD
   Hub --> BinanceSpot
   Hub --> BybitFutures
   Hub --> Coinbase
-
-  subgraph cluster_position_1_fills
-    direction TB
-    BinanceFutures -.->|"fill"| cluster_position_1
-    BinanceSpot -.->|"fill"| cluster_position_1
-    BybitFutures -.->|"fill"| cluster_position_1
-    Coinbase -.->|"fill"| cluster_position_1
-  end
+  BinanceFutures -.->|"fill"| Hub
+  BinanceSpot -.->|"fill"| Hub
+  BybitFutures -.->|"fill"| Hub
+  Coinbase -.->|"fill"| Hub
   
-  subgraph cluster_position_2_fills
-    direction TB
-    BinanceFutures -.->|"fill"| PositionII
-    BinanceSpot -.->|"fill"| PositionII
-    BybitFutures -.->|"fill"| PositionII
-    Coinbase -.->|"fill"| PositionII
-  end
-  
-  subgraph cluster_position_3_fills
-    direction TB
-    BinanceFutures -.->|"fill"| PositionIII
-    BinanceSpot -.->|"fill"| PositionIII
-    BybitFutures -.->|"fill"| PositionIII
-    Coinbase -.->|"fill"| PositionIII
-  end
-
   style BinanceFutures fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
   style BinanceSpot fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5
   style BybitFutures fill:none,stroke:#000,stroke-width:1,stroke-dasharray: 5

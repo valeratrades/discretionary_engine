@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
+use tokio::sync::{mpsc, watch};
 
 pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -29,7 +30,6 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	Ok(total_balance)
 }
 
-//? is there a conventional way to introduce these communication locks?
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubCallback {
 	key: Uuid,
@@ -43,18 +43,25 @@ pub struct HubPassforward {
 	orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)> {
-	let (tx, rx) = tokio::sync::mpsc::channel(32);
+#[derive(Clone, Debug, derive_new::new)]
+pub struct HubPayload {
+	position_id: Uuid,
+	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	position_callback: mpsc::Sender<PositionCallback>,
+}
+
+pub fn init_hub(config: AppConfig) -> mpsc::Sender<HubPayload> {
+	let (tx, rx) = mpsc::channel(256);
 	tokio::spawn(hub(config.clone(), rx));
 	tx
 }
 
-pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Result<()> {
+pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubPayload>) -> Result<()> {
 	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	let (fills_tx, fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
-	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubPassforward>(HubPassforward::default());
+	let (fills_tx, fills_rx) = mpsc::channel::<HubCallback>(256);
+	let (orders_tx, orders_rx) = watch::channel::<HubPassforward>(HubPassforward::default());
 	let config_clone = config.clone();
 	tokio::spawn(async move {
 		binance::binance_runtime(config_clone, fills_tx, orders_rx).await;
@@ -62,12 +69,12 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<(Vec<Con
 
 	let ex = &crate::exchange_apis::binance::info::FUTURES_EXCHANGE_INFO;
 
-	let mut callback: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
+	let mut callback: HashMap<Uuid, mpsc::Sender<Vec<(f64, ProtocolOrderId)>>> = HashMap::new();
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
 
-	while let Some((new_orders, position_callback)) = rx.recv().await {
+	while let Some(hub_payload) = rx.recv().await {
 		//TODO!!!!!!!: check that the sender provided correct uuid we sent with the notification of the last fill to it.
-		requested_orders.insert(position_callback.position_uuid, new_orders);
+		requested_orders.insert(hub_payload.position_id, hub_payload.orders);
 		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
 		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
 			.into_iter()

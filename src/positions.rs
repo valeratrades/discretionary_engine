@@ -1,9 +1,9 @@
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
-use crate::exchange_apis::{binance, Symbol};
+use crate::exchange_apis::{binance, HubPayload, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
-use derive_new::new;
+use tokio::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -14,11 +14,22 @@ use uuid::Uuid;
 use v_utils::trades::Side;
 
 /// What the Position *is*_
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone)]
 pub struct PositionSpec {
+	pub id: Uuid,
 	pub asset: String,
 	pub side: Side,
 	pub size_usdt: f64,
+}
+impl PositionSpec {
+	pub fn new(asset: String, side: Side, size_usdt: f64) -> Self {
+		Self {
+			id: Uuid::new_v4(),
+			asset,
+			side,
+			size_usdt,
+		}
+	}
 }
 
 #[allow(dead_code)]
@@ -86,30 +97,18 @@ pub struct PositionFollowup {
 
 /// Internal representation of desired orders. The actual orders are synchronized to this, so any details of actual execution are mostly irrelevant.
 /// Thus these orders have no actual ID; only being tagged with what protocol spawned them.
-#[derive(Debug)]
+#[derive(Debug, Default, derive_new::new)]
 struct TargetOrders {
 	stop_orders_total_notional: f64,
 	normal_orders_total_notional: f64,
 	market_orders_total_notional: f64,
 	//total_usd: f64,
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
-}
-impl TargetOrders {
-	pub fn new(hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Self {
-		Self {
-			stop_orders_total_notional: 0.0,
-			normal_orders_total_notional: 0.0,
-			market_orders_total_notional: 0.0,
-			orders: Vec::new(),
-			hub_tx,
-		}
-	}
 }
 impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
-	async fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
+	fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		{
 			let mut new_orders = Vec::new();
 			for order in orders.into_iter() {
@@ -122,21 +121,15 @@ impl TargetOrders {
 			}
 			self.orders = new_orders;
 		}
-		match self.hub_tx.send((self.orders.clone(), position_callback)).await {
-			Ok(_) => {}
-			Err(e) => {
-				info!("Error sending orders: {:?}", e);
-				panic!(); //dbg
-			}
-		};
+		self.orders.clone()
 	}
 	//TODO!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionCallback {
-	pub sender: tokio::sync::mpsc::Sender<Vec<(ProtocolOrderId, f64)>>, // stands for "this nominal qty filled on this protocol order"
-	pub position_uuid: Uuid,
+	key: Uuid,
+	fills: Vec<(ProtocolOrderId, f64)>,
 }
 
 impl PositionFollowup {
@@ -144,7 +137,7 @@ impl PositionFollowup {
 	pub async fn do_followup(
 		acquired: PositionAcquisition,
 		protocols: Vec<FollowupProtocol>,
-		hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
+		hub_tx: mpsc::Sender<HubPayload>,
 	) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
 		for protocol in &protocols {
@@ -152,19 +145,17 @@ impl PositionFollowup {
 			*counted_subtypes.entry(subtype).or_insert(0) += 1;
 		}
 
-		let (tx_orders, mut rx_orders) = tokio::sync::mpsc::channel::<ProtocolOrders>(32);
+		let (tx_orders, mut rx_orders) = mpsc::channel::<ProtocolOrders>(256);
 		for protocol in protocols.clone() {
 			protocol.attach(tx_orders.clone(), &acquired.__spec)?;
 		}
 
-		let position_id = Uuid::new_v4();
-		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<(ProtocolOrderId, f64)>>(32);
-		let position_callback = PositionCallback::new(tx_fills, position_id);
+		let (tx_fills, mut rx_fills) = mpsc::channel::<PositionCallback>(256);
 
 		let all_requested: Arc<Mutex<HashMap<String, ProtocolOrders>>> = Arc::new(Mutex::new(HashMap::new()));
 		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder<ProtocolOrderId>>>>> = Arc::new(Mutex::new(HashMap::new()));
 		let mut closed_notional = 0.0;
-		let mut target_orders = TargetOrders::new(hub_tx);
+		let mut target_orders = TargetOrders::default();
 
 		let all_fills: Arc<Mutex<HashMap<String, Vec<f64>>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -254,7 +245,16 @@ impl PositionFollowup {
 				update_target_orders(stop_orders);
 				update_target_orders(limit_orders);
 
-				target_orders.update_orders(new_target_orders, position_callback.clone()).await;
+				let updated_orders = target_orders.update_orders(new_target_orders);
+	
+				let hub_payload = HubPayload::new(acquired.__spec.id, updated_orders, tx_fills.clone());
+				match hub_tx.send(hub_payload).await {
+					Ok(_) => {}
+					Err(e) => {
+						info!("Error sending orders: {:?}", e);
+						panic!(); //dbg
+					}
+				}
 			}};
 		}
 
@@ -269,9 +269,9 @@ impl PositionFollowup {
 					update_unrolled(protocol_orders.protocol_id.clone());
 					recalculate_target_orders!();
 				},
-				Some(fills_vec) = rx_fills.recv() => {
-					info!("Received fills: {:?}", fills_vec);
-					for f in fills_vec {
+				Some(position_callback) = rx_fills.recv() => {
+					info!("Received position callback: {position_callback:?}",);
+					for f in &position_callback.fills {
 						let (protocol_order_id, filled_notional) = f;
 						closed_notional += filled_notional;
 						{
