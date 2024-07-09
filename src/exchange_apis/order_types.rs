@@ -7,8 +7,6 @@ use v_utils::trades::Side;
 
 //TODO!: Move order_types to v_utils when stable
 
-//TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
-
 pub trait IdRequirements = Hash + Clone + PartialEq + Default;
 
 #[derive(Clone, Debug, PartialEq, new, Default, Serialize, Deserialize)]

@@ -76,6 +76,22 @@ Protocols analyze any kind of market information relevant to the position they a
 All available protocols are predefined, and an api for manual on-demand creation of specific protocols from common market data is not currently planned.
 
 ### `exchange_apis/`
+```mermaid
+flowchart LR
+subgraph Hub
+V(Gen\nDistribution\nIn vacuum)
+CoR(Eval Cost\nof Reorder)
+J(Decide on\nper-exchange\ndelta changes)
+end
+
+A[/...All\nConceptual\nOrders/] --> V
+A --> CoR
+CoR --> J
+V --> J
+J --> B[/Exchange\nruntimes.../]
+```
 Interface through Hub, meant to synchronize information of all outstanding to allow for more efficient rerouting (considering e.g., current balances on exchanges). Hub keeps track of the _last_ sent Orders update from each Position, dynamically deciding how exactly and on which exchanges they should be executed, having ability to move them around.
 
 Exchange interfaces themselves keep track only of the orders given to them by the Hub, and mostly deal with specifics of api of their respective exchange. No order changes transpire at this level, they are placed exactly as directed by the Hub.
+
+The exchange APIs should be sufficiently modular to allow for distribution of all a) data-collection and b) protocols of each exchange. At some point I will start running exchange-specific nodes in closer proximity to the target exchange's data-center. They will establish a TCP with the local-running main instance, and then take ownership of all parts of the positions targeting that exchange, by cloning the exchange-specific part of the infrastructure and deploying it right next to the exchange. Then the deployed instance sends websocket-like updates on fills. Locally we mark that part of the position as owned by the according exchange-specific instance, and show reported qty filled only.
