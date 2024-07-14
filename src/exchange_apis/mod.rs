@@ -82,11 +82,11 @@ pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubPayload>) -> Resul
 	tokio::spawn(async move {
 		// listen to fills_rx, on each fill update last fill key and send it to the position callback
 		while let Some(callback) = fills_rx.recv().await {
-			last_fill_key = callback.last_fill_key.clone();
+			last_fill_key = callback.last_fill_key;
 
 			let mut temp_map: HashMap<Uuid, Vec<Fill<ProtocolOrderId>>> = HashMap::new();
 			for fill in callback.fills {
-				let position_fills = temp_map.entry(fill.id.position_id).or_insert_with(Vec::new);
+				let position_fills = temp_map.entry(fill.id.position_id).or_default();
 				position_fills.push(Fill::new(ProtocolOrderId::from(fill.id), fill.filled_notional));
 			}
 
@@ -95,7 +95,7 @@ pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubPayload>) -> Resul
 				{
 					position_tx = position_txs.lock().unwrap().get(&k).unwrap().clone();
 				}
-				position_tx.send(PositionCallback::new(last_fill_key.clone(), v)).await.unwrap();
+				position_tx.send(PositionCallback::new(last_fill_key, v)).await.unwrap();
 			}
 		}
 	});
