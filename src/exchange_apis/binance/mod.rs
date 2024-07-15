@@ -217,7 +217,19 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-	let response: FuturesPositionResponse = r.json().await?;
+	let text = r.text().await?;
+	let response: FuturesPositionResponse = match serde_json::from_str(&text) {
+		Ok(r) => r,
+		Err(e) => {
+			if e.to_string().contains("missing field `cumQuote`") {
+				tracing::trace!("Specific JSON parsing error: {:?}\nResponse text: {}", e, text);
+			} else {
+				//dbg
+				eprintln!("Error parsing JSON: {:?}\n{}", e, text);
+			}
+			return Err(e.into());
+		}
+	};
 	Ok(response)
 }
 
@@ -253,21 +265,27 @@ pub async fn binance_runtime(config: AppConfig, hub_callback: mpsc::Sender<HubCa
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-			dbg!(&"poll orders tick");
 
 			let orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
 				currently_deployed_read.iter().cloned().collect()
 			};
 			for (i, order) in orders.iter().enumerate() {
-				let r = poll_futures_order(&full_key_clone, &full_secret_clone, order).await.unwrap();
-				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
-				let executed_qty = r.executedQty.parse::<f64>().unwrap();
-				if executed_qty != order.notional_filled {
-					{
-						currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
+				let result_r = poll_futures_order(&full_key_clone, &full_secret_clone, order).await;
+				match result_r {
+					Ok(r) => {
+						// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
+						let executed_qty = r.executedQty.parse::<f64>().unwrap();
+						if executed_qty != order.notional_filled {
+							{
+								currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
+							}
+							temp_fills_stack_tx.send((Uuid::new_v4(), order.base_info.clone(), executed_qty)).await.unwrap();
+						}
 					}
-					temp_fills_stack_tx.send((Uuid::new_v4(), order.base_info.clone(), executed_qty)).await.unwrap();
+					Err(e) => {
+						eprintln!("Error polling order: {:?}", e);
+					}
 				}
 			}
 		}

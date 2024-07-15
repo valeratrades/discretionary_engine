@@ -83,6 +83,7 @@ async fn main() {
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			eprintln!("\nPretend we acquired: {:?}\n\n", acquired);
 			//let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
 			let followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
 			info!(?followed);
