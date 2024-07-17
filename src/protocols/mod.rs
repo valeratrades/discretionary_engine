@@ -1,3 +1,4 @@
+mod sar;
 mod trailing_stop;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 use crate::positions::PositionSpec;
