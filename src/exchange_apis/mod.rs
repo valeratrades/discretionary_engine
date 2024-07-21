@@ -121,7 +121,7 @@ fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) 
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Copy)]
 pub enum Market {
 	#[default]
 	BinanceFutures,
@@ -163,13 +163,18 @@ impl std::str::FromStr for Market {
 ///```rust
 ///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
 ///```
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, new, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,
 	pub market: Market,
 }
 impl Symbol {
+	pub fn new<T: AsRef<str>>(base: T, quote: T, market: Market) -> Self {
+		let base = base.as_ref().to_string();
+		let quote = quote.as_ref().to_string();
+		Self { base, quote, market }
+	}
 	pub fn ticker(&self) -> String {
 		format!("{}{}", self.base, self.quote)
 	}

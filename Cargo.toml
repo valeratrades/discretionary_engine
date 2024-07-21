@@ -58,5 +58,5 @@ tracing-log = "0.2.0"
 tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry", "env-filter"] }
 url = "^2.5.1"
 uuid = { version = "^1.8.0", features = ["serde", "v4"] }
-v_utils = { version = "^1.3.14", features = ["full"] }
+v_utils = { features = ["full"], path="../v_utils/v_utils" }
 v_utils_macros = "1.2.2"
