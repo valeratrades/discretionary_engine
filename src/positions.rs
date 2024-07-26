@@ -57,10 +57,15 @@ impl PositionAcquisition {
 
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
-		let qty = order.qty_notional;
-		//TODO!!!!: implement Acquisition Protocol: delayed buy-limit
-		todo!();
 
+		let mock_position_order = Order<PositionOrderId>::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
+		let binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order).await.unwrap();
+		// we just assume it worked
+
+		current_state.acquired_notional = coin_quantity;
+
+
+		//TODO!!!!: implement Acquisition Protocol: delayed buy-limit
 		// the action core is the same as Followup's
 
 		Ok(current_state)

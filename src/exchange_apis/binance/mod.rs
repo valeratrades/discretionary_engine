@@ -256,7 +256,6 @@ pub async fn binance_runtime(
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-			dbg!(&"poll orders tick");
 
 			let orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();

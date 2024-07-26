@@ -82,8 +82,8 @@ async fn main() {
 			let followup_protocols = protocols::interpret_followup_specs(position_args.followup_protocols_spec).unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
-			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
-			//let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
+			//let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
 			let followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
 			info!(?followed);
 		}
