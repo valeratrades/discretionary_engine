@@ -58,20 +58,10 @@ impl PositionAcquisition {
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
 		let qty = order.qty_notional;
+		//TODO!!!!: implement Acquisition Protocol: delayed buy-limit
 		todo!();
-		//crate::exchange_apis::binance::dirty_hardcoded_exec(order, config).await?;
-		current_state.acquired_notional += qty;
 
-		//let order_id = binance::post_futures_order(full_key.clone(), full_secret.clone(), order).await?;
-		////info!(target: "/tmp/discretionary_engine.lock", "placed order: {:?}", order_id);
-		//loop {
-		//	let r = binance::poll_futures_order(full_key.clone(), full_secret.clone(), order_id, symbol.to_string()).await?;
-		//	if r.status == binance::OrderStatus::Filled {
-		//		let order_notional = r.origQty.parse::<f64>()?;
-		//		current_state.acquired_notional += order_notional;
-		//		break;
-		//	}
-		//}
+		// the action core is the same as Followup's
 
 		Ok(current_state)
 	}
