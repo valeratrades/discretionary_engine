@@ -102,7 +102,7 @@ impl DefaultDataSource {
 impl TestDataSource {
 	async fn listen(&self, tx: tokio::sync::mpsc::Sender<Ohlc>) -> Result<()> {
 		let test_data_p = crate::utils::laplace_random_walk(100.0, 1000, 0.2, 0.0, Some(42));
-		let test_data_ohlc = mock_p_to_ohlc(&test_data_p, 4);
+		let test_data_ohlc = mock_p_to_ohlc(&test_data_p, 10);
 		for ohlc in test_data_ohlc {
 			tx.send(ohlc).await.unwrap();
 		}
@@ -114,7 +114,7 @@ impl TestDataSource {
 		#[rustfmt::skip]
 		let example_historic_p = crate::utils::laplace_random_walk(100.0, 1000, 0.2, 0.0, Some(123));
 		let example_historic_p = example_historic_p.into_iter().rev().collect::<Vec<_>>();
-		let example_historic_ohlc = mock_p_to_ohlc(&example_historic_p, 4);
+		let example_historic_ohlc = mock_p_to_ohlc(&example_historic_p, 10);
 		example_historic_ohlc
 	}
 }
@@ -199,30 +199,34 @@ struct SarIndicator {
 	sar: f64,
 	acceleration_factor: f64,
 	extreme_point: f64,
+	/// (start, increment, max)
 	params: (f64, f64, f64),
 }
 impl SarIndicator {
-	//TODO!!!!!!!!!: \
 	fn init(data_source: &DataSource, protocol_params: Arc<Mutex<Sar>>, symbol: &Symbol) -> Self {
-		//TODO!!!!!!: Request 100 bars back on the chosen tf, to init sar correctly
-		// This should actually be passed to the function, otherwise testing is impossible
-		let mut extreme_point = 44.0; //dbg
-		let mut sar = 44.0; //dbg (normally should init at `price`, then sim for 100 bars to be up-to-date here)
 		let tf = { 
 			protocol_params.lock().unwrap().timeframe
 		};
 		let historic_klines_ohlc = data_source.historic_klines_ohlc(&symbol.to_string(), tf, 100).unwrap();
-		//- init the correct sar value by running on 100 points of history
 
-
-
+		let mut extreme_point = historic_klines_ohlc[0].open;
+		let mut sar = historic_klines_ohlc[0].open;
 		let (start, increment, max) = {
 			let params_lock = protocol_params.lock().unwrap();
 			(params_lock.start.0, params_lock.increment.0, params_lock.maximum.0)
 		};
 		let mut acceleration_factor = start;
 
-		todo!()
+		let mut sar_indicator = Self {
+			sar,
+			acceleration_factor,
+			extreme_point,
+			params: (start, increment, max),
+		};
+		for ohlc in historic_klines_ohlc {
+			sar_indicator.step(ohlc);
+		}
+		sar_indicator
 	}
 	fn step(&mut self, ohlc: Ohlc) {
 		let (start, increment, max) = self.params;
@@ -301,8 +305,22 @@ mod tests {
 			sar.step(ohlc);
 			recorded_indicator_values.push(sar.sar);
 		}
+		let snapshot = v_utils::utils::snapshot_plot_p(&recorded_indicator_values, 90, 12);
 
-		insta::assert_debug_snapshot!(recorded_indicator_values, @r###"isaendtaerd"###);
+		insta::assert_snapshot!(snapshot, @r###"
+                                                                            ▆▄▃▁            
+                                                                          ▂▃████▆▄▁         
+                                                                       ▂▅██████████▇▃▁      
+                                                                     ▃▆███████████████▇   ▂▄
+                                                                    ███████████████████▂▅███
+                                                                 ▁▅█████████████████████████
+                   ▂▅▂               ▃▆             ▇▄▂         ▅███████████████████████████
+                   ███▆▂▁       ▃▄▅ ▅███▇▃▁         ███▆▃     ▄█████████████████████████████
+       ▃▂▁        ▆██████▄  ▅▆▆▆███▇███████      ▃▆▆██████  ▂▇██████████████████████████████
+  ▁▂▃▄▅████▅▄▂   ▇█████████████████████████    ▃▇█████████ ▄████████████████████████████████
+  █████████████▆▆██████████████████████████  ▂▇█████████████████████████████████████████████
+  █████████████████████████████████████████▁▆███████████████████████████████████████████████
+  "###);
 	}
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
