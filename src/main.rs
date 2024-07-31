@@ -69,7 +69,13 @@ async fn main() {
 
 	match cli.command {
 		Commands::New(position_args) => {
-			let balance = exchange_apis::compile_total_balance(config.clone()).await.unwrap();
+			let balance = match exchange_apis::compile_total_balance(config.clone()).await {
+				Ok(b) => b,
+				Err(e) => {
+					eprintln!("Failed to get balance: {}", e);
+					std::process::exit(1);
+				}
+			};
 			let (side, target_size) = match position_args.size {
 				s if s > 0.0 => (Side::Buy, s * balance),
 				s if s < 0.0 => (Side::Sell, -s * balance),
@@ -83,7 +89,7 @@ async fn main() {
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			//let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
-			let acquired = PositionAcquisition::do_acquisition(spec).await.unwrap();
+			let acquired = PositionAcquisition::do_acquisition(spec, &config).await.unwrap();
 			let followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
 			info!(?followed);
 		}

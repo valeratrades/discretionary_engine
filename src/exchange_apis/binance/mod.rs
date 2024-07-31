@@ -1,14 +1,15 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
 mod orders;
-use crate::config::AppConfig;
-use crate::exchange_apis::{order_types::Order, Market};
-use crate::PositionOrderId;
-use anyhow::Result;
-use chrono::Utc;
-use hmac::{Hmac, Mac};
 pub use info::FUTURES_EXCHANGE_INFO;
 pub use orders::*;
+use anyhow::Result;
+use chrono::Utc;
+use crate::PositionOrderId;
+use crate::config::AppConfig;
+use crate::exchange_apis::{order_types::Order, Market};
+use crate::utils::reqwest_deser;
+use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
@@ -61,14 +62,15 @@ pub async fn signed_request<S: AsRef<str>>(
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
-	let params = HashMap::<&str, String>::new();
+	let mut params = HashMap::<&str, String>::new();
+	params.insert("recvWindow", "60000".to_owned());
 	match market {
 		Market::BinanceFutures => {
 			let base_url = market.get_base_url();
-			let url = base_url.join("fapi/v2/balance")?;
+			let url = base_url.join("fapi/v3/balance")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let asset_balances: Vec<FuturesBalance> = r.json().await?;
+			let asset_balances: Vec<FuturesBalance> = reqwest_deser::<Vec<FuturesBalance>>(r).await?;
 
 			let mut total_balance = 0.0;
 			for asset in asset_balances {
@@ -81,7 +83,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let url = base_url.join("/api/v3/account")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let account_details: SpotAccountDetails = r.json().await?;
+			let account_details: SpotAccountDetails = reqwest_deser(r).await?;
 			let asset_balances = account_details.balances;
 
 			let mut total_balance = 0.0;
@@ -96,7 +98,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let account_details: MarginAccountDetails = r.json().await?;
+			let account_details: MarginAccountDetails = reqwest_deser(r).await?;
 			let total_balance: f64 = account_details.TotalCollateralValueInUSDT.parse()?;
 
 			Ok(total_balance)
@@ -121,7 +123,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	//let r_json: serde_json::Value = r.json().await?;
 	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
 	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
-	let prices: Vec<serde_json::Value> = r.json().await?;
+	let prices: Vec<serde_json::Value> = reqwest_deser(r).await?;
 	let price = prices
 		.iter()
 		.find(|x| *x.get("symbol").unwrap().as_str().unwrap() == symbol.to_string())
@@ -143,6 +145,7 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.base_info.symbol.to_string());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
+
 		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
 	for handle in handles {
@@ -187,20 +190,11 @@ pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<
 	let url = FuturesPositionResponse::get_url();
 
 	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
-	let params = binance_order.to_params();
+	let mut params = binance_order.to_params();
+	params.insert("recvWindow", "60000".to_owned()); //dbg currently they/me are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
-	dbg!(&r);
-	let __why_text_fn_consumes_self = format!("{:?}", r);
-	let response: FuturesPositionResponse = match r.json().await {
-		Ok(r) => r,
-		Err(e) => {
-			println!("Error: {:?}", e);
-			println!("Response: {:?}", __why_text_fn_consumes_self);
-			//TODO!: print the darn contents, so it's possible to debug.
-			return Err(e.into());
-		}
-	};
+	let response: FuturesPositionResponse = reqwest_deser(r).await?;
 	binance_order.binance_id = Some(response.orderId);
 	Ok(binance_order)
 }
@@ -262,7 +256,18 @@ pub async fn binance_runtime(
 				currently_deployed_read.iter().cloned().collect()
 			};
 			for (i, order) in orders.iter().enumerate() {
-				let r = poll_futures_order(&full_key_clone, &full_secret_clone, order).await.unwrap();
+				// // temp thing until I transfer to websocket
+				let r = loop {
+					match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
+						Ok(response) => break response,
+						Err(e) => {
+							dbg!(e);
+							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+						}
+					}
+				};
+				//
+
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
 				let executed_qty = r.executedQty.parse::<f64>().unwrap();
 				if executed_qty != order.notional_filled {
@@ -297,6 +302,7 @@ pub async fn binance_runtime(
 				{
 					currently_deployed_clone = currently_deployed.read().unwrap().clone();
 				}
+				dbg!(&currently_deployed_clone);
 
 			// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
 			//Binance docs: currently only LIMIT order modification is supported

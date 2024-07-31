@@ -1,6 +1,9 @@
 #![allow(dead_code, unused_imports)]
+use anyhow::Result;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
+use serde::de::DeserializeOwned;
+use tokio::runtime::Runtime;
 use tracing::{subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
 use tracing_log::LogTracer;
@@ -67,6 +70,21 @@ pub fn laplace_random_walk(start: f64, num_steps: usize, scale: f64, drift: f64,
 		.collect();
 
 	std::iter::once(start).chain(walk).collect()
+}
+/// Basically reqwest's `json()`, but prints the target's content on deserialization error.
+pub async fn reqwest_deser<T: DeserializeOwned>(r: reqwest::Response) -> Result<T> {
+	let r = r.error_for_status()?;
+	//let f = format!("{:?}", r);
+	let text = r.text().await?;
+
+	match serde_json::from_str::<T>(&text) {
+		Ok(deserialized) => Ok(deserialized),
+		Err(e) => {
+			println!("Deserialization error: {:?}", e);
+			println!("Response content: {}", text);
+			Err(anyhow::anyhow!("Failed to deserialize response: {}", e))
+		}
+	}
 }
 
 mod tests {

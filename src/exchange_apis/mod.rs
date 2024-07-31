@@ -16,7 +16,7 @@ pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
 	let read_secret = config.binance.read_secret.clone();
 
-	let mut handlers = vec![
+	let handlers = vec![
 		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures),
 		binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot),
 	];

@@ -14,7 +14,7 @@ use uuid::Uuid;
 use v_utils::trades::Side;
 
 /// What the Position *is*_
-#[derive(Debug, Clone, new)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionSpec {
 	pub asset: String,
 	pub side: Side,
@@ -22,7 +22,7 @@ pub struct PositionSpec {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionAcquisition {
 	__spec: PositionSpec,
 	target_notional: f64,
@@ -46,7 +46,7 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 
 		let current_price = binance::futures_price(&coin).await?;
-		let coin_quantity = spec.size_usdt / current_price;
+		let coin_quantity = 20.0; //dbg spec.size_usdt / current_price;
 
 		let mut current_state = Self {
 			__spec: spec.clone(),
@@ -57,10 +57,14 @@ impl PositionAcquisition {
 
 		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
-
-		let mock_position_order = Order<PositionOrderId>::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
-		let binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order).await.unwrap();
+		// //dbg
+		let full_key = config.binance.full_key.clone();
+		let full_secret = config.binance.full_secret.clone();
+		let position_order_id = PositionOrderId::new(Uuid::new_v4(), "mock_acquisition".to_string(), 0);
+		let mock_position_order = Order::<PositionOrderId>::new(position_order_id, OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
+		let _binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order).await.unwrap();
 		// we just assume it worked
+		//
 
 		current_state.acquired_notional = coin_quantity;
 
@@ -72,7 +76,7 @@ impl PositionAcquisition {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
 	protocols_spec: Vec<FollowupProtocol>,
