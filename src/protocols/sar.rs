@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
@@ -123,7 +123,7 @@ impl Protocol for SarWrapper {
 	type Params = Sar;
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
-	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<watch::Sender<()>> {
 		let symbol = Symbol {
 			base: position_spec.asset.clone(),
 			quote: "USDT".to_owned(),
@@ -180,7 +180,7 @@ impl Protocol for SarWrapper {
 			}
 		});
 
-		Ok(())
+		unimplemented!();
 	}
 
 	fn update_params(&self, params: &Sar) -> Result<()> {

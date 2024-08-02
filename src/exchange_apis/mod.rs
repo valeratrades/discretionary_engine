@@ -80,14 +80,14 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 					tracing::info!("Key mismatch, ignoring the request. Requested HubRx:\n{:?}", &hub_rx);
 					continue;
 				}
-				requested_orders.insert(hub_rx.position_callback.position_uuid, hub_rx.orders);
-				position_callbacks.insert(hub_rx.position_callback.position_uuid, hub_rx.position_callback.sender);
+				requested_orders.insert(hub_rx.position_callback.position_id, hub_rx.orders);
+				position_callbacks.insert(hub_rx.position_callback.position_id, hub_rx.position_callback.sender);
 
 				let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
 				let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
 					.into_iter()
 					.map(|o| {
-						let new_id = PositionOrderId::new_from_protocol_id(Uuid::new_v4(), o.id);
+						let new_id = PositionOrderId::new_from_protocol_id(hub_rx.position_callback.position_id, o.id);
 						ConceptualOrder { id: new_id, ..o }
 					})
 					.collect();

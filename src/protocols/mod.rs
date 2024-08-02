@@ -7,8 +7,7 @@ use derive_new::new;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
-use tokio::sync::mpsc;
-use tracing::error;
+use tokio::sync::{mpsc, watch};
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
 
@@ -24,7 +23,7 @@ pub enum ProtocolType {
 
 pub trait Protocol {
 	type Params;
-	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()>;
+	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<watch::Sender<()>>;
 	fn update_params(&self, params: &Self::Params) -> anyhow::Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }
@@ -70,7 +69,7 @@ impl FromStr for FollowupProtocol {
 	}
 }
 impl FollowupProtocol {
-	pub fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()> {
+	pub fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<watch::Sender<()>> {
 		match self {
 			FollowupProtocol::TrailingStop(ts) => ts.attach(tx_orders, position_spec),
 		}
@@ -159,8 +158,8 @@ impl ProtocolOrders {
 				orders[i].qty_notional -= individual_offset;
 			}
 		}
-		if orders.len() == 0 {
-			error!("Missed by {total_offset}");
+		if orders.len() == 0 && total_offset != 0.0 {
+			tracing::warn!("Missed by {total_offset}");
 		}
 
 		orders

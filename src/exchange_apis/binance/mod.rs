@@ -181,8 +181,8 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
-		let futures_exchange_info: info::FuturesExchangeInfo = r.json().await?;
-		let symbol_info = futures_exchange_info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
+		let info: info::FuturesExchangeInfo = r.json().await?;
+		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 		Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
 	})

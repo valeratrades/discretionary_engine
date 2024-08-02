@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
-use crate::exchange_apis::{binance, Symbol};
+use crate::exchange_apis::{binance, HubRx, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolFill, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::select;
+use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
@@ -93,10 +94,10 @@ struct TargetOrders {
 	market_orders_total_notional: f64,
 	//total_usd: f64,
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
+	hub_tx: tokio::sync::mpsc::Sender<HubRx>,
 }
 impl TargetOrders {
-	pub fn new(hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>) -> Self {
+	pub fn new(hub_tx: tokio::sync::mpsc::Sender<HubRx>) -> Self {
 		Self {
 			stop_orders_total_notional: 0.0,
 			normal_orders_total_notional: 0.0,
@@ -109,7 +110,7 @@ impl TargetOrders {
 impl TargetOrders {
 	// if we get an error because we did not pass the correct uuid from the last fill message, we just drop the task, as we will be forced to run with a correct value very soon.
 	/// Never fails, instead the errors are sent over the channel.
-	async fn update_orders(&mut self, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
+	async fn update_orders(&mut self, last_filled_key: Uuid, orders: Vec<ConceptualOrder<ProtocolOrderId>>, position_callback: PositionCallback) {
 		{
 			let mut new_orders = Vec::new();
 			for order in orders.into_iter() {
@@ -122,7 +123,7 @@ impl TargetOrders {
 			}
 			self.orders = new_orders;
 		}
-		match self.hub_tx.send((self.orders.clone(), position_callback)).await {
+		match self.hub_tx.send(HubRx::new(last_filled_key, self.orders.clone(), position_callback)).await {
 			Ok(_) => {}
 			Err(e) => {
 				info!("Error sending orders: {:?}", e);
@@ -136,25 +137,23 @@ impl TargetOrders {
 #[derive(Debug, Clone, new)]
 pub struct PositionCallback {
 	pub sender: tokio::sync::mpsc::Sender<Vec<ProtocolFill>>, // stands for "this nominal qty filled on this protocol order"
-	pub position_uuid: Uuid,
+	pub position_id: Uuid,
 }
 
 impl PositionFollowup {
 	#[instrument]
-	pub async fn do_followup(
-		acquired: PositionAcquisition,
-		protocols: Vec<FollowupProtocol>,
-		hub_tx: tokio::sync::mpsc::Sender<(Vec<ConceptualOrder<ProtocolOrderId>>, PositionCallback)>,
-	) -> Result<Self> {
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>, hub_tx: tokio::sync::mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
 		for protocol in &protocols {
 			let subtype = protocol.get_subtype();
 			*counted_subtypes.entry(subtype).or_insert(0) += 1;
 		}
 
-		let (tx_orders, mut rx_orders) = tokio::sync::mpsc::channel::<ProtocolOrders>(32);
+		let (tx_orders, mut rx_orders) = mpsc::channel::<ProtocolOrders>(32);
+		let mut protocol_killswitches: Vec<watch::Sender<()>> = Vec::new();
 		for protocol in protocols.clone() {
-			protocol.attach(tx_orders.clone(), &acquired.__spec)?;
+			let killswitch = protocol.attach(tx_orders.clone(), &acquired.__spec)?;
+			protocol_killswitches.push(killswitch);
 		}
 
 		let position_id = Uuid::new_v4();
@@ -255,7 +254,9 @@ impl PositionFollowup {
 				update_target_orders(stop_orders);
 				update_target_orders(limit_orders);
 
-				target_orders.update_orders(last_fill_key, new_target_orders, position_callback.clone()).await;
+				target_orders
+					.update_orders(last_fill_key, new_target_orders, position_callback.clone())
+					.await;
 			}};
 		}
 
@@ -296,7 +297,8 @@ impl PositionFollowup {
 			}
 		}
 
-		tracing::info!("Followup completed:\nFilled: {:?}\nTarget: {:?}", closed_notional, acquired.target_notional);
+		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", closed_notional, acquired.target_notional);
+		protocol_killswitches.into_iter().for_each(|s| s.send(()).unwrap());
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: protocols,
