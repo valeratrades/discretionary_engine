@@ -334,7 +334,7 @@ pub async fn binance_runtime(
 					let fill_key = fills.0;
 					let order = fills.1;
 					let total_fill_notional = fills.2;
-					dbg!(&fill_key, &order, &total_fill_notional);
+					dbg!(&order, &total_fill_notional);
 
 					let callback = HubCallback::new(fill_key, total_fill_notional, order);
 					hub_callback.send(callback).await.unwrap();

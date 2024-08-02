@@ -6,6 +6,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
@@ -123,9 +124,9 @@ impl Protocol for TrailingStopWrapper {
 
 		let (cancel_tx, cancel_rx) = watch::channel::<()>(());
 		tokio::spawn(async move {
-			let result = crossbeam::scope(|s| {
+			thread::scope(|s| {
 				let cancel_token_clone = cancel_rx.clone();
-				s.spawn(move |_| {
+				s.spawn(move || {
 					tokio::runtime::Runtime::new()
 						.unwrap()
 						.block_on(async {
@@ -134,7 +135,7 @@ impl Protocol for TrailingStopWrapper {
 				});
 
 				let mut cancel_token_clone = cancel_rx.clone();
-				s.spawn(move |_| {
+				s.spawn(move || {
 					tokio::runtime::Runtime::new().unwrap().block_on(async {
 						let position_side = position_spec.side;
 						let mut top = 0.0;
@@ -164,16 +165,13 @@ impl Protocol for TrailingStopWrapper {
 										}
 									}
 								},
-								_ = cancel_token_clone.changed() => break,
+									_ = cancel_token_clone.changed() => break,
 							}
 						}
 					});
 				});
 			});
-
-			result.unwrap();
 		});
-
 		Ok(cancel_tx)
 	}
 
