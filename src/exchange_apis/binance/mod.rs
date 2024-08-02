@@ -1,15 +1,15 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
 mod orders;
-pub use info::FUTURES_EXCHANGE_INFO;
-pub use orders::*;
-use anyhow::Result;
-use chrono::Utc;
-use crate::PositionOrderId;
 use crate::config::AppConfig;
 use crate::exchange_apis::{order_types::Order, Market};
-use crate::utils::reqwest_deser;
+use crate::utils::deser_reqwest;
+use crate::PositionOrderId;
+use anyhow::Result;
+use chrono::Utc;
 use hmac::{Hmac, Mac};
+pub use info::futures_exchange_info;
+pub use orders::*;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
@@ -48,7 +48,7 @@ pub async fn signed_request<S: AsRef<str>>(
 	let time_ms = Utc::now().timestamp_millis();
 	params.insert("timestamp", format!("{}", time_ms));
 
-	let query_string = serde_urlencoded::to_string(&params)?;
+	let query_string = serde_urlencoded::to_string(&params).unwrap();
 
 	let mut mac = HmacSha256::new_from_slice(secret.as_ref().as_bytes()).unwrap();
 	mac.update(query_string.as_bytes());
@@ -70,7 +70,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let url = base_url.join("fapi/v3/balance")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let asset_balances: Vec<FuturesBalance> = reqwest_deser::<Vec<FuturesBalance>>(r).await?;
+			let asset_balances: Vec<FuturesBalance> = deser_reqwest::<Vec<FuturesBalance>>(r).await?;
 
 			let mut total_balance = 0.0;
 			for asset in asset_balances {
@@ -83,7 +83,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let url = base_url.join("/api/v3/account")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let account_details: SpotAccountDetails = reqwest_deser(r).await?;
+			let account_details: SpotAccountDetails = deser_reqwest(r).await?;
 			let asset_balances = account_details.balances;
 
 			let mut total_balance = 0.0;
@@ -98,7 +98,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 			let url = base_url.join("/sapi/v1/margin/account")?;
 
 			let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-			let account_details: MarginAccountDetails = reqwest_deser(r).await?;
+			let account_details: MarginAccountDetails = deser_reqwest(r).await?;
 			let total_balance: f64 = account_details.TotalCollateralValueInUSDT.parse()?;
 
 			Ok(total_balance)
@@ -123,7 +123,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	//let r_json: serde_json::Value = r.json().await?;
 	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
 	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
-	let prices: Vec<serde_json::Value> = reqwest_deser(r).await?;
+	let prices: Vec<serde_json::Value> = deser_reqwest(r).await?;
 	let price = prices
 		.iter()
 		.find(|x| *x.get("symbol").unwrap().as_str().unwrap() == symbol.to_string())
@@ -137,7 +137,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	Ok(price)
 }
 
-pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>) -> Result<()> {
+pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) -> Result<()> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/order").unwrap();
 
@@ -145,11 +145,13 @@ pub async fn close_orders(key: String, secret: String, orders: Vec<BinanceOrder>
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.base_info.symbol.to_string());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
+		params.insert("recvWindow", "10000".to_owned()); //dbg currently they are having some issues with response speed
 
 		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
 	for handle in handles {
-		let _ = handle.await?;
+		let r = handle.await?;
+		let _: CancelOrdersResponse = deser_reqwest(r).await?;
 	}
 
 	Ok(())
@@ -194,7 +196,7 @@ pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<
 	params.insert("recvWindow", "60000".to_owned()); //dbg currently they/me are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
-	let response: FuturesPositionResponse = reqwest_deser(r).await?;
+	let response: FuturesPositionResponse = deser_reqwest(r).await?;
 	binance_order.binance_id = Some(response.orderId);
 	Ok(binance_order)
 }
@@ -207,9 +209,10 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", binance_order.base_info.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
+	params.insert("recvWindow", "10000".to_owned()); //dbg currently they are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
-	let response: FuturesPositionResponse = r.json().await?;
+	let response: FuturesPositionResponse = deser_reqwest(r).await?;
 	Ok(response)
 }
 
@@ -261,7 +264,7 @@ pub async fn binance_runtime(
 					match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
 						Ok(response) => break response,
 						Err(e) => {
-							dbg!(e);
+							tracing::warn!("Error polling order: {:?}", e);
 							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 						}
 					}
@@ -294,7 +297,6 @@ pub async fn binance_runtime(
 						},
 					};
 				}
-				dbg!(&target_orders, &currently_deployed);
 
 				last_reported_fill_key = last_fill_known_to_hub; //dbg
 
@@ -302,11 +304,19 @@ pub async fn binance_runtime(
 				{
 					currently_deployed_clone = currently_deployed.read().unwrap().clone();
 				}
-				dbg!(&currently_deployed_clone);
+				dbg!(&target_orders, &currently_deployed_clone);
 
 			// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
 			//Binance docs: currently only LIMIT order modification is supported
-				close_orders(full_key.clone(), full_secret.clone(), currently_deployed_clone).await.unwrap();
+				loop {
+					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {
+						Ok(_) => break,
+						Err(e) => {
+							tracing::error!("Error closing orders: {:?}", e);
+							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+						}
+					}
+				};
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {
@@ -330,7 +340,7 @@ pub async fn binance_runtime(
 					hub_callback.send(callback).await.unwrap();
 					last_reported_fill_key = fill_key;
 				}
-				tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+				tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
 			} => {},
 		}
 	}
@@ -515,4 +525,38 @@ impl FuturesAllPositionsResponse {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v2/positionRisk").unwrap()
 	}
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct CancelOrdersResponse {
+	client_order_id: String,
+	cum_qty: String,
+	cum_quote: String,
+	executed_qty: String,
+	order_id: i64,
+	orig_qty: String,
+	orig_type: String,
+	price: String,
+	reduce_only: bool,
+	side: String,
+	position_side: String,
+	status: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	stop_price: Option<String>,
+	close_position: bool,
+	symbol: String,
+	time_in_force: String,
+	#[serde(rename = "type")]
+	order_type: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	activate_price: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	price_rate: Option<String>,
+	update_time: i64,
+	working_type: String,
+	price_protect: bool,
+	price_match: String,
+	self_trade_prevention_mode: String,
+	good_till_date: i64,
 }

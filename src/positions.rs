@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::exchange_apis::{binance, Symbol};
-use crate::protocols::{FollowupProtocol, ProtocolOrders, ProtocolType};
+use crate::protocols::{FollowupProtocol, ProtocolFill, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
@@ -62,12 +62,13 @@ impl PositionAcquisition {
 		let full_secret = config.binance.full_secret.clone();
 		let position_order_id = PositionOrderId::new(Uuid::new_v4(), "mock_acquisition".to_string(), 0);
 		let mock_position_order = Order::<PositionOrderId>::new(position_order_id, OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
-		let _binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order).await.unwrap();
+		let _binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order)
+			.await
+			.unwrap();
 		// we just assume it worked
 		//
 
 		current_state.acquired_notional = coin_quantity;
-
 
 		//TODO!!!!: implement Acquisition Protocol: delayed buy-limit
 		// the action core is the same as Followup's
@@ -134,7 +135,7 @@ impl TargetOrders {
 
 #[derive(Debug, Clone, new)]
 pub struct PositionCallback {
-	pub sender: tokio::sync::mpsc::Sender<Vec<(ProtocolOrderId, f64)>>, // stands for "this nominal qty filled on this protocol order"
+	pub sender: tokio::sync::mpsc::Sender<Vec<ProtocolFill>>, // stands for "this nominal qty filled on this protocol order"
 	pub position_uuid: Uuid,
 }
 
@@ -157,13 +158,14 @@ impl PositionFollowup {
 		}
 
 		let position_id = Uuid::new_v4();
-		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<(ProtocolOrderId, f64)>>(32);
+		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<ProtocolFill>>(32);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let all_requested: Arc<Mutex<HashMap<String, ProtocolOrders>>> = Arc::new(Mutex::new(HashMap::new()));
 		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder<ProtocolOrderId>>>>> = Arc::new(Mutex::new(HashMap::new()));
 		let mut closed_notional = 0.0;
 		let mut target_orders = TargetOrders::new(hub_tx);
+		let mut last_fill_key = Uuid::default();
 
 		let all_fills: Arc<Mutex<HashMap<String, Vec<f64>>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -253,13 +255,12 @@ impl PositionFollowup {
 				update_target_orders(stop_orders);
 				update_target_orders(limit_orders);
 
-				target_orders.update_orders(new_target_orders, position_callback.clone()).await;
+				target_orders.update_orders(last_fill_key, new_target_orders, position_callback.clone()).await;
 			}};
 		}
 
 		//TODO!!: move the handling of inner values inside a tokio task (protocol orders and fills update data inside an enum, and send it to the task)
 
-		//TODO!: figure out abort when all closed.
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
@@ -271,7 +272,8 @@ impl PositionFollowup {
 				Some(fills_vec) = rx_fills.recv() => {
 					info!("Received fills: {:?}", fills_vec);
 					for f in fills_vec {
-						let (protocol_order_id, filled_notional) = f;
+						last_fill_key = f.key;
+						let (protocol_order_id, filled_notional) = (f.id, f.qty);
 						closed_notional += filled_notional;
 						{
 							let mut all_fills_guard = all_fills.lock().unwrap();
@@ -285,12 +287,16 @@ impl PositionFollowup {
 
 						update_unrolled(protocol_order_id.protocol_id.clone());
 					}
+					if closed_notional >= acquired.target_notional {
+						break;
+					}
 					recalculate_target_orders!();
 				},
 				else => break,
 			}
 		}
 
+		tracing::info!("Followup completed:\nFilled: {:?}\nTarget: {:?}", closed_notional, acquired.target_notional);
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: protocols,

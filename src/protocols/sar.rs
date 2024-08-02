@@ -10,8 +10,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
-use v_utils::trades::{Timeframe, Ohlc, Side};
 use v_utils::trades::mock_p_to_ohlc;
+use v_utils::trades::{Ohlc, Side, Timeframe};
 
 #[derive(Clone)]
 pub struct SarWrapper {
@@ -52,6 +52,7 @@ impl DataSource {
 			DataSource::Test(ds) => ds.listen(tx).await,
 		}
 	}
+
 	fn historic_klines_ohlc(&self, symbol: &str, timeframe: Timeframe, limit: u16) -> Result<Vec<Ohlc>> {
 		match self {
 			DataSource::Default(ds) => ds.historic_klines_ohlc(symbol, timeframe, limit),
@@ -96,7 +97,6 @@ impl DefaultDataSource {
 	fn historic_klines_ohlc(&self, symbol: &str, timeframe: Timeframe, limit: u16) -> Result<Vec<Ohlc>> {
 		unimplemented!()
 	}
-
 }
 
 impl TestDataSource {
@@ -129,9 +129,7 @@ impl Protocol for SarWrapper {
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
-		let tf = { 
-			self.params.lock().unwrap().timeframe
-		};
+		let tf = { self.params.lock().unwrap().timeframe };
 		let address = format!("wss://fstream.binance.com/ws/{}@kline_{tf}", symbol.to_string().to_lowercase());
 
 		let params = self.params.clone();
@@ -204,9 +202,7 @@ struct SarIndicator {
 }
 impl SarIndicator {
 	fn init(data_source: &DataSource, protocol_params: Arc<Mutex<Sar>>, symbol: &Symbol) -> Self {
-		let tf = { 
-			protocol_params.lock().unwrap().timeframe
-		};
+		let tf = { protocol_params.lock().unwrap().timeframe };
 		let historic_klines_ohlc = data_source.historic_klines_ohlc(&symbol.to_string(), tf, 100).unwrap();
 
 		let mut extreme_point = historic_klines_ohlc[0].open;
@@ -228,6 +224,7 @@ impl SarIndicator {
 		}
 		sar_indicator
 	}
+
 	fn step(&mut self, ohlc: Ohlc) {
 		let (start, increment, max) = self.params;
 		let is_uptrend = self.sar < ohlc.low;
@@ -286,7 +283,7 @@ mod tests {
 		let ts = SarWrapper::from_str("sar:s0.07:i0.02:m0.15:t1m")
 			.unwrap()
 			.set_data_source(DataSource::Test(TestDataSource));
-		
+
 		let mut sar = SarIndicator::init(&ts.data_source, ts.params.clone(), &Symbol::new("BTC", "USDT", Market::BinanceFutures));
 
 		let datasource_clone = ts.data_source.clone();
@@ -350,4 +347,3 @@ mod tests {
 		);
 	}
 }
-

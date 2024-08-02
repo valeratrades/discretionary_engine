@@ -10,6 +10,7 @@ use std::str::FromStr;
 use tokio::sync::mpsc;
 use tracing::error;
 pub use trailing_stop::TrailingStopWrapper;
+use uuid::Uuid;
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
@@ -97,6 +98,13 @@ pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Follo
 	}
 
 	Ok(protocols)
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct ProtocolFill {
+	pub key: Uuid,
+	pub id: ProtocolOrderId,
+	pub qty: f64,
 }
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.

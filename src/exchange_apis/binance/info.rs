@@ -5,12 +5,12 @@ use url::Url;
 use crate::exchange_apis::{Market, Symbol};
 
 lazy_static::lazy_static! {
-	pub static ref FUTURES_EXCHANGE_INFO: FuturesExchangeInfo = {
+	// wait, this should be continuously pulled
+	pub static ref futures_exchange_info: FuturesExchangeInfo = {
 		let base_url = Market::BinanceFutures.get_base_url();
 		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
 		let r = reqwest::blocking::get(url).unwrap();
-		let futures_exchange_info: FuturesExchangeInfo = r.json().unwrap();
-		futures_exchange_info
+		r.json::<FuturesExchangeInfo>().unwrap()
 	};
 }
 

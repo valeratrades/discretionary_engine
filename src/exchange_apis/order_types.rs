@@ -1,4 +1,4 @@
-use crate::exchange_apis::Symbol;
+use crate::{exchange_apis::Symbol, PositionOrderId};
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,14 @@ pub struct StopMarketOrder {
 pub struct ProtocolOrderId {
 	pub protocol_id: String,
 	pub ordinal: usize,
+}
+impl From<PositionOrderId> for ProtocolOrderId {
+	fn from(p: PositionOrderId) -> Self {
+		ProtocolOrderId {
+			protocol_id: p.protocol_id,
+			ordinal: p.ordinal,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
