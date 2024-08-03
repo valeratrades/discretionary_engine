@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [nightly, 1.82.0-nightly] # dtolnay had [stable, beta, nightly, stable 1.45]
+        rust: [nightly, nightly-2024-08-02] # dtolnay had [stable, beta, nightly, stable 1.45]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
