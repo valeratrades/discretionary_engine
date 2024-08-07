@@ -6,11 +6,11 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
+use tokio::task::{JoinHandle, JoinSet};
 use v_utils::trades::Side;
 
 #[derive(Clone)]
@@ -45,29 +45,24 @@ pub enum DataSource {
 	Test,
 }
 impl DataSource {
-	async fn listen(&self, mut cancel_token: watch::Receiver::<()>, address: &str, tx: tokio::sync::mpsc::Sender<f64>) -> Result<()> {
+	async fn listen(&self, address: &str, tx: tokio::sync::mpsc::Sender<f64>) -> Result<()> {
 		match self {
 			DataSource::Default => {
 				let (ws_stream, _) = connect_async(address).await.unwrap();
 				let (_, mut read) = ws_stream.split();
 
-				loop {
-					tokio::select! {
-					Some(msg) = read.next() => {
-						let data = msg.unwrap().into_data();
-						match serde_json::from_slice::<Value>(&data) {
-							Ok(json) => {
-								if let Some(price_str) = json.get("p") {
-									let price: f64 = price_str.as_str().unwrap().parse().unwrap();
-									tx.send(price).await.unwrap();
-								}
-							}
-							Err(e) => {
-								println!("Failed to parse message as JSON: {}", e);
+				while let Some(msg) = read.next().await {
+					let data = msg.unwrap().into_data();
+					match serde_json::from_slice::<Value>(&data) {
+						Ok(json) => {
+							if let Some(price_str) = json.get("p") {
+								let price: f64 = price_str.as_str().unwrap().parse().unwrap();
+								tx.send(price).await.unwrap();
 							}
 						}
-					}
-						_ = cancel_token.changed() => break,
+						Err(e) => {
+							println!("Failed to parse message as JSON: {}", e);
+						}
 					}
 				}
 			}
@@ -87,7 +82,7 @@ impl Protocol for TrailingStopWrapper {
 	type Params = TrailingStop;
 
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
-	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<watch::Sender<()>> {
+	fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
 		let symbol = Symbol {
 			base: position_spec.asset.clone(),
 			quote: "USDT".to_owned(),
@@ -122,57 +117,49 @@ impl Protocol for TrailingStopWrapper {
 		let address_clone = address.clone();
 		let data_source_clone = self.data_source;
 
-		let (cancel_tx, cancel_rx) = watch::channel::<()>(());
-		tokio::spawn(async move {
-			thread::scope(|s| {
-				let cancel_token_clone = cancel_rx.clone();
-				s.spawn(move || {
-					tokio::runtime::Runtime::new()
-						.unwrap()
-						.block_on(async {
-							data_source_clone.listen(cancel_token_clone, &address_clone, tx).await.unwrap();
-						});
-				});
+		position_set.spawn(async move {
+			//BUG: s drops immediately, kills all tasks
+			let mut s = JoinSet::new();
+			s.spawn(async move {
+				dbg!(&"first");
+				data_source_clone.listen(&address_clone, tx).await.unwrap()
+			});
 
-				let mut cancel_token_clone = cancel_rx.clone();
-				s.spawn(move || {
-					tokio::runtime::Runtime::new().unwrap().block_on(async {
-						let position_side = position_spec.side;
-						let mut top = 0.0;
-						let mut bottom = 0.0;
+			s.spawn(async move {
+				dbg!(&"second");
+				let position_side = position_spec.side;
+				let mut top = 0.0;
+				let mut bottom = 0.0;
 
-						loop {
-							tokio::select! {
-								Some(price) = rx.recv() => {
-									if price < bottom || bottom == 0.0 {
-										bottom = price;
-										match position_side {
-											Side::Buy => {}
-											Side::Sell => {
-												let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
-												send_orders!(target_price, Side::Buy);
-											}
-										}
-									}
-									if price > top || top == 0.0 {
-										top = price;
-										match position_side {
-											Side::Buy => {
-												let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
-												send_orders!(target_price, Side::Sell);
-											}
-											Side::Sell => {}
-										}
-									}
-								},
-									_ = cancel_token_clone.changed() => break,
+				while let Some(price) = rx.recv().await {
+					dbg!(&price);
+					if price < bottom || bottom == 0.0 {
+						bottom = price;
+						match position_side {
+							Side::Buy => {}
+							Side::Sell => {
+								let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
+								send_orders!(target_price, Side::Buy);
 							}
 						}
-					});
-				});
+					}
+					if price > top || top == 0.0 {
+						top = price;
+						match position_side {
+							Side::Buy => {
+								let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
+								send_orders!(target_price, Side::Sell);
+							}
+							Side::Sell => {}
+						}
+					}
+				}
 			});
+			//HACK: must be a way to write more concisely
+			while (s.join_next().await).is_some() {};
+			Ok(())
 		});
-		Ok(cancel_tx)
+		Ok(())
 	}
 
 	fn update_params(&self, params: &TrailingStop) -> Result<()> {
@@ -220,9 +207,8 @@ mod tests {
 		let position_spec = PositionSpec::new("BTC".to_owned(), Side::Buy, 1.0);
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-		tokio::spawn(async move {
-			ts.attach(tx, &position_spec).unwrap();
-		});
+		let mut set = JoinSet::new();
+		ts.attach(&mut set, tx, &position_spec).unwrap();
 
 		let mut received_data = Vec::new();
 		while let Some(data) = rx.recv().await {
