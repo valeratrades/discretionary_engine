@@ -5,6 +5,7 @@ use crate::protocols::{FollowupProtocol, ProtocolFill, ProtocolOrders, ProtocolT
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -150,10 +151,9 @@ impl PositionFollowup {
 		}
 
 		let (tx_orders, mut rx_orders) = mpsc::channel::<ProtocolOrders>(32);
-		let mut protocol_killswitches: Vec<watch::Sender<()>> = Vec::new();
+		let mut set = JoinSet::new();
 		for protocol in protocols.clone() {
-			let killswitch = protocol.attach(tx_orders.clone(), &acquired.__spec)?;
-			protocol_killswitches.push(killswitch);
+			protocol.attach(&mut set, tx_orders.clone(), &acquired.__spec)?;
 		}
 
 		let position_id = Uuid::new_v4();
@@ -298,7 +298,6 @@ impl PositionFollowup {
 		}
 
 		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", closed_notional, acquired.target_notional);
-		protocol_killswitches.into_iter().for_each(|s| s.send(()).unwrap());
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: protocols,

@@ -7,7 +7,8 @@ use derive_new::new;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
 
@@ -23,35 +24,36 @@ pub enum ProtocolType {
 
 pub trait Protocol {
 	type Params;
-	fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<watch::Sender<()>>;
+	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()>;
 	fn update_params(&self, params: &Self::Params) -> anyhow::Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }
 
+//TODO!!: revisit
 /// possibly will implement Iterator on this, because all additional methods seem to want it.
-#[derive(v_utils::macros::VecFieldsFromVecStr, Debug)]
-pub struct FollowupProtocols {
-	pub trailing_stop: Vec<TrailingStopWrapper>,
-}
-impl FollowupProtocols {
-	pub fn count_subtypes(&self) -> HashMap<ProtocolType, usize> {
-		let mut different_types: std::collections::HashMap<ProtocolType, usize> = std::collections::HashMap::new();
-		for protocol in &self.trailing_stop {
-			let subtype = protocol.get_subtype();
-			*different_types.entry(subtype).or_insert(0) += 1;
-		}
-		// ... others
-		different_types
-	}
-
-	pub fn attach_all(&self, tx_orders: mpsc::Sender<ProtocolOrders>, spec: &PositionSpec) -> anyhow::Result<()> {
-		for ts in &self.trailing_stop {
-			ts.attach(tx_orders.clone(), spec)?;
-		}
-		// ... others
-		Ok(())
-	}
-}
+//#[derive(v_utils::macros::VecFieldsFromVecStr, Debug, Clone, Default, serde::Serialize, serde::Deserialize, derive_new::new)]
+//pub struct FollowupProtocols {
+//	pub trailing_stop: Vec<TrailingStopWrapper>,
+//}
+//impl FollowupProtocols {
+//	pub fn count_subtypes(&self) -> HashMap<ProtocolType, usize> {
+//		let mut different_types: std::collections::HashMap<ProtocolType, usize> = std::collections::HashMap::new();
+//		for protocol in &self.trailing_stop {
+//			let subtype = protocol.get_subtype();
+//			*different_types.entry(subtype).or_insert(0) += 1;
+//		}
+//		// ... others
+//		different_types
+//	}
+//
+//	pub fn attach_all(&self, tx_orders: mpsc::Sender<ProtocolOrders>, spec: &PositionSpec) -> anyhow::Result<()> {
+//		for ts in &self.trailing_stop {
+//			ts.attach(tx_orders.clone(), spec)?;
+//		}
+//		// ... others
+//		Ok(())
+//	}
+//}
 
 #[derive(Debug, Clone)]
 pub enum FollowupProtocol {
@@ -69,9 +71,14 @@ impl FromStr for FollowupProtocol {
 	}
 }
 impl FollowupProtocol {
-	pub fn attach(&self, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<watch::Sender<()>> {
+	pub fn attach(
+		&self,
+		position_set: &mut JoinSet<Result<()>>,
+		tx_orders: mpsc::Sender<ProtocolOrders>,
+		position_spec: &crate::positions::PositionSpec,
+	) -> anyhow::Result<()> {
 		match self {
-			FollowupProtocol::TrailingStop(ts) => ts.attach(tx_orders, position_spec),
+			FollowupProtocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
 		}
 	}
 
