@@ -32,7 +32,9 @@ get_zero = "allow"
 ignored = ["v_utils_macros", "serde_with", "tracing-futures"]
 
 #tracing-futures = "0.2.5"
+
 [dependencies]
+v_utils = { features = ["full"], path = "../v_utils/v_utils" }
 anyhow = "^1.0.86"
 chrono = "^0.4.38"
 clap = { version = "^4.5.11", features = ["derive"] }
@@ -60,5 +62,4 @@ tracing-log = "0.2.0"
 tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry", "env-filter"] }
 url = "^2.5.2"
 uuid = { version = "^1.10.0", features = ["serde", "v4"] }
-v_utils = { features = ["full"], version = "*", path = "../v_utils/v_utils" }
 v_utils_macros = "1.2.2"
