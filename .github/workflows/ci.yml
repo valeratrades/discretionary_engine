@@ -34,6 +34,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust}}
+      - name: Download modified by pre-ci Cargo.toml files
+        uses: actions/download-artifact@v4
+        with:
+          name: modified-cargo-files
       # test this works
       - name: Set RUSTFLAGS for release branch
         run: echo "RUSTFLAGS=-Dwarnings" >> $GITHUB_ENV
