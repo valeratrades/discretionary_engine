@@ -71,6 +71,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Download modified by pre-ci Cargo.toml files
+        uses: actions/download-artifact@v3
+        with:
+          name: modified-cargo-files
       - uses: dtolnay/rust-toolchain@clippy
       - run: cargo clippy --tests -- -Dclippy::all #-Dclippy::pedantic
 
