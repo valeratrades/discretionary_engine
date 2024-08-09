@@ -146,11 +146,15 @@ jobs:
 
       - name: tokio::spawn Check
         run: |
-          rg 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//' | grep -v "tests" | grep -v "target" | grep -v "Cargo.lock"
-          exit_code=$?
-          if [ $exit_code -eq 0 ]; then
-            echo "Found tokio::spawn"
-            exit $exit_code
+          results=$(rg 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//')
+          echo "$results" # for debug
+          if [ -z "$results" ]; then
+            echo "No instances of tokio::spawn found outside of comments."
+            exit 0
+          else
+            echo "Found instances of tokio::spawn:"
+            echo "$results"
+            exit 1
           fi
 
 #TODO: figure out why the fuck this errors with `No file found at: /home/runner/work/discretionary_engine/discretionary_engine/Cargo.toml`
