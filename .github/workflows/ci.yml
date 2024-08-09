@@ -138,6 +138,7 @@ jobs:
   bad_practices:
     name: Bad Practices
     runs-on: ubuntu-latest
+    uses: actions/checkout@v4
 
     steps:
       - name: Install Ripgrep (rg)
