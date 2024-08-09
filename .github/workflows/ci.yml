@@ -134,7 +134,6 @@ jobs:
           exit $exit_code
         fi
 
-  # doesn't work, same problem as Cargo Sorted
   bad_practices:
     name: Bad Practices
     runs-on: ubuntu-latest
@@ -147,7 +146,7 @@ jobs:
 
       - name: tokio::spawn Check
         run: |
-          results=$(rg 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//')
+          results=$(rg -I --glob '!.git' 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//')
           if [ -z "$results" ]; then
             echo "No instances of tokio::spawn found outside of comments."
             exit 0
@@ -157,21 +156,20 @@ jobs:
             exit 1
           fi
 
-#TODO: figure out why the fuck this errors with `No file found at: /home/runner/work/discretionary_engine/discretionary_engine/Cargo.toml`
-  #sort:
-  #  name: Cargo Sorted
-  #  runs-on: ubuntu-latest
-  #
-  #  steps:
-  #  - name: Install cargo-sort
-  #    run: |
-  #      cargo install cargo-sort
-  #
-  #  - name: Cargo Sort
-  #    run: |
-  #      cargo sort -c
-  #      exit_code=$?
-  #      if [ $exit_code != 0 ]; then
-  #        echo "Cargo.toml is not sorted. Run `cargo sort` to fix it."
-  #        exit $exit_code
-  #      fi
+  sort:
+    name: Cargo Sorted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-sort
+        run: |
+          cargo install cargo-sort
+
+      - name: Cargo Sort
+        run: |
+          cargo sort -c
+          exit_code=$?
+          if [ $exit_code != 0 ]; then
+            echo "Cargo.toml is not sorted. Run `cargo sort` to fix it."
+            exit $exit_code
+          fi
