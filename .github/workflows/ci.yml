@@ -134,24 +134,24 @@ jobs:
           exit $exit_code
         fi
 
-bad_practices:
-  name: Bad Practices
-  runs-on: ubuntu-latest
+  bad_practices:
+    name: Bad Practices
+    runs-on: ubuntu-latest
 
-  steps:
-    - name: Install Ripgrep (rg)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ripgrep
+    steps:
+      - name: Install Ripgrep (rg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
 
-    - name: tokio::spawn Check
-      run: |
-        rg 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//' | grep -v "tests" | grep -v "target" | grep -v "Cargo.lock"
-        exit_code=$?
-        if [ $exit_code -eq 0 ]; then
-          echo "Found tokio::spawn"
-          exit $exit_code
-        fi
+      - name: tokio::spawn Check
+        run: |
+          rg 'tokio::spawn' . | awk '!/^[[:space:]]*\/\//' | grep -v "tests" | grep -v "target" | grep -v "Cargo.lock"
+          exit_code=$?
+          if [ $exit_code -eq 0 ]; then
+            echo "Found tokio::spawn"
+            exit $exit_code
+          fi
 
 #TODO: figure out why the fuck this errors with `No file found at: /home/runner/work/discretionary_engine/discretionary_engine/Cargo.toml`
   #sort:
