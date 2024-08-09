@@ -133,7 +133,7 @@ jobs:
           echo "Found unused dependencies"
           exit $exit_code
         fi
-	
+
 bad_practices:
   name: Bad Practices
   runs-on: ubuntu-latest
