@@ -6,11 +6,10 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
-use tokio::task::JoinHandle;
 use v_utils::trades::Side;
 use v_utils::prelude::*;
 
@@ -191,7 +190,7 @@ pub struct TrailingStop {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use v_utils::prelude::*;
+	
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]

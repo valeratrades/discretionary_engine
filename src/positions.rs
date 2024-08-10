@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::select;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::mpsc;
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;

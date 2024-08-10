@@ -12,7 +12,6 @@ use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
 use positions::*;
 use tokio::task::JoinSet;
-use tracing::info;
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},

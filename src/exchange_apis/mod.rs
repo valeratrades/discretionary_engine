@@ -1,7 +1,6 @@
 pub mod binance;
 use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
 use v_utils::prelude::*;
 pub mod order_types;
 use self::order_types::{ConceptualOrderType, ProtocolOrderId};
