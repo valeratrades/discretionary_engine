@@ -1,7 +1,7 @@
 pub mod binance;
 use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
+use tokio::{task::JoinSet, time::{sleep, Duration}};
 pub mod order_types;
 use self::order_types::{ConceptualOrderType, ProtocolOrderId};
 use crate::config::AppConfig;
@@ -43,9 +43,9 @@ pub struct HubPassforward {
 	orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(config: AppConfig) -> tokio::sync::mpsc::Sender<HubRx> {
+pub fn init_hub(config: AppConfig, parent_js: &mut JoinSet<Result<()>>) -> tokio::sync::mpsc::Sender<HubRx> {
 	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	tokio::spawn(hub(config.clone(), rx));
+	parent_js.spawn(hub(config.clone(), rx));
 	tx
 }
 
@@ -62,9 +62,12 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
 	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubPassforward>(HubPassforward::default());
 	let config_clone = config.clone();
-	//TODO!: make it drop on going out of the scope.
-	let this_sucks = tokio::spawn(async move {
-		binance::binance_runtime(config_clone, fills_tx, orders_rx).await;
+	let mut js = JoinSet::new();
+
+	js.spawn(async move {
+		let mut exchange_runtimes_js = JoinSet::new();
+		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx).await;
+		while (exchange_runtimes_js.join_next().await).is_some() {};
 	});
 	let mut last_fill_key = Uuid::default();
 
@@ -116,7 +119,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 		}
 	}
 
-	this_sucks.await?;
+	while (js.join_next().await).is_some() {};
 	Ok(())
 }
 

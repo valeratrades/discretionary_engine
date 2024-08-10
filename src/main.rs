@@ -11,6 +11,7 @@ pub mod utils;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
 use positions::*;
+use tokio::task::JoinSet;
 use tracing::info;
 use v_utils::{
 	io::ExpandedPath,
@@ -64,8 +65,8 @@ async fn main() {
 		}
 	};
 	utils::init_subscriber();
-	let tx = exchange_apis::init_hub(config.clone());
-	//let noconfirm = cli.noconfirm;
+	let mut js = JoinSet::new();
+	let tx = exchange_apis::init_hub(config.clone(), &mut js);
 
 	match cli.command {
 		Commands::New(position_args) => {

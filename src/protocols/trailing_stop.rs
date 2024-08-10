@@ -155,7 +155,6 @@ impl Protocol for TrailingStopWrapper {
 					}
 				}
 			});
-			//HACK: must be a way to write more concisely
 			while (s.join_next().await).is_some() {};
 			Ok(())
 		});

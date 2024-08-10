@@ -21,6 +21,7 @@ use tokio::select;
 use tracing::trace;
 use url::Url;
 use uuid::Uuid;
+use tokio::task::JoinSet;
 
 use super::order_types::IdRequirements;
 use super::HubCallback;
@@ -235,6 +236,7 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 ///NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(
 	config: AppConfig,
+	parent_js: &mut JoinSet<()>,
 	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
 	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
 ) {
@@ -249,7 +251,7 @@ pub async fn binance_runtime(
 	let (temp_fills_stack_tx, mut temp_fills_stack_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
-	tokio::spawn(async move {
+	parent_js.spawn(async move {
 		//TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
