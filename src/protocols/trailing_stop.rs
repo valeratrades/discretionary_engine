@@ -10,8 +10,9 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinHandle;
 use v_utils::trades::Side;
+use v_utils::prelude::*;
 
 #[derive(Clone)]
 pub struct TrailingStopWrapper {
@@ -118,21 +119,17 @@ impl Protocol for TrailingStopWrapper {
 		let data_source_clone = self.data_source;
 
 		position_set.spawn(async move {
-			//BUG: s drops immediately, kills all tasks
 			let mut s = JoinSet::new();
 			s.spawn(async move {
-				dbg!(&"first");
 				data_source_clone.listen(&address_clone, tx).await.unwrap()
 			});
 
 			s.spawn(async move {
-				dbg!(&"second");
 				let position_side = position_spec.side;
 				let mut top = 0.0;
 				let mut bottom = 0.0;
 
 				while let Some(price) = rx.recv().await {
-					dbg!(&price);
 					if price < bottom || bottom == 0.0 {
 						bottom = price;
 						match position_side {
@@ -155,7 +152,7 @@ impl Protocol for TrailingStopWrapper {
 					}
 				}
 			});
-			while (s.join_next().await).is_some() {};
+			s.join_all().await;
 			Ok(())
 		});
 		Ok(())
@@ -194,6 +191,7 @@ pub struct TrailingStop {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use v_utils::prelude::*;
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]
@@ -206,13 +204,14 @@ mod tests {
 		let position_spec = PositionSpec::new("BTC".to_owned(), Side::Buy, 1.0);
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-		let mut set = JoinSet::new();
-		ts.attach(&mut set, tx, &position_spec).unwrap();
+		let mut js = JoinSet::new();
+		ts.attach(&mut js, tx, &position_spec).unwrap();
 
 		let mut received_data = Vec::new();
 		while let Some(data) = rx.recv().await {
 			received_data.push(data);
 		}
+		js.join_all().await;
 
 		let received_data_inner_orders = received_data.iter().map(|x| x.__orders.clone()).collect::<Vec<_>>();
 

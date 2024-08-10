@@ -1,7 +1,8 @@
 pub mod binance;
 use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 use std::collections::HashMap;
-use tokio::{task::JoinSet, time::{sleep, Duration}};
+use tokio::time::{sleep, Duration};
+use v_utils::prelude::*;
 pub mod order_types;
 use self::order_types::{ConceptualOrderType, ProtocolOrderId};
 use crate::config::AppConfig;
@@ -67,7 +68,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
 		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx).await;
-		while (exchange_runtimes_js.join_next().await).is_some() {};
+		exchange_runtimes_js.join_all().await;
 	});
 	let mut last_fill_key = Uuid::default();
 
@@ -119,7 +120,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 		}
 	}
 
-	while (js.join_next().await).is_some() {};
+	js.join_all().await;
 	Ok(())
 }
 
