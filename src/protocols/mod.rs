@@ -22,7 +22,8 @@ pub enum ProtocolType {
 
 pub trait Protocol {
 	type Params;
-	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()>;
+	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec)
+		-> Result<()>;
 	fn update_params(&self, params: &Self::Params) -> anyhow::Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }

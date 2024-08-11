@@ -10,8 +10,15 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
-use v_utils::trades::Side;
 use v_utils::prelude::*;
+use v_utils::trades::Side;
+
+async fn send_updated_orders(tx_orders: &mpsc::Sender<ProtocolOrders>, params: &Arc<Mutex<TrailingStop>>, orders: Vec<Option<ConceptualOrderPercents>>) {
+	let protocol_spec = params.lock().unwrap().to_string();
+
+	let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
+	tx_orders.send(protocol_orders).await.unwrap();
+}
 
 #[derive(Clone)]
 pub struct TrailingStopWrapper {
@@ -93,35 +100,13 @@ impl Protocol for TrailingStopWrapper {
 		let params = self.params.clone();
 		let position_spec = position_spec.clone();
 
-		let order_mask: Vec<Option<ConceptualOrderPercents>> = vec![None; 1];
-		macro_rules! send_orders {
-			($target_price:expr, $side:expr) => {{
-				let protocol_spec = params.lock().unwrap().to_string();
-				let mut orders = order_mask.clone();
-
-				let sm = ConceptualStopMarket::new(1.0, $target_price);
-				let order = Some(ConceptualOrderPercents::new(
-					ConceptualOrderType::StopMarket(sm),
-					symbol.clone(),
-					$side,
-					1.0,
-				));
-				orders[0] = order;
-
-				let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
-				tx_orders.send(protocol_orders).await.unwrap();
-			}};
-		}
-
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
 		let address_clone = address.clone();
 		let data_source_clone = self.data_source;
 
 		position_set.spawn(async move {
 			let mut s = JoinSet::new();
-			s.spawn(async move {
-				data_source_clone.listen(&address_clone, tx).await.unwrap()
-			});
+			s.spawn(async move { data_source_clone.listen(&address_clone, tx).await.unwrap() });
 
 			s.spawn(async move {
 				let position_side = position_spec.side;
@@ -131,22 +116,20 @@ impl Protocol for TrailingStopWrapper {
 				while let Some(price) = rx.recv().await {
 					if price < bottom || bottom == 0.0 {
 						bottom = price;
-						match position_side {
-							Side::Buy => {}
-							Side::Sell => {
-								let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
-								send_orders!(target_price, Side::Buy);
-							}
+						if position_side == Side::Sell {
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
+							let sm = ConceptualStopMarket::new(1.0, target_price);
+							let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
+							send_updated_orders(&tx_orders, &params, vec![order]).await;
 						}
 					}
 					if price > top || top == 0.0 {
 						top = price;
-						match position_side {
-							Side::Buy => {
-								let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
-								send_orders!(target_price, Side::Sell);
-							}
-							Side::Sell => {}
+						if position_side == Side::Buy {
+							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
+							let sm = ConceptualStopMarket::new(1.0, target_price);
+							let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, 1.0));
+							send_updated_orders(&tx_orders, &params, vec![order]).await;
 						}
 					}
 				}
@@ -190,7 +173,6 @@ pub struct TrailingStop {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]

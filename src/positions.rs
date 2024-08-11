@@ -5,12 +5,12 @@ use crate::protocols::{FollowupProtocol, ProtocolFill, ProtocolOrders, ProtocolT
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;

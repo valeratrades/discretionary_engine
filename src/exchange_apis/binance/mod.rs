@@ -18,10 +18,10 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::select;
+use tokio::task::JoinSet;
 use tracing::trace;
 use url::Url;
 use uuid::Uuid;
-use tokio::task::JoinSet;
 
 use super::order_types::IdRequirements;
 use super::HubCallback;
