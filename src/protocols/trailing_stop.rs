@@ -13,13 +13,6 @@ use v_utils::macros::CompactFormat;
 use v_utils::prelude::*;
 use v_utils::trades::Side;
 
-async fn send_updated_orders(tx_orders: &mpsc::Sender<ProtocolOrders>, params: &Arc<Mutex<TrailingStop>>, orders: Vec<Option<ConceptualOrderPercents>>) {
-	let protocol_spec = params.lock().unwrap().to_string();
-
-	let protocol_orders = ProtocolOrders::new(protocol_spec, orders);
-	tx_orders.send(protocol_orders).await.unwrap();
-}
-
 #[derive(Clone)]
 pub struct TrailingStopWrapper {
 	params: Arc<Mutex<TrailingStop>>,
@@ -114,7 +107,9 @@ impl Protocol for TrailingStopWrapper {
 				while let Some(price) = rx.recv().await {
 					let maybe_order = ts_indicator.step(price);
 					if let Some(order) = maybe_order {
-						send_updated_orders(&tx_orders, &params, vec![Some(order)]).await;
+						let protocol_spec = params.lock().unwrap().to_string();
+						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
+						tx_orders.send(protocol_orders).await.unwrap();
 					}
 				}
 			});
