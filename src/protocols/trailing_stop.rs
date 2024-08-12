@@ -109,28 +109,12 @@ impl Protocol for TrailingStopWrapper {
 			s.spawn(async move { data_source_clone.listen(&address_clone, tx).await.unwrap() });
 
 			s.spawn(async move {
-				let position_side = position_spec.side;
-				let mut top = 0.0;
-				let mut bottom = 0.0;
+				let mut ts_indicator = TrailingStopIndicator::new(params.lock().unwrap().percent, position_spec.side);
 
 				while let Some(price) = rx.recv().await {
-					if price < bottom || bottom == 0.0 {
-						bottom = price;
-						if position_side == Side::Sell {
-							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Sell);
-							let sm = ConceptualStopMarket::new(1.0, target_price);
-							let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
-							send_updated_orders(&tx_orders, &params, vec![order]).await;
-						}
-					}
-					if price > top || top == 0.0 {
-						top = price;
-						if position_side == Side::Buy {
-							let target_price = price * heuristic(params.lock().unwrap().percent.0, Side::Buy);
-							let sm = ConceptualStopMarket::new(1.0, target_price);
-							let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, 1.0));
-							send_updated_orders(&tx_orders, &params, vec![order]).await;
-						}
+					let maybe_order = ts_indicator.step(price);
+					if let Some(order) = maybe_order {
+						send_updated_orders(&tx_orders, &params, vec![Some(order)]).await;
 					}
 				}
 			});
@@ -149,6 +133,53 @@ impl Protocol for TrailingStopWrapper {
 	}
 }
 
+#[derive(Clone, Debug, Default, Copy)]
+struct TrailingStopIndicator {
+	percent: Percent,
+	top: f64,
+	bottom: f64,
+	/// Side of the position. So the orders that the protocol places are in the opposite direction.
+	side: Side,
+}
+impl TrailingStopIndicator {
+	fn new(percent: Percent, side: Side) -> Self {
+		Self {
+			percent,
+			top: 0.0,
+			bottom: 0.0,
+			side,
+		}
+	}
+	fn step(&mut self, price: f64) -> Option<ConceptualOrderPercents> {
+		if price < self.bottom || self.bottom == 0.0 {
+			self.bottom = price;
+			if self.side == Side::Sell {
+				let target_price = price * Self::heuristic(self.percent.0, Side::Sell);
+				let sm = ConceptualStopMarket::new(1.0, target_price);
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), Symbol::new("BTC", "USDT", Market::BinanceFutures), Side::Buy, 1.0));
+				return order;
+			}
+		}
+		if price > self.top || self.top == 0.0 {
+			self.top = price;
+			if self.side == Side::Buy {
+				let target_price = price * Self::heuristic(self.percent.0, Side::Buy);
+				let sm = ConceptualStopMarket::new(1.0, target_price);
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), Symbol::new("BTC", "USDT", Market::BinanceFutures), Side::Sell, 1.0));
+				return order;
+			}
+		}
+		None
+	}
+	fn heuristic(percent: f64, side: Side) -> f64 {
+		let base = match side {
+			Side::Buy => 1.0 - percent.abs(),
+			Side::Sell => 1.0 + percent.abs(),
+		};
+		1.0 + base.ln()
+	}
+}
+
 impl TrailingStopWrapper {
 	pub fn set_data_source(mut self, new_data_source: DataSource) -> Self {
 		self.data_source = new_data_source;
@@ -156,13 +187,6 @@ impl TrailingStopWrapper {
 	}
 }
 
-fn heuristic(percent: f64, side: Side) -> f64 {
-	let base = match side {
-		Side::Buy => 1.0 - percent.abs(),
-		Side::Sell => 1.0 + percent.abs(),
-	};
-	1.0 + base.ln()
-}
 
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default)]
 pub struct TrailingStop {
