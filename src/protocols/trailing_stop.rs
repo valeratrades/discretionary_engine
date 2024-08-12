@@ -192,10 +192,11 @@ pub struct TrailingStop {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::exchange_apis::order_types::*;
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]
-	async fn test_trailing_stop() {
+	async fn test_trailing_stop_integration() {
 		let percent = 0.02;
 		let ts = TrailingStopWrapper::from_str(&format!("ts:p{percent}"))
 			.unwrap()
@@ -290,5 +291,47 @@ mod tests {
   ]
   "###,
 		);
+	}
+
+	#[tokio::test]
+	async fn trailing_stop_components() {
+		let mut ts = TrailingStopIndicator::new(Percent(0.02), Side::Buy);
+		let mut orders = Vec::new();
+		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
+		for (i, price) in prices.iter().enumerate() {
+			if let Some(order) = ts.step(*price) {
+				let ConceptualOrderPercents { order_type, .. } = order;
+				if let ConceptualOrderType::StopMarket(sm) = order_type {
+					orders.push((i, Some(sm.price)));
+				} else {
+					panic!("Expected StopMarket order type");
+				}
+			}
+		}
+		let plot = v_utils::utils::snapshot_plot_orders(&prices, &orders);
+		//let plot = v_utils::utils::SnapshotP::build(prices).draw();
+
+		insta::assert_snapshot!(plot, @r###"
+                                                                      ▂▃▄▃                  103.50
+                                                                   ▃  █████▆▁▆▇▄                  
+                                                                  ▅█▅▆██████████▃       ▃▆▄▄      
+                                                                ▄▄███████████████▅▅▆▂  ▂████      
+                                                              ▅▅█████████████████████▅▇█████      
+                                                             ███████████████████████████████      
+                     ▂                ▂        ▅▄▁▄         ▁███████████████████████████████      
+                   ▆██▃▁         ▂▁  ▅█▇▄   ▁ █████▁ ▅    ▃▅████████████████████████████████      
+  ▂▃  ▃           ▄█████▇     ▆▆▇██▇▆████▆▅▆█▇██████▇█▇ ▂▁██████████████████████████████████      
+  ██▃▅█▇▆ ▃       ███████▇ ▇█▅█████████████████████████▆████████████████████████████████████      
+  █████████▇▃ ▁  ▇████████▄█████████████████████████████████████████████████████████████████      
+  ███████████▇█▇▇███████████████████████████████████████████████████████████████████████████98.73
+  ──────────────────────────────────────────────────────────────────────────────────────────
+                                                                      ▃▆▆███████████████████101.41
+                                                                  ▁▆▆▆██████████████████████      
+                                                               ▁▃▅██████████████████████████      
+                                                              ▆█████████████████████████████      
+                                                 ▁▁▁▁▁▁▁▁▁▁▁▁███████████████████████████████      
+                   ▂▅▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇█████████████████████████████████████████████████████      
+  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█████████████████████████████████████████████████████████████████████████97.98
+  "###);
 	}
 }
