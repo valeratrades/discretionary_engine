@@ -192,7 +192,6 @@ pub struct TrailingStop {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::exchange_apis::order_types::*;
 
 	//? Could I move part of this operation inside the check function, following https://matklad.github.io/2021/05/31/how-to-test.html ?
 	#[tokio::test]
