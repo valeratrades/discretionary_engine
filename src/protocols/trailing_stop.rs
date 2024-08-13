@@ -4,6 +4,7 @@ use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::cell::RefCell;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -15,7 +16,7 @@ use v_utils::trades::Side;
 
 #[derive(Clone)]
 pub struct TrailingStopWrapper {
-	params: Arc<Mutex<TrailingStop>>,
+	params: RefCell<TrailingStop>,
 }
 impl FromStr for TrailingStopWrapper {
 	type Err = anyhow::Error;
@@ -23,9 +24,7 @@ impl FromStr for TrailingStopWrapper {
 	fn from_str(spec: &str) -> Result<Self> {
 		let ts = TrailingStop::from_str(spec)?;
 
-		Ok(Self {
-			params: Arc::new(Mutex::new(ts)),
-		})
+		Ok(Self { params: RefCell::new(ts) })
 	}
 }
 impl std::fmt::Debug for TrailingStopWrapper {
@@ -76,12 +75,12 @@ impl Protocol for TrailingStopWrapper {
 			});
 
 			s.spawn(async move {
-				let mut ts_indicator = TrailingStopIndicator::new(params.lock().unwrap().percent, position_spec.side);
+				let mut ts_indicator = TrailingStopIndicator::new(params.borrow().percent, position_spec.side);
 
 				while let Some(price) = rx.recv().await {
 					let maybe_order = ts_indicator.step(price);
 					if let Some(order) = maybe_order {
-						let protocol_spec = params.lock().unwrap().to_string();
+						let protocol_spec = params.borrow().to_string();
 						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
 						tx_orders.send(protocol_orders).await.unwrap();
 					}
@@ -93,8 +92,9 @@ impl Protocol for TrailingStopWrapper {
 		Ok(())
 	}
 
-	fn update_params(&self, params: &TrailingStop) -> Result<()> {
-		unimplemented!()
+	fn update_params(&self, new_params: &TrailingStop) -> Result<()> {
+		*self.params.borrow_mut() = new_params.clone();
+		Ok(())
 	}
 
 	fn get_subtype(&self) -> ProtocolType {

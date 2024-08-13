@@ -3,8 +3,9 @@ pub mod info;
 mod orders;
 use crate::config::AppConfig;
 use crate::exchange_apis::{order_types::Order, Market};
-use crate::utils::deser_reqwest;
+use crate::utils::{deser_reqwest, unexpected_response_str};
 use crate::PositionOrderId;
+use anyhow::anyhow;
 use anyhow::Result;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -43,23 +44,48 @@ pub async fn signed_request<S: AsRef<str>>(
 ) -> Result<reqwest::Response> {
 	let mut headers = HeaderMap::new();
 	headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
-	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(key.as_ref()).unwrap());
+	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(key.as_ref())?);
 	let client = reqwest::Client::builder().default_headers(headers).build()?;
 
-	let time_ms = Utc::now().timestamp_millis();
-	params.insert("timestamp", format!("{}", time_ms));
+	let max_retries = 10;
+	let mut retry_delay = std::time::Duration::from_secs(1);
+	let mut encountered_cloudfront_error = false;
 
-	let query_string = serde_urlencoded::to_string(&params).unwrap();
+	for attempt in 0..max_retries {
+		let time_ms = Utc::now().timestamp_millis();
+		params.insert("timestamp", format!("{}", time_ms));
 
-	let mut mac = HmacSha256::new_from_slice(secret.as_ref().as_bytes()).unwrap();
-	mac.update(query_string.as_bytes());
-	let mac_bytes = mac.finalize().into_bytes();
-	let signature = hex::encode(mac_bytes);
+		let query_string = serde_urlencoded::to_string(&params)?;
 
-	let url = format!("{}?{}&signature={}", endpoint_str, query_string, signature);
-	let r = client.request(http_method, &url).send().await?;
+		let mut mac = HmacSha256::new_from_slice(secret.as_ref().as_bytes())?;
+		mac.update(query_string.as_bytes());
+		let mac_bytes = mac.finalize().into_bytes();
+		let signature = hex::encode(mac_bytes);
 
-	Ok(r)
+		let url = format!("{}?{}&signature={}", endpoint_str, query_string, signature);
+		let r = client.request(http_method.clone(), &url).send().await?;
+
+		if r.status().is_success() {
+			return Ok(r);
+		}
+
+		let error_html = r.text().await?;
+		if error_html.contains("<TITLE>ERROR: The request could not be satisfied</TITLE>") && attempt <= max_retries {
+			if !encountered_cloudfront_error {
+				tracing::warn!("Encountered CloudFront error. Oh boy, here we go again.");
+				encountered_cloudfront_error = true;
+			} else {
+				tracing::info!("CloudFront error encountered again. Attempting retry #{attempt} in {retry_delay:?}");
+			}
+			tokio::time::sleep(retry_delay).await;
+			retry_delay += std::time::Duration::from_secs(1);
+			continue;
+		}
+
+		return Err(unexpected_response_str(&error_html));
+	}
+
+	Err(anyhow!("Max retries reached. Request failed."))
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {

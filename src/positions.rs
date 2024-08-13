@@ -48,7 +48,7 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 
 		let current_price = binance::futures_price(&coin).await?;
-		let coin_quantity = 20.0; //dbg spec.size_usdt / current_price;
+		let coin_quantity = 28.0; //dbg spec.size_usdt / current_price;
 
 		let mut current_state = Self {
 			__spec: spec.clone(),

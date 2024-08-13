@@ -39,11 +39,15 @@ pub async fn deser_reqwest<T: DeserializeOwned>(r: reqwest::Response) -> Result<
 	match serde_json::from_str::<T>(&text) {
 		Ok(deserialized) => Ok(deserialized),
 		Err(_) => {
-			let s = match serde_json::from_str::<serde_json::Value>(&text) {
-				Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
-				Err(_) => text,
-			};
-			Err(anyhow::anyhow!("Unexpected API response:\n{}", s))
+			Err(unexpected_response_str(&text))
 		}
 	}
+}
+
+pub fn unexpected_response_str(s: &str) -> anyhow::Error {
+	let s = match serde_json::from_str::<serde_json::Value>(s) {
+		Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+		Err(_) => s.to_owned(),
+	};
+	anyhow::anyhow!("Unexpected API response:\n{}", s)
 }
