@@ -1,0 +1,20 @@
+[package]
+name = "discretionary_engine_macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[[test]]
+name = "tests"
+path = "tests/main.rs"
+
+[dev-dependencies]
+trybuild = { version = "^1.0.99", features = ["diff"]}
+
+[dependencies]
+anyhow = "1.0.86"
+proc-macro2 = { version = "1.0.86", features = ["nightly", "span-locations"] }
+quote = "1.0.36"
+syn = { version = "2.0.74", features = ["full", "extra-traits"] }

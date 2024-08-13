@@ -4,27 +4,18 @@ use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::cell::RefCell;
-use std::str::FromStr;
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
 use v_utils::prelude::*;
 use v_utils::trades::Side;
+use discretionary_engine_macros::ProtocolWrapper;
 
-#[derive(Clone, Debug, Default)]
-pub struct TrailingStopWrapper {
-	params: RefCell<TrailingStop>,
-}
-impl FromStr for TrailingStopWrapper {
-	type Err = anyhow::Error;
 
-	fn from_str(spec: &str) -> Result<Self> {
-		let ts = TrailingStop::from_str(spec)?;
-
-		Ok(Self { params: RefCell::new(ts) })
-	}
+#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, ProtocolWrapper)]
+pub struct TrailingStop {
+	percent: Percent,
 }
 
 impl Protocol for TrailingStopWrapper {
@@ -39,7 +30,7 @@ impl Protocol for TrailingStopWrapper {
 		};
 		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
 
-		let params = self.params.clone();
+		let params = self.0.clone();
 		let position_spec = position_spec.clone();
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
@@ -84,7 +75,7 @@ impl Protocol for TrailingStopWrapper {
 	}
 
 	fn update_params(&self, new_params: &TrailingStop) -> Result<()> {
-		*self.params.borrow_mut() = new_params.clone();
+		*self.0.borrow_mut() = new_params.clone();
 		Ok(())
 	}
 
@@ -150,11 +141,6 @@ impl TrailingStopIndicator {
 		};
 		1.0 + base.ln()
 	}
-}
-
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default)]
-pub struct TrailingStop {
-	percent: Percent,
 }
 
 #[cfg(test)]
