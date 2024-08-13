@@ -6,7 +6,6 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::io::Percent;
@@ -14,7 +13,7 @@ use v_utils::macros::CompactFormat;
 use v_utils::prelude::*;
 use v_utils::trades::Side;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct TrailingStopWrapper {
 	params: RefCell<TrailingStop>,
 }
@@ -25,14 +24,6 @@ impl FromStr for TrailingStopWrapper {
 		let ts = TrailingStop::from_str(spec)?;
 
 		Ok(Self { params: RefCell::new(ts) })
-	}
-}
-impl std::fmt::Debug for TrailingStopWrapper {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("TrailingStopWrapper")
-			.field("params", &self.params)
-			.field("data_source", &"<FnMut>")
-			.finish()
 	}
 }
 
