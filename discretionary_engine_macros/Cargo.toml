@@ -2,6 +2,7 @@
 name = "discretionary_engine_macros"
 version = "0.1.0"
 edition = "2021"
+description = "macros for discretionary_engine"
 
 [lib]
 proc-macro = true
