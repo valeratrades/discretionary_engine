@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-use crate::exchange_apis::{Market, Symbol};
+use crate::{
+	exchange_apis::{Market, Symbol},
+	utils::deser_reqwest_blocking,
+};
 
 lazy_static::lazy_static! {
 	// wait, this should be continuously pulled
@@ -10,7 +13,7 @@ lazy_static::lazy_static! {
 		let base_url = Market::BinanceFutures.get_base_url();
 		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
 		let r = reqwest::blocking::get(url).unwrap();
-		r.json::<FuturesExchangeInfo>().unwrap()
+		deser_reqwest_blocking::<FuturesExchangeInfo>(r).unwrap()
 	};
 }
 

@@ -17,16 +17,19 @@ rust-version = "1.80.0"
 #[dev-dependencies]
 #trybuild = { version = "^1.0.89", features = ["diff"]}
 
-[profile.dev]
-# Disabling debug info speeds up builds a bunch,
-# and we don't rely on it for debugging that much.
-debug = 0
+#[profile.dev]
+## Disabling debug info speeds up builds a bunch,
+## and we don't rely on it for debugging that much.
+#debug = 0
 
 # wait, so does it work or no?
 [lints.clippy]
 cmp_float = "allow"
 len_zero = "allow"
 get_zero = "allow"
+
+[package.metadata.docs.rs]
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [package.metadata.cargo-machete]
 ignored = ["v_utils_macros", "serde_with", "tracing-futures"]

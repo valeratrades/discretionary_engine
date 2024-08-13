@@ -44,6 +44,17 @@ pub async fn deser_reqwest<T: DeserializeOwned>(r: reqwest::Response) -> Result<
 	}
 }
 
+pub fn deser_reqwest_blocking<T: DeserializeOwned>(r: reqwest::blocking::Response) -> Result<T> {
+	let text = r.text()?;
+
+	match serde_json::from_str::<T>(&text) {
+		Ok(deserialized) => Ok(deserialized),
+		Err(_) => {
+			Err(unexpected_response_str(&text))
+		}
+	}
+}
+
 pub fn unexpected_response_str(s: &str) -> anyhow::Error {
 	let s = match serde_json::from_str::<serde_json::Value>(s) {
 		Ok(v) => serde_json::to_string_pretty(&v).unwrap(),

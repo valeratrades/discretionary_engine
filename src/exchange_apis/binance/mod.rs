@@ -147,7 +147,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 
 	let client = reqwest::Client::new();
 	let r = client.get(url).json(&params).send().await?;
-	//let r_json: serde_json::Value = r.json().await?;
+	//let r_json: serde_json::Value = deser_reqwest(r)().await?;
 	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
 	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
 	let prices: Vec<serde_json::Value> = deser_reqwest(r).await?;
@@ -188,7 +188,7 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 	let url = FuturesAllPositionsResponse::get_url();
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), HashMap::new(), key, secret).await?;
-	let positions: Vec<FuturesAllPositionsResponse> = r.json().await?;
+	let positions: Vec<FuturesAllPositionsResponse> = deser_reqwest(r).await?;
 
 	let mut positions_map = HashMap::<String, f64>::new();
 	for position in positions {
@@ -208,7 +208,7 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
-		let info: info::FuturesExchangeInfo = r.json().await?;
+		let info: info::FuturesExchangeInfo = deser_reqwest(r).await?;
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 		Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
@@ -334,7 +334,7 @@ pub async fn binance_runtime(
 				}
 				dbg!(&target_orders, &currently_deployed_clone);
 
-			// Later on we will be devising a strategy of transefing current orders to the new target, but for now all orders are simply closed than target ones are opened.
+			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed than target ones are opened.
 			//Binance docs: currently only LIMIT order modification is supported
 				loop {
 					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {
@@ -348,7 +348,15 @@ pub async fn binance_runtime(
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {
-					let b = post_futures_order(full_key.clone(), full_secret.clone(), &o).await.unwrap();
+					let b = match post_futures_order(full_key.clone(), full_secret.clone(), &o).await {
+						Ok(order) => order,
+						Err(e) => {
+						//TODO!!!: add retry if it's server or connection error. On error of placing an order: match is_payload_error { true => log error, do nothing, false => log warn, retry }. (ensure that in the first case the currently_deployed_orders has a correct value)
+
+							tracing::error!("Error posting order: {:?}", e);
+							continue;
+						}
+					};
 					just_deployed.push(b);
 				}
 				{
