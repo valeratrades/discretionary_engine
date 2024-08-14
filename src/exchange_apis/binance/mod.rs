@@ -172,7 +172,7 @@ pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) 
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.base_info.symbol.to_string());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
-		params.insert("recvWindow", "10000".to_owned()); //dbg currently they are having some issues with response speed
+		params.insert("recvWindow", "60000".to_owned()); //dbg currently they are having some issues with response speed
 
 		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
@@ -200,18 +200,23 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 }
 
 /// Returns (price_precision, quantity_precision)
-pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output = Result<(u32, usize)>> + Send + Sync + 'static> {
+pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output = Result<(u8, u8)>> + Send + Sync + 'static> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
 	let symbol_str = format!("{}USDT", coin.to_uppercase());
+	dbg!(&symbol_str);
 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
 		let info: info::FuturesExchangeInfo = deser_reqwest(r).await?;
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
+		dbg!(&symbol_info);
 
-		Ok((symbol_info.pricePrecision, symbol_info.quantityPrecision))
+		//let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
+		//
+		//Ok((tick_size as u8, step_size as u8))
+		Ok((symbol_info.price_precision as u8, symbol_info.quantity_precision as u8))
 	})
 }
 
@@ -297,6 +302,7 @@ pub async fn binance_runtime(
 						}
 					}
 				};
+				tracing::trace!("Polled order: {:?}", r);
 				//
 
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
@@ -345,6 +351,7 @@ pub async fn binance_runtime(
 						}
 					}
 				};
+				tracing::trace!("closed orders");
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {

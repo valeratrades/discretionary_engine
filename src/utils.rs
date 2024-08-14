@@ -38,9 +38,7 @@ pub async fn deser_reqwest<T: DeserializeOwned>(r: reqwest::Response) -> Result<
 
 	match serde_json::from_str::<T>(&text) {
 		Ok(deserialized) => Ok(deserialized),
-		Err(_) => {
-			Err(unexpected_response_str(&text))
-		}
+		Err(_) => Err(unexpected_response_str(&text)),
 	}
 }
 
@@ -49,9 +47,7 @@ pub fn deser_reqwest_blocking<T: DeserializeOwned>(r: reqwest::blocking::Respons
 
 	match serde_json::from_str::<T>(&text) {
 		Ok(deserialized) => Ok(deserialized),
-		Err(_) => {
-			Err(unexpected_response_str(&text))
-		}
+		Err(_) => Err(unexpected_response_str(&text)),
 	}
 }
 

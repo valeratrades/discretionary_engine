@@ -9,8 +9,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/valeratrades/discretionary_engine"
 rust-version = "1.80.0"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-#[[test]]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html#[[test]]
 #name = "tests"
 #path = "tests/main.rs"
 #

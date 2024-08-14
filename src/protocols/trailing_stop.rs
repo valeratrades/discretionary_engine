@@ -2,6 +2,7 @@ use crate::exchange_apis::{order_types::*, Market, Symbol};
 use crate::positions::PositionSpec;
 use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
+use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -10,8 +11,6 @@ use v_utils::io::Percent;
 use v_utils::macros::CompactFormat;
 use v_utils::prelude::*;
 use v_utils::trades::Side;
-use discretionary_engine_macros::ProtocolWrapper;
-
 
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, ProtocolWrapper)]
 pub struct TrailingStop {
@@ -57,10 +56,9 @@ impl Protocol for TrailingStopWrapper {
 			});
 
 			s.spawn(async move {
-				let mut ts_indicator = TrailingStopIndicator::new(params.borrow().percent, position_spec.side);
-
+				let mut ts_indicator = TrailingStopIndicator::new();
 				while let Some(price) = rx.recv().await {
-					let maybe_order = ts_indicator.step(price);
+					let maybe_order = ts_indicator.step(price, params.borrow().percent, position_spec.side, &symbol);
 					if let Some(order) = maybe_order {
 						let protocol_spec = params.borrow().to_string();
 						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
@@ -86,27 +84,22 @@ impl Protocol for TrailingStopWrapper {
 
 #[derive(Clone, Debug, Default, Copy)]
 struct TrailingStopIndicator {
-	percent: Percent,
 	top: f64,
 	bottom: f64,
-	/// Side of the position. So the orders that the protocol places are in the opposite direction.
-	side: Side,
 }
 impl TrailingStopIndicator {
-	fn new(percent: Percent, side: Side) -> Self {
+	fn new() -> Self {
 		Self {
-			percent,
 			top: 0.0,
 			bottom: 0.0,
-			side,
 		}
 	}
 
-	fn step(&mut self, price: f64) -> Option<ConceptualOrderPercents> {
+	fn step(&mut self, price: f64, percent: Percent, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
 		if price < self.bottom || self.bottom == 0.0 {
 			self.bottom = price;
-			if self.side == Side::Sell {
-				let target_price = price * Self::heuristic(self.percent.0, Side::Sell);
+			if side == Side::Sell {
+				let target_price = price * Self::heuristic(*percent, Side::Sell);
 				let sm = ConceptualStopMarket::new(1.0, target_price);
 				let order = Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::StopMarket(sm),
@@ -119,12 +112,12 @@ impl TrailingStopIndicator {
 		}
 		if price > self.top || self.top == 0.0 {
 			self.top = price;
-			if self.side == Side::Buy {
-				let target_price = price * Self::heuristic(self.percent.0, Side::Buy);
+			if side == Side::Buy {
+				let target_price = price * Self::heuristic(*percent, Side::Buy);
 				let sm = ConceptualStopMarket::new(1.0, target_price);
 				let order = Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::StopMarket(sm),
-					Symbol::new("BTC", "USDT", Market::BinanceFutures),
+					symbol.clone(),
 					Side::Sell,
 					1.0,
 				));
@@ -149,11 +142,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn internals() {
-		let mut ts = TrailingStopIndicator::new(Percent(0.02), Side::Buy);
+		let mut ts = TrailingStopIndicator::new();
 		let mut orders = Vec::new();
 		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
 		for (i, price) in prices.iter().enumerate() {
-			if let Some(order) = ts.step(*price) {
+			if let Some(order) = ts.step(*price, Percent(0.02), Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
 				let ConceptualOrderPercents { order_type, .. } = order;
 				if let ConceptualOrderType::StopMarket(sm) = order_type {
 					orders.push((i, Some(sm.price)));
