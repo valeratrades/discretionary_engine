@@ -3,12 +3,9 @@ use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Or
 use crate::exchange_apis::{binance, HubRx, Symbol};
 use crate::protocols::{FollowupProtocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType};
 use anyhow::Result;
-use derive_new::new;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -135,7 +132,7 @@ impl TargetOrders {
 	}
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, derive_new::new)]
 pub struct PositionCallback {
 	pub sender: tokio::sync::mpsc::Sender<Vec<ProtocolFill>>, // stands for "this nominal qty filled on this protocol order"
 	pub position_id: Uuid,

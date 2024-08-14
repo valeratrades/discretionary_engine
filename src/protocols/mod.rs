@@ -2,7 +2,6 @@ mod sar;
 mod trailing_stop;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 use anyhow::Result;
-use derive_new::new;
 use std::collections::HashSet;
 use std::str::FromStr;
 use tokio::sync::mpsc;
