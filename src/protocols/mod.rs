@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
 /// Note that total size is is 100% for both the stop and normal orders (because they are on the different sides of the price).
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, derive_new::new)]
 pub enum ProtocolType {
 	Momentum,
 	TP,
@@ -112,9 +112,40 @@ pub struct ProtocolFill {
 	pub qty: f64,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ProtocolDynamicInfo {
+	fills: Vec<f64>,
+	protocol_orders: ProtocolOrders,
+}
+impl ProtocolDynamicInfo {
+	pub fn new(protocol_orders: ProtocolOrders) -> Self {
+		let fills = protocol_orders.empty_mask();
+		Self { fills, protocol_orders }
+	}
+
+	pub fn update_fills(&mut self, fills: Vec<f64>) {
+		self.fills = fills;
+	}
+
+	pub fn update_fill_at(&mut self, i: usize, fill: f64) {
+		self.fills[i] += fill;
+	}
+
+	pub fn update_orders(&mut self, orders: ProtocolOrders) {
+		self.protocol_orders = orders;
+	}
+
+	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+		let size_multiplier = 1.0 / parent_matching_subtype_n as f64;
+		let total_controlled_size = parent_notional * size_multiplier;
+
+		self.protocol_orders.apply_mask(&self.fills, total_controlled_size)
+	}
+}
+
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
 ///NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, derive_new::new, Default)]
 pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes

@@ -1,10 +1,11 @@
 use crate::config::AppConfig;
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
 use crate::exchange_apis::{binance, HubRx, Symbol};
-use crate::protocols::{FollowupProtocol, ProtocolFill, ProtocolOrders, ProtocolType};
+use crate::protocols::{FollowupProtocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -159,39 +160,23 @@ impl PositionFollowup {
 		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<ProtocolFill>>(32);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
-		let all_requested: Arc<Mutex<HashMap<String, ProtocolOrders>>> = Arc::new(Mutex::new(HashMap::new()));
-		let all_requested_unrolled: Arc<Mutex<HashMap<String, Vec<ConceptualOrder<ProtocolOrderId>>>>> = Arc::new(Mutex::new(HashMap::new()));
+		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
+
 		let mut closed_notional = 0.0;
 		let mut target_orders = TargetOrders::new(hub_tx);
 		let mut last_fill_key = Uuid::default();
 
-		let all_fills: Arc<Mutex<HashMap<String, Vec<f64>>>> = Arc::new(Mutex::new(HashMap::new()));
-
-		let update_unrolled = |update_on_protocol: String| {
-			let protocol = FollowupProtocol::from_str(&update_on_protocol).unwrap();
-			let subtype = protocol.get_subtype();
-			let size_multiplier = 1.0 / *counted_subtypes.get(&subtype).unwrap() as f64;
-			let total_controlled_size = acquired.acquired_notional * size_multiplier;
-
-			let target_protocol_orders = &all_requested.lock().unwrap()[&update_on_protocol];
-			let mask: Vec<f64> = {
-				let all_fills_guard = all_fills.lock().unwrap();
-				match all_fills_guard.get(&update_on_protocol) {
-					Some(mask) => mask.to_vec(),
-					None => target_protocol_orders.empty_mask(),
-				}
-			};
-			let order_batch = target_protocol_orders.apply_mask(&mask, total_controlled_size);
-			all_requested_unrolled.lock().unwrap().insert(update_on_protocol, order_batch);
-		};
 
 		macro_rules! recalculate_target_orders {
 			() => {{
 				let mut market_orders = Vec::new();
 				let mut stop_orders = Vec::new();
 				let mut limit_orders = Vec::new();
-				for (_key, value) in all_requested_unrolled.lock().unwrap().clone() {
-					value.into_iter().for_each(|o| match o.order_type {
+				for (protocol_spec_str, info) in protocols_dynamic_info.iter() {
+					let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
+					let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
+					let conceptual_orders = info.conceptual_orders(*matching_subtype_n, acquired.acquired_notional);
+					conceptual_orders.into_iter().for_each(|o| match o.order_type {
 						ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
 						ConceptualOrderType::Limit(_) => limit_orders.push(o),
 						ConceptualOrderType::Market(_) => market_orders.push(o),
@@ -264,8 +249,11 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
-					all_requested.lock().unwrap().insert(protocol_orders.protocol_id.clone(), protocol_orders.clone());
-					update_unrolled(protocol_orders.protocol_id.clone());
+					if let Some(protocol_info) = protocols_dynamic_info.get_mut(&protocol_orders.protocol_id) {
+						protocol_info.update_orders(protocol_orders.clone());
+					} else { 
+						protocols_dynamic_info.insert(protocol_orders.protocol_id.clone(), ProtocolDynamicInfo::new(protocol_orders.clone()));
+					}
 					recalculate_target_orders!();
 				},
 				Some(fills_vec) = rx_fills.recv() => {
@@ -275,16 +263,9 @@ impl PositionFollowup {
 						let (protocol_order_id, filled_notional) = (f.id, f.qty);
 						closed_notional += filled_notional;
 						{
-							let mut all_fills_guard = all_fills.lock().unwrap();
-							let protocol_fills = all_fills_guard.entry(protocol_order_id.protocol_id.clone()).or_insert_with(|| {
-								let protocol_id = protocol_order_id.protocol_id.clone();
-								all_requested.lock().unwrap().get(&protocol_id).unwrap().empty_mask()
-							});
-
-							protocol_fills[protocol_order_id.ordinal] += filled_notional;
+							let protocol_info = protocols_dynamic_info.get_mut(&protocol_order_id.protocol_id).unwrap();
+							protocol_info.update_fill_at(protocol_order_id.ordinal, filled_notional);
 						}
-
-						update_unrolled(protocol_order_id.protocol_id.clone());
 					}
 					if closed_notional >= acquired.target_notional {
 						break;

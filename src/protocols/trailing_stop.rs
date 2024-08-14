@@ -89,10 +89,7 @@ struct TrailingStopIndicator {
 }
 impl TrailingStopIndicator {
 	fn new() -> Self {
-		Self {
-			top: 0.0,
-			bottom: 0.0,
-		}
+		Self { top: 0.0, bottom: 0.0 }
 	}
 
 	fn step(&mut self, price: f64, percent: Percent, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
