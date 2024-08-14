@@ -272,7 +272,7 @@ pub async fn binance_runtime(
 	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
 ) {
 	trace!("Binance_runtime started");
-	let mut last_fill_known_to_hub = Uuid::new_v4();
+	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
@@ -311,7 +311,7 @@ pub async fn binance_runtime(
 					{
 						currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
 					}
-					temp_fills_stack_tx.send((Uuid::new_v4(), order.base_info.clone(), executed_qty)).await.unwrap();
+					temp_fills_stack_tx.send((Uuid::now_v7(), order.base_info.clone(), executed_qty)).await.unwrap();
 				}
 			}
 		}

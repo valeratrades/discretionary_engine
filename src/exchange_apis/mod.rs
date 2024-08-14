@@ -104,7 +104,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 					.cloned()
 					.collect::<Vec<Order<PositionOrderId>>>();
 
-				let acceptance_token = Uuid::new_v4(); //HACK
+				let acceptance_token = Uuid::now_v7(); //HACK
 				let passforward = HubPassforward::new(acceptance_token, binance_futures_orders);
 				orders_tx.send(passforward)?;
 			},

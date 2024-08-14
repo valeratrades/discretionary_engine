@@ -57,12 +57,12 @@ impl PositionAcquisition {
 			protocols_spec: None,
 		};
 
-		let order = Order::new(Uuid::new_v4(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
+		let order = Order::new(Uuid::now_v7(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
 
 		// //dbg
 		let full_key = config.binance.full_key.clone();
 		let full_secret = config.binance.full_secret.clone();
-		let position_order_id = PositionOrderId::new(Uuid::new_v4(), "mock_acquisition".to_string(), 0);
+		let position_order_id = PositionOrderId::new(Uuid::now_v7(), "mock_acquisition".to_string(), 0);
 		let mock_position_order = Order::<PositionOrderId>::new(position_order_id, OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
 		let _binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order)
 			.await
@@ -132,7 +132,6 @@ impl TargetOrders {
 			}
 		};
 	}
-	//TODO!!!!!!!!!: fill channel. Want to receive data on every fill alongside the protocol_order_id, which is required when sending the update_orders() request, defined right above this.
 }
 
 #[derive(Debug, Clone, new)]
@@ -156,7 +155,7 @@ impl PositionFollowup {
 			protocol.attach(&mut set, tx_orders.clone(), &acquired.__spec)?;
 		}
 
-		let position_id = Uuid::new_v4();
+		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<ProtocolFill>>(32);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
@@ -261,7 +260,6 @@ impl PositionFollowup {
 		}
 
 		//TODO!!: move the handling of inner values inside a tokio task (protocol orders and fills update data inside an enum, and send it to the task)
-
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
@@ -293,7 +291,8 @@ impl PositionFollowup {
 					}
 					recalculate_target_orders!();
 				},
-				else => break,
+				Some(_) = set.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be awaited.")},
+				else => unreachable!("hub outlives positions"),
 			}
 		}
 
