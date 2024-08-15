@@ -163,82 +163,80 @@ impl PositionFollowup {
 		let mut target_orders = TargetOrders::new(hub_tx);
 		let mut last_fill_key = Uuid::default();
 
+		fn recalculate_target_orders(
+			counted_subtypes: &HashMap<ProtocolType, usize>,
+			left_to_acquire_notional: f64,
+			side: Side,
+			dyn_info: &HashMap<String, ProtocolDynamicInfo>,
+		) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+			let mut market_orders = Vec::new();
+			let mut stop_orders = Vec::new();
+			let mut limit_orders = Vec::new();
+			for (protocol_spec_str, info) in dyn_info.iter() {
+				let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
+				let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
+				let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_acquire_notional);
+				conceptual_orders.into_iter().for_each(|o| match o.order_type {
+					ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
+					ConceptualOrderType::Limit(_) => limit_orders.push(o),
+					ConceptualOrderType::Market(_) => market_orders.push(o),
+				});
+			}
 
-		macro_rules! recalculate_target_orders {
-			() => {{
-				let mut market_orders = Vec::new();
-				let mut stop_orders = Vec::new();
-				let mut limit_orders = Vec::new();
-				for (protocol_spec_str, info) in protocols_dynamic_info.iter() {
-					let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
-					let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
-					let conceptual_orders = info.conceptual_orders(*matching_subtype_n, acquired.acquired_notional);
-					conceptual_orders.into_iter().for_each(|o| match o.order_type {
-						ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
-						ConceptualOrderType::Limit(_) => limit_orders.push(o),
-						ConceptualOrderType::Market(_) => market_orders.push(o),
-					});
-				}
+			let mut left_to_target_full_notional = left_to_acquire_notional;
+			let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
+			let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
 
-				let mut left_to_target_full_notional = acquired.acquired_notional - closed_notional;
-				let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
-				let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
-
-				// orders should be all of the same conceptual type (no idea how to enforce it)
-				let mut update_target_orders = |orders: Vec<ConceptualOrder<ProtocolOrderId>>| {
-					for order in orders {
-						let notional = order.qty_notional;
-						let compare_against = match order.order_type {
-							ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional,
-							ConceptualOrderType::Limit(_) => left_to_target_normal_notional,
-							ConceptualOrderType::Market(_) => left_to_target_full_notional,
-						};
-						let mut order = order.clone();
-						if notional > compare_against {
-							order.qty_notional = compare_against;
+			let mut update_target_orders = |orders: Vec<ConceptualOrder<ProtocolOrderId>>| {
+				for order in orders {
+					let notional = order.qty_notional;
+					let compare_against = match order.order_type {
+						ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional,
+						ConceptualOrderType::Limit(_) => left_to_target_normal_notional,
+						ConceptualOrderType::Market(_) => left_to_target_full_notional,
+					};
+					let mut order = order.clone();
+					if notional > compare_against {
+						order.qty_notional = compare_against;
+					}
+					new_target_orders.push(order.clone());
+					match order.order_type {
+						ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional -= notional,
+						ConceptualOrderType::Limit(_) => left_to_target_normal_notional -= notional,
+						ConceptualOrderType::Market(_) => {
+							//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
+							left_to_target_full_notional -= notional;
+							left_to_target_spot_notional -= notional;
+							left_to_target_normal_notional -= notional;
 						}
-						new_target_orders.push(order.clone());
-						match order.order_type {
-							ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional -= notional,
-							ConceptualOrderType::Limit(_) => left_to_target_normal_notional -= notional,
-							ConceptualOrderType::Market(_) => {
-								//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
-								left_to_target_full_notional -= notional;
-								left_to_target_spot_notional -= notional;
-								left_to_target_normal_notional -= notional;
-							}
-						}
-						assert!(
-							left_to_target_spot_notional >= 0.0,
-							"I messed up the code: Market orders must be ran through here first"
-						);
-						assert!(
-							left_to_target_normal_notional >= 0.0,
-							"I messed up the code: Market orders must be ran through here first"
-						);
 					}
-				};
-
-				//NB: market-like orders MUST be ran first!
-				update_target_orders(market_orders);
-
-				match acquired.__spec.side {
-					Side::Buy => {
-						stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-						limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-					}
-					Side::Sell => {
-						stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-						limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-					}
+					assert!(
+						left_to_target_spot_notional >= 0.0,
+						"I messed up the code: Market orders must be ran through here first"
+					);
+					assert!(
+						left_to_target_normal_notional >= 0.0,
+						"I messed up the code: Market orders must be ran through here first"
+					);
 				}
-				update_target_orders(stop_orders);
-				update_target_orders(limit_orders);
+			};
 
-				target_orders
-					.update_orders(last_fill_key, new_target_orders, position_callback.clone())
-					.await;
-			}};
+			//NB: market-like orders MUST be ran first!
+			update_target_orders(market_orders);
+
+			match side {
+				Side::Buy => {
+					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+					limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+				}
+				Side::Sell => {
+					stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+					limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+				}
+			}
+			update_target_orders(stop_orders);
+			update_target_orders(limit_orders);
+			new_target_orders
 		}
 
 		//TODO!!: move the handling of inner values inside a tokio task (protocol orders and fills update data inside an enum, and send it to the task)
@@ -248,10 +246,11 @@ impl PositionFollowup {
 					info!("{:?} sent orders: {:?}", protocol_orders.protocol_id, protocol_orders.__orders); //dbg
 					if let Some(protocol_info) = protocols_dynamic_info.get_mut(&protocol_orders.protocol_id) {
 						protocol_info.update_orders(protocol_orders.clone());
-					} else { 
+					} else {
 						protocols_dynamic_info.insert(protocol_orders.protocol_id.clone(), ProtocolDynamicInfo::new(protocol_orders.clone()));
 					}
-					recalculate_target_orders!();
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.target_notional - closed_notional, acquired.__spec.side, &protocols_dynamic_info);
+					target_orders .update_orders(last_fill_key, new_target_orders, position_callback.clone()) .await;
 				},
 				Some(fills_vec) = rx_fills.recv() => {
 					info!("Received fills: {:?}", fills_vec);
@@ -267,9 +266,10 @@ impl PositionFollowup {
 					if closed_notional >= acquired.target_notional {
 						break;
 					}
-					recalculate_target_orders!();
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.target_notional - closed_notional, acquired.__spec.side, &protocols_dynamic_info);
+					target_orders .update_orders(last_fill_key, new_target_orders, position_callback.clone()) .await;
 				},
-				Some(_) = set.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be awaited.")},
+				Some(_) = set.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
 			}
 		}
