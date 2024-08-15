@@ -153,8 +153,6 @@ mod tests {
 			}
 		}
 		let plot = v_utils::utils::snapshot_plot_orders(&prices, &orders);
-		//let plot = v_utils::utils::SnapshotP::build(prices).draw();
-
 		insta::assert_snapshot!(plot, @r###"
                                                                       ▂▃▄▃                  103.50
                                                                    ▃  █████▆▁▆▇▄                  

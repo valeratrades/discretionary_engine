@@ -183,46 +183,23 @@ impl PositionFollowup {
 				});
 			}
 
-			let mut left_to_target_full_notional = left_to_acquire_notional;
-			let (mut left_to_target_spot_notional, mut left_to_target_normal_notional) = (left_to_target_full_notional, left_to_target_full_notional);
+			///NB: Market-like orders MUST be ran first
+			fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
+				for order in incoming {
+					let notional = order.qty_notional;
+					let mut order = order.clone();
+					if notional > *left_to_target {
+						order.qty_notional = *left_to_target;
+					}
+					extendable.push(order.clone());
+					*left_to_target -= notional;
+				}
+			}
+
 			let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
 
-			let mut update_target_orders = |orders: Vec<ConceptualOrder<ProtocolOrderId>>| {
-				for order in orders {
-					let notional = order.qty_notional;
-					let compare_against = match order.order_type {
-						ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional,
-						ConceptualOrderType::Limit(_) => left_to_target_normal_notional,
-						ConceptualOrderType::Market(_) => left_to_target_full_notional,
-					};
-					let mut order = order.clone();
-					if notional > compare_against {
-						order.qty_notional = compare_against;
-					}
-					new_target_orders.push(order.clone());
-					match order.order_type {
-						ConceptualOrderType::StopMarket(_) => left_to_target_spot_notional -= notional,
-						ConceptualOrderType::Limit(_) => left_to_target_normal_notional -= notional,
-						ConceptualOrderType::Market(_) => {
-							//NB: in the current implementation if market orders are ran after other orders, we could go negative here.
-							left_to_target_full_notional -= notional;
-							left_to_target_spot_notional -= notional;
-							left_to_target_normal_notional -= notional;
-						}
-					}
-					assert!(
-						left_to_target_spot_notional >= 0.0,
-						"I messed up the code: Market orders must be ran through here first"
-					);
-					assert!(
-						left_to_target_normal_notional >= 0.0,
-						"I messed up the code: Market orders must be ran through here first"
-					);
-				}
-			};
-
-			//NB: market-like orders MUST be ran first!
-			update_target_orders(market_orders);
+			let mut left_to_target_marketlike_notional = left_to_acquire_notional;
+			update_order_selection(&mut new_target_orders, &market_orders, &mut left_to_target_marketlike_notional);
 
 			match side {
 				Side::Buy => {
@@ -234,12 +211,14 @@ impl PositionFollowup {
 					limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
 				}
 			}
-			update_target_orders(stop_orders);
-			update_target_orders(limit_orders);
+			let mut left_to_target_stop_notional = left_to_target_marketlike_notional;
+			update_order_selection(&mut new_target_orders, &stop_orders, &mut left_to_target_stop_notional);
+			let mut left_to_target_limit_notional = left_to_target_marketlike_notional;
+			update_order_selection(&mut new_target_orders, &limit_orders, &mut left_to_target_limit_notional);
+
 			new_target_orders
 		}
 
-		//TODO!!: move the handling of inner values inside a tokio task (protocol orders and fills update data inside an enum, and send it to the task)
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
