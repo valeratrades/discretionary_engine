@@ -28,10 +28,6 @@ pub struct Sar {
 	timeframe: Timeframe,
 }
 
-fn historic_klines_ohlc(symbol: &str, timeframe: Timeframe, limit: u16) -> Result<Vec<Ohlc>> {
-	unimplemented!()
-}
-
 impl Protocol for SarWrapper {
 	type Params = Sar;
 
@@ -99,8 +95,9 @@ impl Protocol for SarWrapper {
 		unimplemented!();
 	}
 
-	fn update_params(&self, params: &Sar) -> Result<()> {
-		unimplemented!()
+	fn update_params(&self, new_params: &Sar) -> Result<()> {
+		*self.0.borrow_mut() = *new_params;
+		Ok(())
 	}
 
 	fn get_subtype(&self) -> ProtocolType {
@@ -129,7 +126,6 @@ impl SarIndicator {
 
 	fn step(&mut self, ohlc: Ohlc, params: &Sar, symbol: &Symbol, side: Side) -> Option<ConceptualOrderPercents> {
 		let is_uptrend = self.sar < ohlc.low;
-		let sar_snapshot = self.sar;
 
 		// Update SAR
 		if is_uptrend {
@@ -158,6 +154,7 @@ impl SarIndicator {
 			self.acceleration_factor = *params.start;
 		}
 
+		// Compile orders
 		let is_followup_side = (side == Side::Buy && is_uptrend) || (side == Side::Sell && !is_uptrend);
 		if is_followup_side {
 			Some(ConceptualOrderPercents {
