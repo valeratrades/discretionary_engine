@@ -19,6 +19,7 @@ use tokio::{select, task::JoinSet};
 use tracing::trace;
 use url::Url;
 use uuid::Uuid;
+use v_utils::trades::Ohlc;
 
 use super::{order_types::IdRequirements, HubCallback, HubPassforward};
 use crate::{
@@ -256,6 +257,50 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	let factor = 10_f64.powi(qty_precision as i32);
 	let adjusted = (qty * factor).round() / factor;
 	Ok(adjusted)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BinanceKline {
+	open_time: i64,
+	open: String,
+	high: String,
+	low: String,
+	close: String,
+	volume: String,
+	close_time: i64,
+	quote_asset_volume: String,
+	number_of_trades: i64,
+	taker_buy_base_asset_volume: String,
+	taker_buy_quote_asset_volume: String,
+	ignore: String,
+}
+impl Into<Ohlc> for BinanceKline {
+	fn into(self) -> Ohlc {
+		Ohlc {
+			open: self.open.parse().unwrap(),
+			high: self.high.parse().unwrap(),
+			low: self.low.parse().unwrap(),
+			close: self.close.parse().unwrap(),
+		}
+	}
+}
+
+pub async fn get_historic_klines(symbol: String, interval: String, limit: usize) -> Result<Vec<BinanceKline>> {
+	let base_url = Market::BinanceFutures.get_base_url();
+	let endpoint = base_url.join("/fapi/v1/klines")?;
+
+	let params = vec![("symbol", symbol), ("interval", interval), ("limit", limit.to_string())];
+
+	let client = reqwest::Client::new();
+	let response = client.get(endpoint).query(&params).send().await?;
+
+	if !response.status().is_success() {
+		let error_body = response.text().await?;
+		anyhow::bail!("Binance API error: {}", error_body);
+	}
+
+	let klines: Vec<BinanceKline> = response.json().await?;
+	Ok(klines)
 }
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.

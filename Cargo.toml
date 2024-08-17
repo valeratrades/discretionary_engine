@@ -17,7 +17,6 @@ cmp_float = "allow" # is bad for `==` direct comparisons, but `<` and `>` should
 #get_first = "allow" # const fn, so actually more performant
 len_zero = "allow" # `.empty()` is O(1) but on &str only
 
-
 [package.metadata.docs.rs]
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 

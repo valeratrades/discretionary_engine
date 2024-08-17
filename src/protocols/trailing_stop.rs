@@ -20,7 +20,7 @@ pub struct TrailingStop {
 impl Protocol for TrailingStopWrapper {
 	type Params = TrailingStop;
 
-	fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
 		let symbol = Symbol {
 			base: position_spec.asset.clone(),
 			quote: "USDT".to_owned(),
@@ -28,12 +28,12 @@ impl Protocol for TrailingStopWrapper {
 		};
 		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
 
-		//BUG: update_params will do nothing, as we're cloning them before starting the tasks.
+		// BUG: update_params will do nothing, as we're cloning them before starting the tasks.
 		let params = self.0.clone();
 		let position_spec = position_spec.clone();
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
-		position_set.spawn(async move {
+		position_js.spawn(async move {
 			let mut js = JoinSet::new();
 			js.spawn(async move {
 				let (ws_stream, _) = connect_async(address).await.unwrap();

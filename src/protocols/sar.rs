@@ -4,10 +4,7 @@ use anyhow::Result;
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;
-use tokio::{
-	sync::mpsc,
-	task::JoinSet,
-};
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_tungstenite::connect_async;
 use v_utils::{
 	io::Percent,
@@ -27,40 +24,12 @@ pub struct Sar {
 	start: Percent,
 	increment: Percent,
 	max: Percent,
+	/// NB: Impossible to change dynamically currently (because the websocket connection contains timeframe in its signature)
 	timeframe: Timeframe,
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
-struct DataSource;
-impl DataSource {
-	/// HACK
-	async fn listen(&self, address: &str, tx: tokio::sync::mpsc::Sender<Ohlc>) -> Result<()> {
-		let (ws_stream, _) = connect_async(address).await.unwrap();
-		let (_, mut read) = ws_stream.split();
-
-		while let Some(msg) = read.next().await {
-			let data = msg.unwrap().into_data();
-			match serde_json::from_slice::<Value>(&data) {
-				Ok(json) =>
-					if let Some(open_str) = json.get("o") {
-						let open: f64 = open_str.as_str().unwrap().parse().unwrap();
-						let high: f64 = json["h"].as_str().unwrap().parse().unwrap();
-						let low: f64 = json["l"].as_str().unwrap().parse().unwrap();
-						let close: f64 = json["c"].as_str().unwrap().parse().unwrap();
-						tx.send(Ohlc { open, high, low, close }).await.unwrap();
-					},
-				Err(e) => {
-					println!("Failed to parse message as JSON: {}", e);
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	fn historic_klines_ohlc(&self, symbol: &str, timeframe: Timeframe, limit: u16) -> Result<Vec<Ohlc>> {
-		unimplemented!()
-	}
+fn historic_klines_ohlc(symbol: &str, timeframe: Timeframe, limit: u16) -> Result<Vec<Ohlc>> {
+	unimplemented!()
 }
 
 impl Protocol for SarWrapper {
@@ -72,35 +41,54 @@ impl Protocol for SarWrapper {
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
-		let tf = { &self.0.borrow().timeframe };
-		let address = format!("wss://fstream.binance.com/ws/{}@kline_{tf}", symbol.to_string().to_lowercase());
+		let tf = { self.0.borrow().timeframe };
 		let position_spec = position_spec.clone();
-		//BUG: ref trailing_stop.rs
+		// BUG: ref trailing_stop.rs
 		let params = self.0.clone();
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<Ohlc>(256);
-		let init_klines = Vec::new(); //dbg
-		let address_clone = address.clone();
+		let mut last_order: Option<ConceptualOrderPercents> = None;
+		let symbol_clone = symbol.clone();
 		position_js.spawn(async move {
 			let mut js = JoinSet::new();
 			js.spawn(async move {
-				//data_source_clone.listen(&address_clone, tx).await.unwrap();
-				todo!()
+				let address = format!("wss://fstream.binance.com/ws/{}@kline_{tf}", symbol_clone.to_string().to_lowercase());
+				let (ws_stream, _) = connect_async(address).await.unwrap();
+				let (_, mut read) = ws_stream.split();
+
+				while let Some(msg) = read.next().await {
+					let data = msg.unwrap().into_data();
+					match serde_json::from_slice::<Value>(&data) {
+						Ok(json) =>
+							if let Some(open_str) = json.get("o") {
+								let open: f64 = open_str.as_str().unwrap().parse().unwrap();
+								let high: f64 = json["h"].as_str().unwrap().parse().unwrap();
+								let low: f64 = json["l"].as_str().unwrap().parse().unwrap();
+								let close: f64 = json["c"].as_str().unwrap().parse().unwrap();
+								tx.send(Ohlc { open, high, low, close }).await.unwrap();
+							},
+						Err(e) => {
+							println!("Failed to parse message as JSON: {}", e);
+						}
+					}
+				}
 			});
 
 			js.spawn(async move {
+				// HACK: shouldn't be unwrapping
+				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf.format_binance().unwrap(), 100)
+					.await
+					.unwrap();
 				let position_side = position_spec.side;
-				let mut sar = SarIndicator::init(&init_klines, &params.borrow());
+				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
+				let mut sar = SarIndicator::init(&init_ohlcs, &params.borrow());
 
 				while let Some(ohlc) = rx.recv().await {
-					// TODO!!!!!!: only update sar if the candle is over. Same for trade updates. (the only thing we want to be real-time is flipping of the indie, which is already captured by the placed stop_market)
-					// TODO!!!!!!!!!: sub with SAR logic
-					let prev_sar = sar;
 					let maybe_order = sar.step(ohlc, &params.borrow(), &symbol, position_side);
-
-					if sar.sar != prev_sar.sar {
-						todo!();
-						// update_orders!(sar, side);
+					if last_order != maybe_order {
+						let protocol_spec = params.borrow().to_string();
+						tx_orders.send(ProtocolOrders::new(protocol_spec, vec![maybe_order.clone()])).await.unwrap();
+						last_order = maybe_order;
 					}
 				}
 			});
@@ -187,8 +175,9 @@ impl SarIndicator {
 //? should I move this higher up? Could help compile times, and standardize the check function.
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use v_utils::trades::mock_p_to_ohlc;
+
+	use super::*;
 
 	#[tokio::test]
 	async fn test_sar_indicator() {
@@ -203,7 +192,6 @@ mod tests {
 
 		let mut sar_indicator = SarIndicator::init(&init_ohlc, &sar_wrapper.0.borrow());
 		let mut recorded_indicator_values = Vec::new();
-		let mut i: usize = 0;
 		let mut orders = Vec::new();
 
 		for (i, ohlc) in test_data_ohlc.into_iter().enumerate() {
