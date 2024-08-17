@@ -274,13 +274,13 @@ pub struct BinanceKline {
 	taker_buy_quote_asset_volume: String,
 	ignore: String,
 }
-impl Into<Ohlc> for BinanceKline {
-	fn into(self) -> Ohlc {
+impl From<BinanceKline> for Ohlc {
+	fn from(val: BinanceKline) -> Self {
 		Ohlc {
-			open: self.open.parse().unwrap(),
-			high: self.high.parse().unwrap(),
-			low: self.low.parse().unwrap(),
-			close: self.close.parse().unwrap(),
+			open: val.open.parse().unwrap(),
+			high: val.high.parse().unwrap(),
+			low: val.low.parse().unwrap(),
+			close: val.close.parse().unwrap(),
 		}
 	}
 }

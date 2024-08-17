@@ -3,6 +3,7 @@ mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
 
 use anyhow::Result;
+use sar::SarWrapper;
 use tokio::{sync::mpsc, task::JoinSet};
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
@@ -56,6 +57,7 @@ pub trait Protocol {
 #[derive(Debug, Clone)]
 pub enum FollowupProtocol {
 	TrailingStop(TrailingStopWrapper),
+	Sar(SarWrapper),
 }
 impl FromStr for FollowupProtocol {
 	type Err = anyhow::Error;
@@ -63,6 +65,8 @@ impl FromStr for FollowupProtocol {
 	fn from_str(spec: &str) -> Result<Self> {
 		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
 			Ok(FollowupProtocol::TrailingStop(ts))
+		} else if let Ok(sar) = SarWrapper::from_str(spec) {
+			Ok(FollowupProtocol::Sar(sar))
 		} else {
 			Err(anyhow::Error::msg("Could not convert string to any FollowupProtocol"))
 		}
@@ -72,18 +76,21 @@ impl FollowupProtocol {
 	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()> {
 		match self {
 			FollowupProtocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
+			FollowupProtocol::Sar(sar) => sar.attach(position_set, tx_orders, position_spec),
 		}
 	}
 
-	pub fn update_params(&self, params: &<TrailingStopWrapper as Protocol>::Params) -> anyhow::Result<()> {
-		match self {
-			FollowupProtocol::TrailingStop(ts) => ts.update_params(params),
-		}
-	}
+	// pub fn update_params(&self, params: &<TrailingStopWrapper as Protocol>::Params) -> anyhow::Result<()> {
+	// 	match self {
+	// 		FollowupProtocol::TrailingStop(ts) => ts.update_params(params),
+	// 		FollowupProtocol::Sar(sar) => sar.update_params(params),
+	// 	}
+	//}
 
 	pub fn get_subtype(&self) -> ProtocolType {
 		match self {
 			FollowupProtocol::TrailingStop(ts) => ts.get_subtype(),
+			FollowupProtocol::Sar(sar) => sar.get_subtype(),
 		}
 	}
 }
