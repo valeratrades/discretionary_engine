@@ -92,7 +92,7 @@ impl Protocol for SarWrapper {
 			Ok(())
 		});
 
-		unimplemented!();
+		Ok(())
 	}
 
 	fn update_params(&self, new_params: &Sar) -> Result<()> {

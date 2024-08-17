@@ -31,6 +31,7 @@ ignored = ["v_utils_macros", "serde_with", "tracing-futures"]
 anyhow = "^1.0.86"
 chrono = "^0.4.38"
 clap = { version = "^4.5.15", features = ["derive"] }
+color-backtrace = "0.6.1"
 config = "0.14.0"
 console-subscriber = "0.4.0"
 derive-new = "0.6.0"
