@@ -1,6 +1,7 @@
 #![allow(unused_variables)] // getting false positives on the test code for some reason
-use discretionary_engine_macros::ProtocolWrapper;
 use std::str::FromStr;
+
+use discretionary_engine_macros::ProtocolWrapper;
 
 #[derive(ProtocolWrapper, Debug, Default, Clone, PartialEq)]
 pub struct TrailingStop {

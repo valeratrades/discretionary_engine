@@ -1,16 +1,19 @@
 pub mod binance;
-use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 use std::collections::HashMap;
+
 use v_utils::prelude::*;
+
+use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 pub mod order_types;
-use self::order_types::{ConceptualOrderType, ProtocolOrderId};
-use crate::config::AppConfig;
 use anyhow::Result;
 use order_types::{ConceptualOrder, Order};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 use v_utils::macros::graphemics;
+
+use self::order_types::{ConceptualOrderType, ProtocolOrderId};
+use crate::config::AppConfig;
 
 pub async fn compile_total_balance(config: AppConfig) -> Result<f64> {
 	let read_key = config.binance.read_key.clone();
@@ -56,7 +59,7 @@ pub struct HubRx {
 	position_callback: PositionCallback,
 }
 pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) -> Result<()> {
-	//TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
+	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
 	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
@@ -123,7 +126,7 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 	Ok(())
 }
 
-//HACK
+// HACK
 /// Thing that applies all the logic for deciding on how to best express ensemble of requested orders.
 fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) -> Vec<Order<PositionOrderId>> {
 	let mut orders: Vec<Order<PositionOrderId>> = Vec::new();
@@ -189,9 +192,9 @@ impl std::str::FromStr for Market {
 }
 
 /// Contains information sufficient to identify the exact orderbook.
-///```rust
-///let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
-///```
+/// ```rust
+/// let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
+/// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Symbol {
 	pub base: String,
@@ -229,10 +232,11 @@ impl std::str::FromStr for Symbol {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::exchange_apis::Market;
 	use order_types::{ConceptualMarket, ConceptualOrderType, ConceptualStopMarket};
 	use v_utils::trades::Side;
+
+	use super::*;
+	use crate::exchange_apis::Market;
 
 	#[test]
 	fn test_hub_process() {

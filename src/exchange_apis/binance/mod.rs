@@ -1,32 +1,32 @@
 #![allow(non_snake_case, dead_code)]
 pub mod info;
 mod orders;
-use crate::config::AppConfig;
-use crate::exchange_apis::{order_types::Order, Market};
-use crate::utils::{deser_reqwest, unexpected_response_str};
-use crate::PositionOrderId;
-use anyhow::anyhow;
-use anyhow::Result;
+use std::{
+	collections::HashMap,
+	sync::{Arc, RwLock},
+};
+
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 pub use info::futures_exchange_info;
 pub use orders::*;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use sha2::Sha256;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use tokio::select;
-use tokio::task::JoinSet;
+use tokio::{select, task::JoinSet};
 use tracing::trace;
 use url::Url;
 use uuid::Uuid;
 
-use super::order_types::IdRequirements;
-use super::HubCallback;
-use super::HubPassforward;
+use super::{order_types::IdRequirements, HubCallback, HubPassforward};
+use crate::{
+	config::AppConfig,
+	exchange_apis::{order_types::Order, Market},
+	utils::{deser_reqwest, unexpected_response_str},
+	PositionOrderId,
+};
 type HmacSha256 = Hmac<Sha256>;
 
 #[allow(dead_code)]
@@ -35,13 +35,7 @@ pub struct Binance {
 	futures_symbols: HashMap<String, FuturesSymbol>,
 }
 
-pub async fn signed_request<S: AsRef<str>>(
-	http_method: reqwest::Method,
-	endpoint_str: &str,
-	mut params: HashMap<&'static str, String>,
-	key: S,
-	secret: S,
-) -> Result<reqwest::Response> {
+pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoint_str: &str, mut params: HashMap<&'static str, String>, key: S, secret: S) -> Result<reqwest::Response> {
 	let mut headers = HeaderMap::new();
 	headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
 	headers.insert("X-MBX-APIKEY", HeaderValue::from_str(key.as_ref())?);
@@ -147,8 +141,8 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 
 	let client = reqwest::Client::new();
 	let r = client.get(url).json(&params).send().await?;
-	//let r_json: serde_json::Value = deser_reqwest(r)().await?;
-	//let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
+	// let r_json: serde_json::Value = deser_reqwest(r)().await?;
+	// let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
 	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
 	let prices: Vec<serde_json::Value> = deser_reqwest(r).await?;
 	let price = prices
@@ -172,7 +166,7 @@ pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) 
 		let mut params = HashMap::<&str, String>::new();
 		params.insert("symbol", o.base_info.symbol.to_string());
 		params.insert("orderId", o.binance_id.unwrap().to_string());
-		params.insert("recvWindow", "60000".to_owned()); //dbg currently they are having some issues with response speed
+		params.insert("recvWindow", "60000".to_owned()); // dbg currently they are having some issues with response speed
 
 		signed_request(reqwest::Method::DELETE, url.as_str(), params, key.clone(), secret.clone())
 	});
@@ -213,9 +207,9 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 		dbg!(&symbol_info);
 
-		//let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
+		// let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
 		//
-		//Ok((tick_size as u8, step_size as u8))
+		// Ok((tick_size as u8, step_size as u8))
 		Ok((symbol_info.price_precision as u8, symbol_info.quantity_precision as u8))
 	})
 }
@@ -225,7 +219,7 @@ pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<
 
 	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
 	let mut params = binance_order.to_params();
-	params.insert("recvWindow", "60000".to_owned()); //dbg currently they/me are having some issues with response speed
+	params.insert("recvWindow", "60000".to_owned()); // dbg currently they/me are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
@@ -234,14 +228,14 @@ pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<
 }
 
 /// Normally, the only cases where the return from this poll is going to be _reacted_ to, is when response.status == OrderStatus::Filled or an error is returned.
-//TODO!: translate to websockets
+// TODO!: translate to websockets
 pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order: &BinanceOrder) -> Result<FuturesPositionResponse> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", binance_order.base_info.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
-	params.insert("recvWindow", "10000".to_owned()); //dbg currently they are having some issues with response speed
+	params.insert("recvWindow", "10000".to_owned()); // dbg currently they are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
@@ -249,7 +243,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 }
 
 /// Binance wants both qty and price in orders to always respect the minimum step of the price
-//TODO!!!: Store all needed exchange info locally
+// TODO!!!: Store all needed exchange info locally
 pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
 	let (price_precision, _) = futures_precisions(coin)?.await?;
 	let factor = 10_f64.powi(price_precision as i32);
@@ -264,13 +258,8 @@ pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
-///NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
-pub async fn binance_runtime(
-	config: AppConfig,
-	parent_js: &mut JoinSet<()>,
-	hub_callback: tokio::sync::mpsc::Sender<HubCallback>,
-	mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>,
-) {
+/// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
+pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: tokio::sync::mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
 	trace!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
@@ -283,7 +272,7 @@ pub async fn binance_runtime(
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
 	parent_js.spawn(async move {
-		//TODO!!!: make a websocket
+		// TODO!!!: make a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 

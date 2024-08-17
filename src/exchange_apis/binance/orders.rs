@@ -1,8 +1,14 @@
-use crate::exchange_apis::binance;
-use crate::exchange_apis::order_types::{Order, OrderType, StopMarketOrder};
-use crate::positions::PositionOrderId;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{
+	exchange_apis::{
+		binance,
+		order_types::{Order, OrderType, StopMarketOrder},
+	},
+	positions::PositionOrderId,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct BinanceOrder {
@@ -12,10 +18,7 @@ pub struct BinanceOrder {
 }
 impl BinanceOrder {
 	pub fn new(base_info: Order<PositionOrderId>) -> Self {
-		Self {
-			base_info,
-			..Default::default()
-		}
+		Self { base_info, ..Default::default() }
 	}
 
 	pub fn to_params(&self) -> HashMap<&'static str, String> {
@@ -44,16 +47,14 @@ impl BinanceOrder {
 		params
 	}
 
-	//HACK: should be referencing preloaded values
+	// HACK: should be referencing preloaded values
 	pub async fn from_standard(mut order: Order<PositionOrderId>) -> Self {
 		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
 		order.qty_notional = coin_quantity_adjusted;
 
 		let order_type = match &order.order_type {
 			OrderType::Market => OrderType::Market,
-			OrderType::StopMarket(sm) => OrderType::StopMarket(StopMarketOrder::new({
-				binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap()
-			})),
+			OrderType::StopMarket(sm) => OrderType::StopMarket(StopMarketOrder::new(binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap())),
 		};
 		order.order_type = order_type;
 

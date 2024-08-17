@@ -11,16 +11,12 @@ repository = "https://github.com/valeratrades/discretionary_engine"
 rust-version = "1.80.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html#[[test]]#name = "tests"#path = "tests/main.rs"##[dev-dependencies]#trybuild = { version = "^1.0.89", features = ["diff"]}
 
-#[profile.dev]
-## Disabling debug info speeds up builds a bunch,
-## and we don't rely on it for debugging that much.
-#debug = 0
-
 # wait, so does it work or no?
 [lints.clippy]
-cmp_float = "allow"
-len_zero = "allow"
-get_zero = "allow"
+cmp_float = "allow" # is bad for `==` direct comparisons, but `<` and `>` should be allowed
+#get_first = "allow" # const fn, so actually more performant
+len_zero = "allow" # `.empty()` is O(1) but on &str only
+
 
 [package.metadata.docs.rs]
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]

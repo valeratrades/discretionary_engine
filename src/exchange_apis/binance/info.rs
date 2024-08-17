@@ -53,19 +53,19 @@ pub struct RateLimit {
 // the thing with multiplying orders due to weird limits should be here.
 //#[derive(Debug, Deserialize, Serialize)]
 //#[allow(non_snake_case)]
-//struct SymbolFilter {
-//	filterType: String,
-//	maxPrice: String,
-//	minPrice: String,
-//	tickSize: String,
-//	maxQty: String,
-//	minQty: String,
-//	stepSize: String,
-//	limit: u32,
-//	notional: String,
-//	multiplierUp: String,
-//	multiplierDown: String,
-//	multiplierDecimal: u32,
+// struct SymbolFilter {
+// 	filterType: String,
+// 	maxPrice: String,
+// 	minPrice: String,
+// 	tickSize: String,
+// 	maxQty: String,
+// 	minQty: String,
+// 	stepSize: String,
+// 	limit: u32,
+// 	notional: String,
+// 	multiplierUp: String,
+// 	multiplierDown: String,
+// 	multiplierDecimal: u32,
 //}
 
 #[derive(Debug, Deserialize, Serialize)]

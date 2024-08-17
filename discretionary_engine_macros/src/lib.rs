@@ -4,8 +4,7 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::format_ident;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::parse_macro_input;
 
 /// Derivation of a Wrapper that allows for dynamic configuration of Protocol's params.

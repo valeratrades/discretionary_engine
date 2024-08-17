@@ -1,13 +1,13 @@
 mod sar;
 mod trailing_stop;
-use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
+use std::{collections::HashSet, str::FromStr};
+
 use anyhow::Result;
-use std::collections::HashSet;
-use std::str::FromStr;
-use tokio::sync::mpsc;
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
+
+use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
@@ -21,36 +21,36 @@ pub enum ProtocolType {
 
 pub trait Protocol {
 	type Params;
-	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec)
-		-> Result<()>;
+	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
+	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()>;
 	fn update_params(&self, params: &Self::Params) -> anyhow::Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }
 
-//TODO!!: revisit
+// TODO!!: revisit
 /// possibly will implement Iterator on this, because all additional methods seem to want it.
 //#[derive(v_utils::macros::VecFieldsFromVecStr, Debug, Clone, Default, serde::Serialize, serde::Deserialize, derive_new::new)]
-//pub struct FollowupProtocols {
-//	pub trailing_stop: Vec<TrailingStopWrapper>,
+// pub struct FollowupProtocols {
+// 	pub trailing_stop: Vec<TrailingStopWrapper>,
 //}
-//impl FollowupProtocols {
-//	pub fn count_subtypes(&self) -> HashMap<ProtocolType, usize> {
-//		let mut different_types: std::collections::HashMap<ProtocolType, usize> = std::collections::HashMap::new();
-//		for protocol in &self.trailing_stop {
-//			let subtype = protocol.get_subtype();
-//			*different_types.entry(subtype).or_insert(0) += 1;
-//		}
-//		// ... others
-//		different_types
-//	}
+// impl FollowupProtocols {
+// 	pub fn count_subtypes(&self) -> HashMap<ProtocolType, usize> {
+// 		let mut different_types: std::collections::HashMap<ProtocolType, usize> = std::collections::HashMap::new();
+// 		for protocol in &self.trailing_stop {
+// 			let subtype = protocol.get_subtype();
+// 			*different_types.entry(subtype).or_insert(0) += 1;
+// 		}
+// 		// ... others
+// 		different_types
+// 	}
 //
-//	pub fn attach_all(&self, tx_orders: mpsc::Sender<ProtocolOrders>, spec: &PositionSpec) -> anyhow::Result<()> {
-//		for ts in &self.trailing_stop {
-//			ts.attach(tx_orders.clone(), spec)?;
-//		}
-//		// ... others
-//		Ok(())
-//	}
+// 	pub fn attach_all(&self, tx_orders: mpsc::Sender<ProtocolOrders>, spec: &PositionSpec) -> anyhow::Result<()> {
+// 		for ts in &self.trailing_stop {
+// 			ts.attach(tx_orders.clone(), spec)?;
+// 		}
+// 		// ... others
+// 		Ok(())
+// 	}
 //}
 
 #[derive(Debug, Clone)]
@@ -69,12 +69,7 @@ impl FromStr for FollowupProtocol {
 	}
 }
 impl FollowupProtocol {
-	pub fn attach(
-		&self,
-		position_set: &mut JoinSet<Result<()>>,
-		tx_orders: mpsc::Sender<ProtocolOrders>,
-		position_spec: &crate::positions::PositionSpec,
-	) -> anyhow::Result<()> {
+	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()> {
 		match self {
 			FollowupProtocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
 		}
@@ -143,7 +138,7 @@ impl ProtocolDynamicInfo {
 }
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
-///NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
+/// NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
 #[derive(Debug, Clone, derive_new::new, Default)]
 pub struct ProtocolOrders {
 	pub protocol_id: String,
@@ -204,12 +199,13 @@ impl ProtocolOrders {
 
 #[cfg(test)]
 mod tests {
+	use v_utils::trades::Side;
+
 	use super::*;
 	use crate::exchange_apis::{
 		order_types::{ConceptualMarket, ConceptualOrderType},
 		Market, Symbol,
 	};
-	use v_utils::trades::Side;
 
 	#[test]
 	fn test_apply_mask() {

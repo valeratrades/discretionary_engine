@@ -1,18 +1,18 @@
-use crate::exchange_apis::{order_types::*, Market, Symbol};
-use crate::positions::PositionSpec;
-use crate::protocols::{Protocol, ProtocolOrders, ProtocolType};
 use anyhow::Result;
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
-use v_utils::io::Percent;
-use v_utils::macros::CompactFormat;
-use v_utils::prelude::*;
-use v_utils::trades::Side;
+use v_utils::{io::Percent, macros::CompactFormat, prelude::*, trades::Side};
 
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, ProtocolWrapper)]
+use crate::{
+	exchange_apis::{order_types::*, Market, Symbol},
+	positions::PositionSpec,
+	protocols::{Protocol, ProtocolOrders, ProtocolType},
+};
+
+#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
 pub struct TrailingStop {
 	percent: Percent,
 }
@@ -20,7 +20,6 @@ pub struct TrailingStop {
 impl Protocol for TrailingStopWrapper {
 	type Params = TrailingStop;
 
-	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
 	fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
 		let symbol = Symbol {
 			base: position_spec.asset.clone(),
@@ -29,25 +28,25 @@ impl Protocol for TrailingStopWrapper {
 		};
 		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
 
+		//BUG: update_params will do nothing, as we're cloning them before starting the tasks.
 		let params = self.0.clone();
 		let position_spec = position_spec.clone();
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
 		position_set.spawn(async move {
-			let mut s = JoinSet::new();
-			s.spawn(async move {
+			let mut js = JoinSet::new();
+			js.spawn(async move {
 				let (ws_stream, _) = connect_async(address).await.unwrap();
 				let (_, mut read) = ws_stream.split();
 
 				while let Some(msg) = read.next().await {
 					let data = msg.unwrap().into_data();
 					match serde_json::from_slice::<Value>(&data) {
-						Ok(json) => {
+						Ok(json) =>
 							if let Some(price_str) = json.get("p") {
 								let price: f64 = price_str.as_str().unwrap().parse().unwrap();
 								tx.send(price).await.unwrap();
-							}
-						}
+							},
 						Err(e) => {
 							println!("Failed to parse message as JSON: {}", e);
 						}
@@ -55,7 +54,7 @@ impl Protocol for TrailingStopWrapper {
 				}
 			});
 
-			s.spawn(async move {
+			js.spawn(async move {
 				let mut ts_indicator = TrailingStopIndicator::new();
 				while let Some(price) = rx.recv().await {
 					let maybe_order = ts_indicator.step(price, params.borrow().percent, position_spec.side, &symbol);
@@ -66,14 +65,14 @@ impl Protocol for TrailingStopWrapper {
 					}
 				}
 			});
-			s.join_all().await;
+			js.join_all().await;
 			Ok(())
 		});
 		Ok(())
 	}
 
 	fn update_params(&self, new_params: &TrailingStop) -> Result<()> {
-		*self.0.borrow_mut() = new_params.clone();
+		*self.0.borrow_mut() = *new_params;
 		Ok(())
 	}
 
@@ -97,7 +96,7 @@ impl TrailingStopIndicator {
 			self.bottom = price;
 			if side == Side::Sell {
 				let target_price = price * Self::heuristic(*percent, Side::Sell);
-				let sm = ConceptualStopMarket::new(1.0, target_price);
+				let sm = ConceptualStopMarket::new(target_price);
 				let order = Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::StopMarket(sm),
 					Symbol::new("BTC", "USDT", Market::BinanceFutures),
@@ -111,13 +110,8 @@ impl TrailingStopIndicator {
 			self.top = price;
 			if side == Side::Buy {
 				let target_price = price * Self::heuristic(*percent, Side::Buy);
-				let sm = ConceptualStopMarket::new(1.0, target_price);
-				let order = Some(ConceptualOrderPercents::new(
-					ConceptualOrderType::StopMarket(sm),
-					symbol.clone(),
-					Side::Sell,
-					1.0,
-				));
+				let sm = ConceptualStopMarket::new(target_price);
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
 				return order;
 			}
 		}

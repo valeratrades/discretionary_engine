@@ -1,13 +1,15 @@
-use crate::{exchange_apis::Symbol, PositionOrderId};
+use std::hash::Hash;
+
 use anyhow::Result;
 use derive_new::new;
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
 use v_utils::trades::Side;
 
-//TODO!: Move order_types to v_utils when stable
+use crate::{exchange_apis::Symbol, PositionOrderId};
 
-//TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
+// TODO!: Move order_types to v_utils when stable
+
+// TODO!!: automatically derive the Protocol Order types (by substituting `size` with `percent_size`, then auto-implementation of the conversion. Looks like I'm making a `discretionary_engine_macros` crate specifically to for this.
 
 pub trait IdRequirements = Hash + Clone + PartialEq + Default;
 
@@ -20,19 +22,19 @@ pub struct Order<Id: IdRequirements> {
 	pub qty_notional: f64,
 }
 
-///NB: id of all orders must match uuid field of parent ConceptualOrder if any
+/// NB: id of all orders must match uuid field of parent ConceptualOrder if any
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub enum OrderType {
 	#[default]
 	Market,
 	StopMarket(StopMarketOrder),
-	//Limit(LimitOrder),
-	//StopLimit(StopLimitOrder),
-	//TrailingStop(TrailingStopOrder),
-	//TWAP(TWAPOrder),
-	//Reverse(ReverseOrder),
-	//ScaledOrder(ScaledOrder),
-	//StopMarket(StopMarketOrder),
+	// Limit(LimitOrder),
+	// StopLimit(StopLimitOrder),
+	// TrailingStop(TrailingStopOrder),
+	// TWAP(TWAPOrder),
+	// Reverse(ReverseOrder),
+	// ScaledOrder(ScaledOrder),
+	// StopMarket(StopMarketOrder),
 }
 
 #[derive(Clone, Debug, PartialEq, Default, new, Serialize, Deserialize)]
@@ -99,8 +101,6 @@ pub struct ConceptualMarket {
 
 #[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
 pub struct ConceptualStopMarket {
-	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
-	pub maximum_slippage_percent: f64,
 	pub price: f64,
 }
 
@@ -125,6 +125,33 @@ impl ConceptualOrderPercents {
 			symbol: self.symbol,
 			side: self.side,
 			qty_notional: total_controled_size * self.qty_percent_of_controlled,
+		}
+	}
+
+	#[doc(hidden)]
+	/// # Panics: for use in tests only
+	pub fn unsafe_market(&self) -> &ConceptualMarket {
+		match &self.order_type {
+			ConceptualOrderType::Market(m) => m,
+			_ => panic!("Expected Market order, got {:?}", self.order_type),
+		}
+	}
+
+	#[doc(hidden)]
+	/// # Panics: for use in tests only
+	pub fn unsafe_limit(&self) -> &ConceptualLimit {
+		match &self.order_type {
+			ConceptualOrderType::Limit(l) => l,
+			_ => panic!("Expected Limit order, got {:?}", self.order_type),
+		}
+	}
+
+	#[doc(hidden)]
+	/// # Panics: for use in tests only
+	pub fn unsafe_stop_market(&self) -> &ConceptualStopMarket {
+		match &self.order_type {
+			ConceptualOrderType::StopMarket(s) => s,
+			_ => panic!("Expected StopMarket order, got {:?}", self.order_type),
 		}
 	}
 }

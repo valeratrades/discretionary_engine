@@ -1,9 +1,9 @@
 #![allow(dead_code, unused_imports)]
+use std::time::Duration;
+
 use anyhow::Result;
 use serde::de::DeserializeOwned;
-use std::time::Duration;
-use tokio::runtime::Runtime;
-use tokio::time::sleep;
+use tokio::{runtime::Runtime, time::sleep};
 use tracing::{subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
 use tracing_log::LogTracer;
@@ -13,10 +13,10 @@ use tracing_subscriber::{
 	EnvFilter, Registry,
 };
 
-///# Panics
+/// # Panics
 pub fn init_subscriber() {
-	//let console_layer = console_subscriber::spawn();
-	//let formatting_layer = BunyanFormattingLayer::new("discretionary_engine".into(), std::io::stdout);
+	// let console_layer = console_subscriber::spawn();
+	// let formatting_layer = BunyanFormattingLayer::new("discretionary_engine".into(), std::io::stdout);
 	let setup = |output: fn() -> Box<dyn std::io::Write>| {
 		let formatting_layer = fmt::layer().json().pretty().with_writer(output).with_file(true).with_line_number(true);
 		let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info"));

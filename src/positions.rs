@@ -1,17 +1,21 @@
-use crate::config::AppConfig;
-use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId};
-use crate::exchange_apis::{binance, HubRx, Symbol};
-use crate::protocols::{FollowupProtocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType};
+use std::{collections::HashMap, str::FromStr};
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::str::FromStr;
-use tokio::select;
-use tokio::sync::mpsc;
-use tokio::task::JoinSet;
+use tokio::{select, sync::mpsc, task::JoinSet};
 use tracing::{info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
+
+use crate::{
+	config::AppConfig,
+	exchange_apis::{
+		binance,
+		order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId},
+		HubRx, Symbol,
+	},
+	protocols::{FollowupProtocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType},
+};
 
 /// What the Position *is*_
 #[derive(Clone, Debug, Default, derive_new::new)]
@@ -27,10 +31,10 @@ pub struct PositionAcquisition {
 	__spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
-	protocols_spec: Option<String>, //Vec<AcquisitionProtocol>,
+	protocols_spec: Option<String>, // Vec<AcquisitionProtocol>,
 }
 impl PositionAcquisition {
-	//dbg
+	// dbg
 	#[allow(clippy::unused_async)]
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
 		Ok(Self {
@@ -46,11 +50,11 @@ impl PositionAcquisition {
 		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
 
 		let current_price = binance::futures_price(&coin).await?;
-		let coin_quantity = 20.0; //dbg spec.size_usdt / current_price;
+		let coin_quantity = 20.0; // dbg spec.size_usdt / current_price;
 
 		let mut current_state = Self {
 			__spec: spec.clone(),
-			target_notional: coin_quantity, //BUG: on very small order sizes, the mismatch between the size we're requesting and adjusted_qty we trim towards to satisfy exchange requirements, could be troublesome
+			target_notional: coin_quantity, /* BUG: on very small order sizes, the mismatch between the size we're requesting and adjusted_qty we trim towards to satisfy exchange requirements, could be troublesome */
 			acquired_notional: 0.0,
 			protocols_spec: None,
 		};
@@ -70,7 +74,7 @@ impl PositionAcquisition {
 
 		current_state.acquired_notional = coin_quantity;
 
-		//TODO!!!!: implement Acquisition Protocol: delayed buy-limit
+		// TODO!!!!: implement Acquisition Protocol: delayed buy-limit
 		// the action core is the same as Followup's
 
 		Ok(current_state)
@@ -91,7 +95,7 @@ struct TargetOrders {
 	stop_orders_total_notional: f64,
 	normal_orders_total_notional: f64,
 	market_orders_total_notional: f64,
-	//total_usd: f64,
+	// total_usd: f64,
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	hub_tx: tokio::sync::mpsc::Sender<HubRx>,
 }
@@ -126,7 +130,7 @@ impl TargetOrders {
 			Ok(_) => {}
 			Err(e) => {
 				info!("Error sending orders: {:?}", e);
-				panic!(); //dbg
+				panic!(); // dbg
 			}
 		};
 	}
@@ -183,7 +187,7 @@ impl PositionFollowup {
 				});
 			}
 
-			///NB: Market-like orders MUST be ran first
+			/// NB: Market-like orders MUST be ran first
 			fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
 				for order in incoming {
 					let notional = order.qty_notional;
@@ -274,7 +278,7 @@ impl PositionOrderId {
 	}
 }
 
-//pub struct PositionClosed {
-//	_followup: PositionFollowup,
-//	t_closed: DateTime<Utc>,
+// pub struct PositionClosed {
+// 	_followup: PositionFollowup,
+// 	t_closed: DateTime<Utc>,
 //}
