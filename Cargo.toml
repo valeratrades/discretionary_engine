@@ -1,3 +1,5 @@
+cargo-features = ["codegen-backend"]
+
 [package]
 name = "discretionary_engine"
 version = "0.1.1"
@@ -19,6 +21,9 @@ len_zero = "allow" # `.empty()` is O(1) but on &str only
 
 [package.metadata.docs.rs]
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+
+[profile.dev]
+codegen-backend = "cranelift"
 
 [workspace.lints.rust]
 unused_crate_dependencies = "warn"
