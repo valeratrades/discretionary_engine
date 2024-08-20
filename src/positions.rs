@@ -97,52 +97,57 @@ pub struct PositionCallback {
 impl PositionFollowup {
 	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
-		let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
-		for protocol in &protocols {
-			let subtype = protocol.get_subtype();
-			*counted_subtypes.entry(subtype).or_insert(0) += 1;
-		}
-
-		let (tx_orders, mut rx_orders) = mpsc::channel::<ProtocolOrders>(32);
-		let mut set = JoinSet::new();
-		for protocol in protocols.clone() {
-			protocol.attach(&mut set, tx_orders.clone(), &acquired.__spec)?;
-		}
+		let mut js = JoinSet::new();
+		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec);
 
 		let position_id = Uuid::now_v7();
-		let (tx_fills, mut rx_fills) = tokio::sync::mpsc::channel::<Vec<ProtocolFill>>(32);
+		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(32);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
-
-		let mut closed_notional = 0.0;
+		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
 
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - closed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
 				},
 				Some(fills_vec) = rx_fills.recv() => {
-					process_fills_update(&mut last_fill_key, fills_vec, &mut protocols_dynamic_info, &mut closed_notional).await?;
-					if closed_notional >= acquired.acquired_notional {
+					process_fills_update(&mut last_fill_key, fills_vec, &mut protocols_dynamic_info, &mut executed_notional).await?;
+					if executed_notional >= acquired.acquired_notional {
 						break;
 					}
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - closed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
 				},
-				Some(_) = set.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
+				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
 			}
 		}
 
-		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", closed_notional, acquired.target_notional);
+		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, acquired.target_notional);
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: protocols,
-			closed_notional,
+			closed_notional: executed_notional,
 		})
 	}
+}
+
+fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[FollowupProtocol], spec: &PositionSpec) -> (mpsc::Receiver<ProtocolOrders>, HashMap<ProtocolType, usize>) {
+	let (tx_orders, rx_orders) = mpsc::channel::<ProtocolOrders>(256);
+	for protocol in protocols {
+		protocol.attach(parent_js, tx_orders.clone(), spec).unwrap();
+	}
+
+	let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();
+	for protocol in protocols {
+		let subtype = protocol.get_subtype();
+		*counted_subtypes.entry(subtype).or_insert(0) += 1;
+	}
+	
+	(rx_orders, counted_subtypes)
 }
 
 async fn update_orders(
