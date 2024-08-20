@@ -20,9 +20,9 @@ pub struct ApproachingLimit {
 impl ProtocolTrait for ApproachingLimitWrapper {
 	type Params = ApproachingLimit;
 
-	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		let symbol = Symbol {
-			base: position_spec.asset.clone(),
+			base: asset,
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
@@ -30,8 +30,6 @@ impl ProtocolTrait for ApproachingLimitWrapper {
 
 		// BUG: update_params will do nothing, as we're cloning them before starting the tasks.
 		let params = self.0.clone();
-		let position_spec = position_spec.clone();
-
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
 		position_js.spawn(async move {
 			let mut js = JoinSet::new();
@@ -57,7 +55,7 @@ impl ProtocolTrait for ApproachingLimitWrapper {
 			js.spawn(async move {
 				let mut ts_indicator = ApproachingLimitIndicator::new();
 				while let Some(price) = rx.recv().await {
-					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, position_spec.side, &symbol);
+					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, protocol_side, &symbol);
 					if let Some(order) = maybe_order {
 						let protocol_spec = params.read().unwrap().to_string();
 						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
@@ -92,29 +90,7 @@ impl ApproachingLimitIndicator {
 	}
 
 	fn step(&mut self, price: f64, percent: Percent, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
-		if price < self.bottom || self.bottom == 0.0 {
-			self.bottom = price;
-			if side == Side::Sell {
-				let target_price = price * Self::heuristic(*percent, Side::Sell);
-				let sm = ConceptualStopMarket::new(target_price);
-				let order = Some(ConceptualOrderPercents::new(
-					ConceptualOrderType::StopMarket(sm),
-					Symbol::new("BTC", "USDT", Market::BinanceFutures),
-					Side::Buy,
-					1.0,
-				));
-				return order;
-			}
-		}
-		if price > self.top || self.top == 0.0 {
-			self.top = price;
-			if side == Side::Buy {
-				let target_price = price * Self::heuristic(*percent, Side::Buy);
-				let sm = ConceptualStopMarket::new(target_price);
-				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
-				return order;
-			}
-		}
+		unimplemented!();
 		None
 	}
 

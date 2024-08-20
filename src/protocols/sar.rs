@@ -32,14 +32,13 @@ pub struct Sar {
 impl ProtocolTrait for SarWrapper {
 	type Params = Sar;
 
-	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		let symbol = Symbol {
-			base: position_spec.asset.clone(),
+			base: asset,
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
 		let tf = { self.0.read().unwrap().timeframe };
-		let position_spec = position_spec.clone();
 		// BUG: ref trailing_stop.rs
 		let params = self.0.clone();
 
@@ -76,12 +75,11 @@ impl ProtocolTrait for SarWrapper {
 				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf.format_binance().unwrap(), 100)
 					.await
 					.unwrap();
-				let position_side = position_spec.side;
 				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
 				let mut sar = SarIndicator::init(&init_ohlcs, &params.read().unwrap());
 
 				while let Some(ohlc) = rx.recv().await {
-					let maybe_order = sar.step(ohlc, &params.read().unwrap(), &symbol, position_side);
+					let maybe_order = sar.step(ohlc, &params.read().unwrap(), &symbol, protocol_side);
 					if last_order != maybe_order {
 						let protocol_spec = params.read().unwrap().to_string();
 						tx_orders.send(ProtocolOrders::new(protocol_spec, vec![maybe_order.clone()])).await.unwrap();
@@ -156,7 +154,7 @@ impl SarIndicator {
 		}
 
 		// Compile orders
-		let is_followup_side = (side == Side::Buy && is_uptrend) || (side == Side::Sell && !is_uptrend);
+		let is_followup_side = (side == Side::Sell && is_uptrend) || (side == Side::Buy && !is_uptrend);
 		if is_followup_side {
 			Some(ConceptualOrderPercents {
 				order_type: ConceptualOrderType::StopMarket(ConceptualStopMarket::new(self.sar)),
@@ -192,7 +190,7 @@ mod tests {
 		let mut orders = Vec::new();
 
 		for (i, ohlc) in test_data_ohlc.into_iter().enumerate() {
-			let maybe_order = sar_indicator.step(ohlc, &sar_wrapper.0.read().unwrap(), &Symbol::default(), Side::default());
+			let maybe_order = sar_indicator.step(ohlc, &sar_wrapper.0.read().unwrap(), &Symbol::default(), Side::Sell);
 			recorded_indicator_values.push(sar_indicator.sar);
 			orders.push((i, maybe_order.map(|o| o.unsafe_stop_market().price)));
 		}

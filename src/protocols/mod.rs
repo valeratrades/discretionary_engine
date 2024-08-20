@@ -10,6 +10,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 use trailing_stop::TrailingStop;
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
+use v_utils::trades::Side;
 
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 
@@ -26,7 +27,7 @@ pub enum ProtocolType {
 pub trait ProtocolTrait {
 	type Params;
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
-	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()>;
+	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()>;
 	fn update_params(&self, params: Self::Params) -> Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }
@@ -52,11 +53,11 @@ impl FromStr for Protocol {
 	}
 }
 impl Protocol {
-	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()> {
+	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		match self {
-			Protocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
-			Protocol::Sar(sar) => sar.attach(position_set, tx_orders, position_spec),
-			Protocol::ApproachingLimit(al) => al.attach(position_set, tx_orders, position_spec),
+			Protocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, asset, protocol_side),
+			Protocol::Sar(sar) => sar.attach(position_set, tx_orders, asset, protocol_side),
+			Protocol::ApproachingLimit(al) => al.attach(position_set, tx_orders, asset, protocol_side),
 		}
 	}
 

@@ -98,7 +98,7 @@ impl PositionFollowup {
 	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut js = JoinSet::new();
-		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec);
+		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, acquired.__spec.side);
 
 		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);
@@ -135,10 +135,10 @@ impl PositionFollowup {
 	}
 }
 
-fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], spec: &PositionSpec) -> (mpsc::Receiver<ProtocolOrders>, HashMap<ProtocolType, usize>) {
+fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], asset: &str, protocols_side: Side) -> (mpsc::Receiver<ProtocolOrders>, HashMap<ProtocolType, usize>) {
 	let (tx_orders, rx_orders) = mpsc::channel::<ProtocolOrders>(256);
 	for protocol in protocols {
-		protocol.attach(parent_js, tx_orders.clone(), spec).unwrap();
+		protocol.attach(parent_js, tx_orders.clone(), asset.to_owned(), protocols_side).unwrap();
 	}
 
 	let mut counted_subtypes: HashMap<ProtocolType, usize> = HashMap::new();

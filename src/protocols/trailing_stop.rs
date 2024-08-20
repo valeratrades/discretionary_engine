@@ -20,9 +20,9 @@ pub struct TrailingStop {
 impl ProtocolTrait for TrailingStopWrapper {
 	type Params = TrailingStop;
 
-	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
+	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		let symbol = Symbol {
-			base: position_spec.asset.clone(),
+			base: asset,
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
@@ -30,7 +30,6 @@ impl ProtocolTrait for TrailingStopWrapper {
 
 		// BUG: update_params will do nothing, as we're cloning them before starting the tasks.
 		let params = self.0.clone();
-		let position_spec = position_spec.clone();
 
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
 		position_js.spawn(async move {
@@ -57,7 +56,7 @@ impl ProtocolTrait for TrailingStopWrapper {
 			js.spawn(async move {
 				let mut ts_indicator = TrailingStopIndicator::new();
 				while let Some(price) = rx.recv().await {
-					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, position_spec.side, &symbol);
+					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, protocol_side, &symbol);
 					if let Some(order) = maybe_order {
 						let protocol_spec = params.read().unwrap().to_string();
 						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
@@ -94,12 +93,12 @@ impl TrailingStopIndicator {
 	fn step(&mut self, price: f64, percent: Percent, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
 		if price < self.bottom || self.bottom == 0.0 {
 			self.bottom = price;
-			if side == Side::Sell {
-				let target_price = price * Self::heuristic(*percent, Side::Sell);
+			if side == Side::Buy {
+				let target_price = price * ((1.0 + percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
 				let order = Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::StopMarket(sm),
-					Symbol::new("BTC", "USDT", Market::BinanceFutures),
+					symbol.clone(),
 					Side::Buy,
 					1.0,
 				));
@@ -108,22 +107,14 @@ impl TrailingStopIndicator {
 		}
 		if price > self.top || self.top == 0.0 {
 			self.top = price;
-			if side == Side::Buy {
-				let target_price = price * Self::heuristic(*percent, Side::Buy);
+			if side == Side::Sell {
+				let target_price = price * ((1.0 - percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
 				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
 				return order;
 			}
 		}
 		None
-	}
-
-	fn heuristic(percent: f64, side: Side) -> f64 {
-		let base = match side {
-			Side::Buy => 1.0 - percent.abs(),
-			Side::Sell => 1.0 + percent.abs(),
-		};
-		1.0 + base.ln()
 	}
 }
 
@@ -137,7 +128,7 @@ mod tests {
 		let mut orders = Vec::new();
 		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
 		for (i, price) in prices.iter().enumerate() {
-			if let Some(order) = ts.step(*price, Percent(0.02), Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
+			if let Some(order) = ts.step(*price, Percent(0.02), Side::Sell, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
 				let ConceptualOrderPercents { order_type, .. } = order;
 				if let ConceptualOrderType::StopMarket(sm) = order_type {
 					orders.push((i, Some(sm.price)));
