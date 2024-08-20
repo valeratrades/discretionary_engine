@@ -118,98 +118,6 @@ impl PositionFollowup {
 		let mut closed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
 
-		fn recalculate_target_orders(
-			counted_subtypes: &HashMap<ProtocolType, usize>,
-			left_to_target_notional: f64,
-			side: Side,
-			dyn_info: &HashMap<String, ProtocolDynamicInfo>,
-		) -> Vec<ConceptualOrder<ProtocolOrderId>> {
-			let mut market_orders = Vec::new();
-			let mut stop_orders = Vec::new();
-			let mut limit_orders = Vec::new();
-			for (protocol_spec_str, info) in dyn_info.iter() {
-				let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
-				let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
-				let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional);
-				conceptual_orders.into_iter().for_each(|o| match o.order_type {
-					ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
-					ConceptualOrderType::Limit(_) => limit_orders.push(o),
-					ConceptualOrderType::Market(_) => market_orders.push(o),
-				});
-			}
-
-			/// NB: Market-like orders MUST be ran first
-			fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
-				for order in incoming {
-					let notional = order.qty_notional;
-					let mut order = order.clone();
-					if notional > *left_to_target {
-						order.qty_notional = *left_to_target;
-					}
-					extendable.push(order.clone());
-					*left_to_target -= notional;
-				}
-			}
-
-			let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
-
-			let mut left_to_target_marketlike_notional = left_to_target_notional;
-			update_order_selection(&mut new_target_orders, &market_orders, &mut left_to_target_marketlike_notional);
-
-			match side {
-				Side::Buy => {
-					stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-					limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-				}
-				Side::Sell => {
-					stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
-					limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
-				}
-			}
-			let mut left_to_target_stop_notional = left_to_target_marketlike_notional;
-			update_order_selection(&mut new_target_orders, &stop_orders, &mut left_to_target_stop_notional);
-			let mut left_to_target_limit_notional = left_to_target_marketlike_notional;
-			update_order_selection(&mut new_target_orders, &limit_orders, &mut left_to_target_limit_notional);
-
-			new_target_orders
-		}
-		
-		async fn update_orders(hub_tx: mpsc::Sender<HubRx>, position_callback: PositionCallback, last_fill_key: Uuid, counted_subtypes: &HashMap<ProtocolType, usize>, left_to_target_notional: f64, position_side: Side, dyn_info: &HashMap<String, ProtocolDynamicInfo>) -> Result<()> {
-			let new_target_orders = recalculate_target_orders(&counted_subtypes, left_to_target_notional, position_side, &dyn_info);
-			match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
-				Ok(_) => {}
-				Err(e) => {
-					info!("Error sending orders: {:?}", e);
-					return Err(e.into());
-				}
-			};
-			Ok(())
-		}
-
-		async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>) -> Result<()> {
-			info!("{:?} sent orders: {:?}", protocol_orders_update.protocol_id, protocol_orders_update.__orders);
-			if let Some(protocol_info) = dyn_info.get_mut(&protocol_orders_update.protocol_id) {
-				protocol_info.update_orders(protocol_orders_update.clone());
-			} else {
-				dyn_info.insert(protocol_orders_update.protocol_id.clone(), ProtocolDynamicInfo::new(protocol_orders_update.clone()));
-			}
-			Ok(())
-		}
-
-		async fn process_fills_update(last_fill_key: &mut Uuid, fills_vec: Vec<ProtocolFill>, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
-			info!("Received fills: {:?}", fills_vec);
-			for f in fills_vec {
-				*last_fill_key = f.key;
-				let (protocol_order_id, filled_notional) = (f.id, f.qty);
-				*closed_notional += filled_notional;
-				{
-					let protocol_info = dyn_info.get_mut(&protocol_order_id.protocol_id).unwrap();
-					protocol_info.update_fill_at(protocol_order_id.ordinal, filled_notional);
-				}
-			}
-			Ok(())
-		}
-
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
@@ -235,6 +143,106 @@ impl PositionFollowup {
 			closed_notional,
 		})
 	}
+}
+
+async fn update_orders(
+	hub_tx: mpsc::Sender<HubRx>,
+	position_callback: PositionCallback,
+	last_fill_key: Uuid,
+	counted_subtypes: &HashMap<ProtocolType, usize>,
+	left_to_target_notional: f64,
+	position_side: Side,
+	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
+) -> Result<()> {
+	let new_target_orders = recalculate_target_orders(counted_subtypes, left_to_target_notional, position_side, dyn_info);
+	match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
+		Ok(_) => {}
+		Err(e) => {
+			info!("Error sending orders: {:?}", e);
+			return Err(e.into());
+		}
+	};
+	Ok(())
+}
+
+async fn process_fills_update(last_fill_key: &mut Uuid, fills_vec: Vec<ProtocolFill>, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
+	info!("Received fills: {:?}", fills_vec);
+	for f in fills_vec {
+		*last_fill_key = f.key;
+		let (protocol_order_id, filled_notional) = (f.id, f.qty);
+		*closed_notional += filled_notional;
+		{
+			let protocol_info = dyn_info.get_mut(&protocol_order_id.protocol_id).unwrap();
+			protocol_info.update_fill_at(protocol_order_id.ordinal, filled_notional);
+		}
+	}
+	Ok(())
+}
+
+fn recalculate_target_orders(
+	counted_subtypes: &HashMap<ProtocolType, usize>,
+	left_to_target_notional: f64,
+	side: Side,
+	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
+) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	let mut market_orders = Vec::new();
+	let mut stop_orders = Vec::new();
+	let mut limit_orders = Vec::new();
+	for (protocol_spec_str, info) in dyn_info.iter() {
+		let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
+		let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
+		let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional);
+		conceptual_orders.into_iter().for_each(|o| match o.order_type {
+			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
+			ConceptualOrderType::Limit(_) => limit_orders.push(o),
+			ConceptualOrderType::Market(_) => market_orders.push(o),
+		});
+	}
+
+	/// NB: Market-like orders MUST be ran first
+	fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
+		for order in incoming {
+			let notional = order.qty_notional;
+			let mut order = order.clone();
+			if notional > *left_to_target {
+				order.qty_notional = *left_to_target;
+			}
+			extendable.push(order.clone());
+			*left_to_target -= notional;
+		}
+	}
+
+	let mut new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>> = Vec::new();
+
+	let mut left_to_target_marketlike_notional = left_to_target_notional;
+	update_order_selection(&mut new_target_orders, &market_orders, &mut left_to_target_marketlike_notional);
+
+	match side {
+		Side::Buy => {
+			stop_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+			limit_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+		}
+		Side::Sell => {
+			stop_orders.sort_by(|a, b| a.price().unwrap().partial_cmp(&b.price().unwrap()).unwrap());
+			limit_orders.sort_by(|a, b| b.price().unwrap().partial_cmp(&a.price().unwrap()).unwrap());
+		}
+	}
+	let mut left_to_target_stop_notional = left_to_target_marketlike_notional;
+	update_order_selection(&mut new_target_orders, &stop_orders, &mut left_to_target_stop_notional);
+	let mut left_to_target_limit_notional = left_to_target_marketlike_notional;
+	update_order_selection(&mut new_target_orders, &limit_orders, &mut left_to_target_limit_notional);
+
+	new_target_orders
+}
+
+async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>) -> Result<()> {
+	info!("{:?} sent orders: {:?}", protocol_orders_update.protocol_id, protocol_orders_update.__orders);
+	if let Some(protocol_info) = dyn_info.get_mut(&protocol_orders_update.protocol_id) {
+		protocol_info.update_orders(protocol_orders_update.clone());
+	} else {
+		dyn_info.insert(protocol_orders_update.protocol_id.clone(), ProtocolDynamicInfo::new(protocol_orders_update.clone()));
+	}
+	Ok(())
 }
 
 #[derive(Clone, Debug, Default, derive_new::new, PartialEq, Hash, Serialize, Deserialize)]
