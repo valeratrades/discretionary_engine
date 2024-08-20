@@ -26,13 +26,13 @@ pub fn derive_protocol_wrapper(input: TokenStream) -> TokenStream {
 
 	let expanded = quote! {
 		#[derive(Clone, Debug, Default)]
-		pub struct #wrapper_name(std::cell::RefCell<#name>);
+		pub struct #wrapper_name(std::sync::Arc<std::sync::RwLock<#name>>);
 		impl std::str::FromStr for #wrapper_name {
 			type Err = anyhow::Error;
 
 			fn from_str(spec: &str) -> anyhow::Result<Self> {
 				let params = #name::from_str(spec)?;
-				Ok(Self(std::cell::RefCell::new(params)))
+				Ok(Self(std::sync::Arc::new(std::sync::RwLock::new(params))))
 			}
 		}
 	};

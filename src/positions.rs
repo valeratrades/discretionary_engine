@@ -14,7 +14,7 @@ use crate::{
 		order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId},
 		HubRx, Symbol,
 	},
-	protocols::{FollowupProtocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType},
+	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType},
 };
 
 /// What the Position *is*_
@@ -84,7 +84,7 @@ impl PositionAcquisition {
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
-	protocols_spec: Vec<FollowupProtocol>,
+	protocols_spec: Vec<Protocol>,
 	closed_notional: f64,
 }
 
@@ -96,12 +96,12 @@ pub struct PositionCallback {
 
 impl PositionFollowup {
 	#[instrument]
-	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<FollowupProtocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec);
 
 		let position_id = Uuid::now_v7();
-		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(32);
+		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
@@ -135,7 +135,7 @@ impl PositionFollowup {
 	}
 }
 
-fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[FollowupProtocol], spec: &PositionSpec) -> (mpsc::Receiver<ProtocolOrders>, HashMap<ProtocolType, usize>) {
+fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], spec: &PositionSpec) -> (mpsc::Receiver<ProtocolOrders>, HashMap<ProtocolType, usize>) {
 	let (tx_orders, rx_orders) = mpsc::channel::<ProtocolOrders>(256);
 	for protocol in protocols {
 		protocol.attach(parent_js, tx_orders.clone(), spec).unwrap();
@@ -146,7 +146,7 @@ fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[FollowupProt
 		let subtype = protocol.get_subtype();
 		*counted_subtypes.entry(subtype).or_insert(0) += 1;
 	}
-	
+
 	(rx_orders, counted_subtypes)
 }
 
@@ -194,7 +194,7 @@ fn recalculate_target_orders(
 	let mut stop_orders = Vec::new();
 	let mut limit_orders = Vec::new();
 	for (protocol_spec_str, info) in dyn_info.iter() {
-		let subtype = FollowupProtocol::from_str(protocol_spec_str).unwrap().get_subtype();
+		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
 		let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
 		let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional);
 		conceptual_orders.into_iter().for_each(|o| match o.order_type {

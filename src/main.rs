@@ -44,14 +44,15 @@ struct PositionArgs {
 	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will error on the stage of making price requests for the coin.
 	#[arg(long)]
 	coin: String,
-	/// position acquisition parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	/// acquisition protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long, default_value = "")]
-	acquisition_protocols_spec: Vec<String>,
-	/// position followup parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	acquisition_protocols: Vec<String>,
+	/// followup protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long)]
-	followup_protocols_spec: Vec<String>,
+	followup_protocols: Vec<String>,
 }
-// Later on we will initialize exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
+
+// TODO: change to initializing exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
 #[tokio::main]
 async fn main() {
@@ -86,7 +87,7 @@ async fn main() {
 				}
 			};
 
-			let followup_protocols = protocols::interpret_followup_specs(position_args.followup_protocols_spec).unwrap();
+			let followup_protocols = protocols::interpret_followup_specs(position_args.followup_protocols).unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();

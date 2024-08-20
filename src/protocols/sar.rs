@@ -1,3 +1,4 @@
+#[allow(unused_imports)] // RA bug
 use std::str::FromStr;
 
 use anyhow::Result;
@@ -16,7 +17,7 @@ use v_utils::{
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
 	positions::PositionSpec,
-	protocols::{Protocol, ProtocolOrders, ProtocolType},
+	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
@@ -28,7 +29,7 @@ pub struct Sar {
 	timeframe: Timeframe,
 }
 
-impl Protocol for SarWrapper {
+impl ProtocolTrait for SarWrapper {
 	type Params = Sar;
 
 	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
@@ -37,7 +38,7 @@ impl Protocol for SarWrapper {
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
-		let tf = { self.0.borrow().timeframe };
+		let tf = { self.0.read().unwrap().timeframe };
 		let position_spec = position_spec.clone();
 		// BUG: ref trailing_stop.rs
 		let params = self.0.clone();
@@ -77,12 +78,12 @@ impl Protocol for SarWrapper {
 					.unwrap();
 				let position_side = position_spec.side;
 				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
-				let mut sar = SarIndicator::init(&init_ohlcs, &params.borrow());
+				let mut sar = SarIndicator::init(&init_ohlcs, &params.read().unwrap());
 
 				while let Some(ohlc) = rx.recv().await {
-					let maybe_order = sar.step(ohlc, &params.borrow(), &symbol, position_side);
+					let maybe_order = sar.step(ohlc, &params.read().unwrap(), &symbol, position_side);
 					if last_order != maybe_order {
-						let protocol_spec = params.borrow().to_string();
+						let protocol_spec = params.read().unwrap().to_string();
 						tx_orders.send(ProtocolOrders::new(protocol_spec, vec![maybe_order.clone()])).await.unwrap();
 						last_order = maybe_order;
 					}
@@ -95,8 +96,8 @@ impl Protocol for SarWrapper {
 		Ok(())
 	}
 
-	fn update_params(&self, new_params: &Sar) -> Result<()> {
-		*self.0.borrow_mut() = *new_params;
+	fn update_params(&self, new_params: Sar) -> Result<()> {
+		*self.0.write().unwrap() = new_params;
 		Ok(())
 	}
 
@@ -169,7 +170,6 @@ impl SarIndicator {
 	}
 }
 
-//? should I move this higher up? Could help compile times, and standardize the check function.
 #[cfg(test)]
 mod tests {
 	use v_utils::trades::mock_p_to_ohlc;
@@ -187,12 +187,12 @@ mod tests {
 		let test_data_p = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.2, 0.0, Some(42));
 		let test_data_ohlc = mock_p_to_ohlc(&test_data_p, 10);
 
-		let mut sar_indicator = SarIndicator::init(&init_ohlc, &sar_wrapper.0.borrow());
+		let mut sar_indicator = SarIndicator::init(&init_ohlc, &sar_wrapper.0.read().unwrap());
 		let mut recorded_indicator_values = Vec::new();
 		let mut orders = Vec::new();
 
 		for (i, ohlc) in test_data_ohlc.into_iter().enumerate() {
-			let maybe_order = sar_indicator.step(ohlc, &sar_wrapper.0.borrow(), &Symbol::default(), Side::default());
+			let maybe_order = sar_indicator.step(ohlc, &sar_wrapper.0.read().unwrap(), &Symbol::default(), Side::default());
 			recorded_indicator_values.push(sar_indicator.sar);
 			orders.push((i, maybe_order.map(|o| o.unsafe_stop_market().price)));
 		}

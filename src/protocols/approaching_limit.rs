@@ -13,12 +13,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
-pub struct TrailingStop {
+pub struct ApproachingLimit {
 	percent: Percent,
 }
 
-impl ProtocolTrait for TrailingStopWrapper {
-	type Params = TrailingStop;
+impl ProtocolTrait for ApproachingLimitWrapper {
+	type Params = ApproachingLimit;
 
 	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &PositionSpec) -> Result<()> {
 		let symbol = Symbol {
@@ -55,7 +55,7 @@ impl ProtocolTrait for TrailingStopWrapper {
 			});
 
 			js.spawn(async move {
-				let mut ts_indicator = TrailingStopIndicator::new();
+				let mut ts_indicator = ApproachingLimitIndicator::new();
 				while let Some(price) = rx.recv().await {
 					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, position_spec.side, &symbol);
 					if let Some(order) = maybe_order {
@@ -71,7 +71,7 @@ impl ProtocolTrait for TrailingStopWrapper {
 		Ok(())
 	}
 
-	fn update_params(&self, new_params: TrailingStop) -> Result<()> {
+	fn update_params(&self, new_params: ApproachingLimit) -> Result<()> {
 		*self.0.write().unwrap() = new_params;
 		Ok(())
 	}
@@ -82,11 +82,11 @@ impl ProtocolTrait for TrailingStopWrapper {
 }
 
 #[derive(Clone, Debug, Default, Copy)]
-struct TrailingStopIndicator {
+struct ApproachingLimitIndicator {
 	top: f64,
 	bottom: f64,
 }
-impl TrailingStopIndicator {
+impl ApproachingLimitIndicator {
 	fn new() -> Self {
 		Self { top: 0.0, bottom: 0.0 }
 	}
@@ -133,7 +133,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn internals() {
-		let mut ts = TrailingStopIndicator::new();
+		let mut ts = ApproachingLimitIndicator::new();
 		let mut orders = Vec::new();
 		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
 		for (i, price) in prices.iter().enumerate() {

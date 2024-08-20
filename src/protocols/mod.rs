@@ -1,10 +1,13 @@
+mod approaching_limit;
 mod sar;
 mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
 
 use anyhow::Result;
-use sar::SarWrapper;
+use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
+use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
+use trailing_stop::TrailingStop;
 pub use trailing_stop::TrailingStopWrapper;
 use uuid::Uuid;
 
@@ -20,86 +23,97 @@ pub enum ProtocolType {
 	SL,
 }
 
-pub trait Protocol {
+pub trait ProtocolTrait {
 	type Params;
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
 	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()>;
-	fn update_params(&self, params: &Self::Params) -> anyhow::Result<()>;
+	fn update_params(&self, params: Self::Params) -> Result<()>;
 	fn get_subtype(&self) -> ProtocolType;
 }
 
-// TODO!!: revisit
-/// possibly will implement Iterator on this, because all additional methods seem to want it.
-//#[derive(v_utils::macros::VecFieldsFromVecStr, Debug, Clone, Default, serde::Serialize, serde::Deserialize, derive_new::new)]
-// pub struct FollowupProtocols {
-// 	pub trailing_stop: Vec<TrailingStopWrapper>,
-//}
-// impl FollowupProtocols {
-// 	pub fn count_subtypes(&self) -> HashMap<ProtocolType, usize> {
-// 		let mut different_types: std::collections::HashMap<ProtocolType, usize> = std::collections::HashMap::new();
-// 		for protocol in &self.trailing_stop {
-// 			let subtype = protocol.get_subtype();
-// 			*different_types.entry(subtype).or_insert(0) += 1;
-// 		}
-// 		// ... others
-// 		different_types
-// 	}
-//
-// 	pub fn attach_all(&self, tx_orders: mpsc::Sender<ProtocolOrders>, spec: &PositionSpec) -> anyhow::Result<()> {
-// 		for ts in &self.trailing_stop {
-// 			ts.attach(tx_orders.clone(), spec)?;
-// 		}
-// 		// ... others
-// 		Ok(())
-// 	}
-//}
-
+// HACK: Protocol enum. Seems suboptimal {{{
 #[derive(Debug, Clone)]
-pub enum FollowupProtocol {
+pub enum Protocol {
 	TrailingStop(TrailingStopWrapper),
 	Sar(SarWrapper),
+	ApproachingLimit(ApproachingLimitWrapper),
 }
-impl FromStr for FollowupProtocol {
+impl FromStr for Protocol {
 	type Err = anyhow::Error;
 
 	fn from_str(spec: &str) -> Result<Self> {
 		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
-			Ok(FollowupProtocol::TrailingStop(ts))
+			Ok(Protocol::TrailingStop(ts))
 		} else if let Ok(sar) = SarWrapper::from_str(spec) {
-			Ok(FollowupProtocol::Sar(sar))
+			Ok(Protocol::Sar(sar))
 		} else {
 			Err(anyhow::Error::msg("Could not convert string to any FollowupProtocol"))
 		}
 	}
 }
-impl FollowupProtocol {
-	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> anyhow::Result<()> {
+impl Protocol {
+	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, position_spec: &crate::positions::PositionSpec) -> Result<()> {
 		match self {
-			FollowupProtocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
-			FollowupProtocol::Sar(sar) => sar.attach(position_set, tx_orders, position_spec),
+			Protocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, position_spec),
+			Protocol::Sar(sar) => sar.attach(position_set, tx_orders, position_spec),
+			Protocol::ApproachingLimit(al) => al.attach(position_set, tx_orders, position_spec),
 		}
 	}
 
-	// pub fn update_params(&self, params: &<TrailingStopWrapper as Protocol>::Params) -> anyhow::Result<()> {
-	// 	match self {
-	// 		FollowupProtocol::TrailingStop(ts) => ts.update_params(params),
-	// 		FollowupProtocol::Sar(sar) => sar.update_params(params),
-	// 	}
-	//}
+	pub fn update_params(&self, params: ProtocolParams) -> Result<()> {
+		match self {
+			Protocol::TrailingStop(ts) => match params {
+				ProtocolParams::TrailingStop(ts_params) => ts.update_params(ts_params),
+				_ => Err(anyhow::Error::msg("Mismatched params")),
+			},
+			Protocol::Sar(sar) => match params {
+				ProtocolParams::Sar(sar_params) => sar.update_params(sar_params),
+				_ => Err(anyhow::Error::msg("Mismatched params")),
+			},
+			Protocol::ApproachingLimit(al) => match params {
+				ProtocolParams::ApproachingLimit(al_params) => al.update_params(al_params),
+				_ => Err(anyhow::Error::msg("Mismatched params")),
+			},
+		}
+	}
 
 	pub fn get_subtype(&self) -> ProtocolType {
 		match self {
-			FollowupProtocol::TrailingStop(ts) => ts.get_subtype(),
-			FollowupProtocol::Sar(sar) => sar.get_subtype(),
+			Protocol::TrailingStop(ts) => ts.get_subtype(),
+			Protocol::Sar(sar) => sar.get_subtype(),
+			Protocol::ApproachingLimit(al) => al.get_subtype(),
 		}
 	}
 }
 
-pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<FollowupProtocol>> {
+#[derive(Debug, Clone, derive_new::new)]
+pub enum ProtocolParams {
+	TrailingStop(TrailingStop),
+	Sar(Sar),
+	ApproachingLimit(ApproachingLimit),
+}
+impl From<TrailingStop> for ProtocolParams {
+	fn from(ts: TrailingStop) -> Self {
+		ProtocolParams::TrailingStop(ts)
+	}
+}
+impl From<Sar> for ProtocolParams {
+	fn from(sar: Sar) -> Self {
+		ProtocolParams::Sar(sar)
+	}
+}
+impl From<ApproachingLimit> for ProtocolParams {
+	fn from(al: ApproachingLimit) -> Self {
+		ProtocolParams::ApproachingLimit(al)
+	}
+}
+//,}}}
+
+pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();
 	for spec in protocol_specs {
-		let protocol = FollowupProtocol::from_str(&spec)?;
+		let protocol = Protocol::from_str(&spec)?;
 		protocols.push(protocol);
 	}
 
