@@ -8,7 +8,6 @@ use v_utils::{io::Percent, macros::CompactFormat, prelude::*, trades::Side};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
-	positions::PositionSpec,
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 

@@ -16,7 +16,6 @@ use v_utils::{
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
-	positions::PositionSpec,
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
