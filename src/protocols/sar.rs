@@ -38,12 +38,10 @@ impl ProtocolTrait for SarWrapper {
 			market: Market::BinanceFutures,
 		};
 		let tf = { self.0.read().unwrap().timeframe };
-		// BUG: ref trailing_stop.rs
-		let params = self.0.clone();
-
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<Ohlc>(256);
 		let mut last_order: Option<ConceptualOrderPercents> = None;
 		let symbol_clone = symbol.clone();
+		let params_arc = self.0.clone();
 		position_js.spawn(async move {
 			let mut js = JoinSet::new();
 			js.spawn(async move {
@@ -75,13 +73,13 @@ impl ProtocolTrait for SarWrapper {
 					.await
 					.unwrap();
 				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
-				let mut sar = SarIndicator::init(&init_ohlcs, &params.read().unwrap());
+				let mut sar = SarIndicator::init(&init_ohlcs, &params_arc.read().unwrap());
 
 				while let Some(ohlc) = rx.recv().await {
-					let maybe_order = sar.step(ohlc, &params.read().unwrap(), &symbol, protocol_side);
+					let maybe_order = sar.step(ohlc, &params_arc.read().unwrap(), &symbol, protocol_side);
 					if last_order != maybe_order {
-						let protocol_spec = params.read().unwrap().to_string();
-						tx_orders.send(ProtocolOrders::new(protocol_spec, vec![maybe_order.clone()])).await.unwrap();
+						let protocol_spec = params_arc.read().unwrap().to_string();
+						tx_orders.send(ProtocolOrders::new(protocol_spec.clone(), vec![maybe_order.clone()])).await.unwrap();
 						last_order = maybe_order;
 					}
 				}

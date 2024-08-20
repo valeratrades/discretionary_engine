@@ -27,10 +27,8 @@ impl ProtocolTrait for TrailingStopWrapper {
 		};
 		let address = format!("wss://fstream.binance.com/ws/{}@aggTrade", symbol.to_string().to_lowercase());
 
-		// BUG: update_params will do nothing, as we're cloning them before starting the tasks.
-		let params = self.0.clone();
-
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(256);
+		let params = self.0.clone();
 		position_js.spawn(async move {
 			let mut js = JoinSet::new();
 			js.spawn(async move {
