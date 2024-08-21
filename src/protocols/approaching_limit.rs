@@ -4,16 +4,18 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
-use v_utils::{io::Percent, macros::CompactFormat, prelude::*, trades::Side};
+use v_utils::{macros::CompactFormat, prelude::*, trades::Side};
+use chrono::{DateTime, Utc};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
+/// Assumes laplace distribution, maximizes expected realized price difference by gradually moving limit order towards current price.
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
 pub struct ApproachingLimit {
-	percent: Percent,
+	deadline: DateTime<Utc>,
 }
 
 impl ProtocolTrait for ApproachingLimitWrapper {
@@ -51,9 +53,9 @@ impl ProtocolTrait for ApproachingLimitWrapper {
 			});
 
 			js.spawn(async move {
-				let mut ts_indicator = ApproachingLimitIndicator::new();
+				let mut al_indicator = ApproachingLimitIndicator::new();
 				while let Some(price) = rx.recv().await {
-					let maybe_order = ts_indicator.step(price, params.read().unwrap().percent, protocol_side, &symbol);
+					let maybe_order = al_indicator.step(price, params.read().unwrap().deadline, protocol_side, &symbol);
 					if let Some(order) = maybe_order {
 						let protocol_spec = params.read().unwrap().to_string();
 						let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
@@ -87,17 +89,9 @@ impl ApproachingLimitIndicator {
 		Self { top: 0.0, bottom: 0.0 }
 	}
 
-	fn step(&mut self, price: f64, percent: Percent, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
+	fn step(&mut self, price: f64, deadline: DateTime<Utc>, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
 		unimplemented!();
 		None
-	}
-
-	fn heuristic(percent: f64, side: Side) -> f64 {
-		let base = match side {
-			Side::Buy => 1.0 - percent.abs(),
-			Side::Sell => 1.0 + percent.abs(),
-		};
-		1.0 + base.ln()
 	}
 }
 
@@ -111,7 +105,7 @@ mod tests {
 		let mut orders = Vec::new();
 		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
 		for (i, price) in prices.iter().enumerate() {
-			if let Some(order) = ts.step(*price, Percent(0.02), Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
+			if let Some(order) = ts.step(*price, Utc::now()/*dbg*/, Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
 				let ConceptualOrderPercents { order_type, .. } = order;
 				if let ConceptualOrderType::StopMarket(sm) = order_type {
 					orders.push((i, Some(sm.price)));
