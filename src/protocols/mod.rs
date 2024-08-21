@@ -112,14 +112,13 @@ impl From<ApproachingLimit> for ProtocolParams {
 }
 //,}}}
 
-pub fn interpret_followup_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
+pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();
 	for spec in protocol_specs {
 		let protocol = Protocol::from_str(&spec)?;
 		protocols.push(protocol);
 	}
-
 	Ok(protocols)
 }
 

@@ -31,7 +31,7 @@ pub struct PositionAcquisition {
 	__spec: PositionSpec,
 	target_notional: f64,
 	acquired_notional: f64,
-	protocols_spec: Option<String>, // Vec<AcquisitionProtocol>,
+	protocols_spec: Option<String>,
 }
 impl PositionAcquisition {
 	// dbg
@@ -45,39 +45,48 @@ impl PositionAcquisition {
 		})
 	}
 
-	pub async fn do_acquisition(spec: PositionSpec, config: &AppConfig) -> Result<Self> {
-		let coin = spec.asset.clone();
-		let symbol = Symbol::from_str(format!("{coin}-USDT-BinanceFutures").as_str())?;
+	#[instrument]
+	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
+		let mut js = JoinSet::new();
+		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
+	
+		//HACK
+		let current_price = binance::futures_price(&spec.asset).await?;
+		let target_coin_quantity = spec.size_usdt / current_price;
 
-		let current_price = binance::futures_price(&coin).await?;
-		let coin_quantity = 20.0; // dbg spec.size_usdt / current_price;
+		let position_id = Uuid::now_v7();
+		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);
+		let position_callback = PositionCallback::new(tx_fills, position_id);
 
-		let mut current_state = Self {
-			__spec: spec.clone(),
-			target_notional: coin_quantity, /* BUG: on very small order sizes, the mismatch between the size we're requesting and adjusted_qty we trim towards to satisfy exchange requirements, could be troublesome */
-			acquired_notional: 0.0,
+		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
+		let mut executed_notional = 0.0;
+		let mut last_fill_key = Uuid::default();
+
+		loop {
+			select! {
+				Some(protocol_orders) = rx_orders.recv() => {
+					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info).await?;
+				},
+				Some(fills_vec) = rx_fills.recv() => {
+					process_fills_update(&mut last_fill_key, fills_vec, &mut protocols_dynamic_info, &mut executed_notional).await?;
+					if executed_notional >= target_coin_quantity {
+						break;
+					}
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info).await?;
+				},
+				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
+				else => unreachable!("hub outlives positions"),
+			}
+		}
+
+		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, target_coin_quantity);
+		Ok(Self {
+			__spec: spec,
+			target_notional: target_coin_quantity,
+			acquired_notional: executed_notional,
 			protocols_spec: None,
-		};
-
-		let order = Order::new(Uuid::now_v7(), OrderType::Market, symbol.clone(), spec.side, coin_quantity);
-
-		// //dbg
-		let full_key = config.binance.full_key.clone();
-		let full_secret = config.binance.full_secret.clone();
-		let position_order_id = PositionOrderId::new(Uuid::now_v7(), "mock_acquisition".to_string(), 0);
-		let mock_position_order = Order::<PositionOrderId>::new(position_order_id, OrderType::Market, symbol.clone(), spec.side, order.qty_notional);
-		let _binance_order = crate::exchange_apis::binance::post_futures_order(full_key.clone(), full_secret.clone(), &mock_position_order)
-			.await
-			.unwrap();
-		// we just assume it worked
-		//
-
-		current_state.acquired_notional = coin_quantity;
-
-		// TODO!!!!: implement Acquisition Protocol: delayed buy-limit
-		// the action core is the same as Followup's
-
-		Ok(current_state)
+		})
 	}
 }
 
@@ -98,7 +107,7 @@ impl PositionFollowup {
 	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut js = JoinSet::new();
-		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, acquired.__spec.side);
+		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, acquired.__spec.side.opposite());
 
 		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);

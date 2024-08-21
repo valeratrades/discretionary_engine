@@ -8,6 +8,7 @@ use crate::{
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
+/// Literally just sends one market order.
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
 pub struct DummyMarket {}
 
