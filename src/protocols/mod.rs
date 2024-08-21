@@ -1,4 +1,5 @@
 mod approaching_limit;
+mod dummy_market;
 mod sar;
 mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
@@ -22,6 +23,7 @@ pub enum ProtocolType {
 	Momentum,
 	TP,
 	SL,
+	StopEntry,
 }
 
 pub trait ProtocolTrait {
