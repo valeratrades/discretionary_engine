@@ -91,7 +91,7 @@ async fn main() {
 			let acquisition_protocols = protocols::interpret_protocol_specs(position_args.acquisition_protocols).unwrap();
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
-			//let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
+			// let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
 			let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await.unwrap();
 			let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
 		}

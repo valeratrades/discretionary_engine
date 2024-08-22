@@ -6,10 +6,10 @@ use std::{collections::HashSet, str::FromStr};
 
 use anyhow::Result;
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
+use dummy_market::{DummyMarket, DummyMarketWrapper};
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
-use trailing_stop::TrailingStop;
-pub use trailing_stop::TrailingStopWrapper;
+use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
@@ -34,12 +34,13 @@ pub trait ProtocolTrait {
 	fn get_subtype(&self) -> ProtocolType;
 }
 
-// HACK: Protocol enum. Seems suboptimal {{{
+// HACK: Protocol enum. Seems suboptimal {\{{
 #[derive(Debug, Clone)]
 pub enum Protocol {
 	TrailingStop(TrailingStopWrapper),
 	Sar(SarWrapper),
 	ApproachingLimit(ApproachingLimitWrapper),
+	DummyMarket(DummyMarketWrapper),
 }
 impl FromStr for Protocol {
 	type Err = anyhow::Error;
@@ -49,6 +50,10 @@ impl FromStr for Protocol {
 			Ok(Protocol::TrailingStop(ts))
 		} else if let Ok(sar) = SarWrapper::from_str(spec) {
 			Ok(Protocol::Sar(sar))
+		} else if let Ok(al) = ApproachingLimitWrapper::from_str(spec) {
+			Ok(Protocol::ApproachingLimit(al))
+		} else if let Ok(dm) = DummyMarketWrapper::from_str(spec) {
+			Ok(Protocol::DummyMarket(dm))
 		} else {
 			Err(anyhow::Error::msg("Could not convert string to any FollowupProtocol"))
 		}
@@ -60,6 +65,7 @@ impl Protocol {
 			Protocol::TrailingStop(ts) => ts.attach(position_set, tx_orders, asset, protocol_side),
 			Protocol::Sar(sar) => sar.attach(position_set, tx_orders, asset, protocol_side),
 			Protocol::ApproachingLimit(al) => al.attach(position_set, tx_orders, asset, protocol_side),
+			Protocol::DummyMarket(dm) => dm.attach(position_set, tx_orders, asset, protocol_side),
 		}
 	}
 
@@ -77,6 +83,7 @@ impl Protocol {
 				ProtocolParams::ApproachingLimit(al_params) => al.update_params(al_params),
 				_ => Err(anyhow::Error::msg("Mismatched params")),
 			},
+			Protocol::DummyMarket(_) => Ok(()),
 		}
 	}
 
@@ -85,6 +92,7 @@ impl Protocol {
 			Protocol::TrailingStop(ts) => ts.get_subtype(),
 			Protocol::Sar(sar) => sar.get_subtype(),
 			Protocol::ApproachingLimit(al) => al.get_subtype(),
+			Protocol::DummyMarket(dm) => dm.get_subtype(),
 		}
 	}
 }
@@ -113,6 +121,7 @@ impl From<ApproachingLimit> for ProtocolParams {
 //,}}}
 
 pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
+	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| !s.is_empty()).collect();
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();
 	for spec in protocol_specs {

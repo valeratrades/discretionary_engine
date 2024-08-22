@@ -1,11 +1,11 @@
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use v_utils::{macros::CompactFormat, prelude::*, trades::Side};
-use chrono::{DateTime, Utc};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
@@ -96,46 +96,46 @@ impl ApproachingLimitIndicator {
 }
 //
 //#[cfg(test)]
-//mod tests {
-//	use super::*;
+// mod tests {
+// 	use super::*;
 //
-//	#[tokio::test]
-//	async fn internals() {
-//		let mut ts = ApproachingLimitIndicator::new();
-//		let mut orders = Vec::new();
-//		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
-//		for (i, price) in prices.iter().enumerate() {
-//			if let Some(order) = ts.step(*price, Utc::now()/*dbg*/, Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
-//				let ConceptualOrderPercents { order_type, .. } = order;
-//				if let ConceptualOrderType::StopMarket(sm) = order_type {
-//					orders.push((i, Some(sm.price)));
-//				} else {
-//					panic!("Expected StopMarket order type");
-//				}
-//			}
-//		}
-//		let plot = v_utils::utils::snapshot_plot_orders(&prices, &orders);
-//		insta::assert_snapshot!(plot, @r###"
+// 	#[tokio::test]
+// 	async fn internals() {
+// 		let mut ts = ApproachingLimitIndicator::new();
+// 		let mut orders = Vec::new();
+// 		let prices = v_utils::distributions::laplace_random_walk(100.0, 1000, 0.1, 0.0, Some(42));
+// 		for (i, price) in prices.iter().enumerate() {
+// 			if let Some(order) = ts.step(*price, Utc::now()/*dbg*/, Side::Buy, &Symbol::new("BTC", "USDT", Market::BinanceFutures)) {
+// 				let ConceptualOrderPercents { order_type, .. } = order;
+// 				if let ConceptualOrderType::StopMarket(sm) = order_type {
+// 					orders.push((i, Some(sm.price)));
+// 				} else {
+// 					panic!("Expected StopMarket order type");
+// 				}
+// 			}
+// 		}
+// 		let plot = v_utils::utils::snapshot_plot_orders(&prices, &orders);
+// 		insta::assert_snapshot!(plot, @r###"
 //                                                                      ▂▃▄▃                  103.50
-//                                                                   ▃  █████▆▁▆▇▄                  
-//                                                                  ▅█▅▆██████████▃       ▃▆▄▄      
-//                                                                ▄▄███████████████▅▅▆▂  ▂████      
-//                                                              ▅▅█████████████████████▅▇█████      
-//                                                             ███████████████████████████████      
-//                     ▂                ▂        ▅▄▁▄         ▁███████████████████████████████      
-//                   ▆██▃▁         ▂▁  ▅█▇▄   ▁ █████▁ ▅    ▃▅████████████████████████████████      
-//  ▂▃  ▃           ▄█████▇     ▆▆▇██▇▆████▆▅▆█▇██████▇█▇ ▂▁██████████████████████████████████      
-//  ██▃▅█▇▆ ▃       ███████▇ ▇█▅█████████████████████████▆████████████████████████████████████      
-//  █████████▇▃ ▁  ▇████████▄█████████████████████████████████████████████████████████████████      
+//                                                                   ▃  █████▆▁▆▇▄
+//                                                                  ▅█▅▆██████████▃       ▃▆▄▄
+//                                                                ▄▄███████████████▅▅▆▂  ▂████
+//                                                              ▅▅█████████████████████▅▇█████
+//                                                             ███████████████████████████████
+//                     ▂                ▂        ▅▄▁▄         ▁███████████████████████████████
+//                   ▆██▃▁         ▂▁  ▅█▇▄   ▁ █████▁ ▅    ▃▅████████████████████████████████
+//  ▂▃  ▃           ▄█████▇     ▆▆▇██▇▆████▆▅▆█▇██████▇█▇ ▂▁██████████████████████████████████
+//  ██▃▅█▇▆ ▃       ███████▇ ▇█▅█████████████████████████▆████████████████████████████████████
+//  █████████▇▃ ▁  ▇████████▄█████████████████████████████████████████████████████████████████
 //  ███████████▇█▇▇███████████████████████████████████████████████████████████████████████████98.73
 //  ──────────────────────────────────────────────────────────────────────────────────────────
 //                                                                      ▃▆▆███████████████████101.41
-//                                                                  ▁▆▆▆██████████████████████      
-//                                                               ▁▃▅██████████████████████████      
-//                                                              ▆█████████████████████████████      
-//                                                 ▁▁▁▁▁▁▁▁▁▁▁▁███████████████████████████████      
-//                   ▂▅▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇█████████████████████████████████████████████████████      
+//                                                                  ▁▆▆▆██████████████████████
+//                                                               ▁▃▅██████████████████████████
+//                                                              ▆█████████████████████████████
+//                                                 ▁▁▁▁▁▁▁▁▁▁▁▁███████████████████████████████
+//                   ▂▅▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇█████████████████████████████████████████████████████
 //  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█████████████████████████████████████████████████████████████████████████97.98
 //  "###);
-//	}
+// 	}
 //}

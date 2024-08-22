@@ -49,8 +49,8 @@ impl PositionAcquisition {
 	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
-	
-		//HACK
+
+		// HACK
 		let current_price = binance::futures_price(&spec.asset).await?;
 		let target_coin_quantity = spec.size_usdt / current_price;
 
@@ -107,7 +107,7 @@ impl PositionFollowup {
 	#[instrument]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
 		let mut js = JoinSet::new();
-		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, acquired.__spec.side.opposite());
+		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
 
 		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);

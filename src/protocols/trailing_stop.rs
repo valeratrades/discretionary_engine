@@ -93,12 +93,7 @@ impl TrailingStopIndicator {
 			if side == Side::Buy {
 				let target_price = price * ((1.0 + percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
-				let order = Some(ConceptualOrderPercents::new(
-					ConceptualOrderType::StopMarket(sm),
-					symbol.clone(),
-					Side::Buy,
-					1.0,
-				));
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, 1.0));
 				return order;
 			}
 		}

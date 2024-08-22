@@ -9,8 +9,10 @@ use crate::{
 };
 
 /// Literally just sends one market order.
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
-pub struct DummyMarket {}
+#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, ProtocolWrapper)]
+pub struct DummyMarket {
+	// dummy: String, //? Does CompactFormat correctly work with empty structs?
+}
 
 impl ProtocolTrait for DummyMarketWrapper {
 	type Params = DummyMarket;
