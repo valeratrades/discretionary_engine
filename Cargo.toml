@@ -18,6 +18,8 @@ rust-version = "1.80.0"
 cmp_float = "allow" # is bad for `==` direct comparisons, but `<` and `>` should be allowed
 #get_first = "allow" # const fn, so actually more performant
 len_zero = "allow" # `.empty()` is O(1) but on &str only
+comparison_to_empyt = "allow" # same reasons as `len_zero`
+
 
 [package.metadata.docs.rs]
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
@@ -63,4 +65,3 @@ tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry
 url = "^2.5.2"
 uuid = { version = "^1.10.0", features = ["serde", "v4", "v7", "v8"] }
 v_utils = { features = ["full"], path = "../v_utils/v_utils" } #ga: sub path
-v_utils_macros = "1.2.10"

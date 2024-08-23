@@ -4,7 +4,7 @@ mod sar;
 mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
 use dummy_market::{DummyMarket, DummyMarketWrapper};
 use sar::{Sar, SarWrapper};
@@ -55,7 +55,7 @@ impl FromStr for Protocol {
 		} else if let Ok(dm) = DummyMarketWrapper::from_str(spec) {
 			Ok(Protocol::DummyMarket(dm))
 		} else {
-			Err(anyhow::Error::msg("Could not convert string to any FollowupProtocol"))
+			Err(anyhow::Error::msg("Could not convert string to any Protocol\nString: {spec}"))
 		}
 	}
 }
@@ -121,7 +121,10 @@ impl From<ApproachingLimit> for ProtocolParams {
 //,}}}
 
 pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
-	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| !s.is_empty()).collect();
+	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| s != "").collect();
+	if protocol_specs.len() == 0 {
+		return bail!("No protocols specified");
+	}
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();
 	for spec in protocol_specs {

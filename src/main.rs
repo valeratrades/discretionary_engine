@@ -1,5 +1,6 @@
-#![allow(clippy::len_zero)] // wait, so are the ones in Cargo.toml not enough?
+#![allow(clippy::comparison_to_empty)]
 #![allow(clippy::get_first)]
+#![allow(clippy::len_zero)] // wait, so are the ones in Cargo.toml not enough?
 #![feature(trait_alias)]
 #![feature(type_changing_struct_update)]
 
@@ -8,6 +9,7 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
+use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
 use positions::*;
@@ -55,7 +57,7 @@ struct PositionArgs {
 // TODO: change to initializing exchange sockets once, then just have a loop listening on localhost, that accepts new positions or modification requests.
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
 	let cli = Cli::parse();
 	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
@@ -87,13 +89,27 @@ async fn main() {
 				}
 			};
 
-			let followup_protocols = protocols::interpret_protocol_specs(position_args.followup_protocols).unwrap();
-			let acquisition_protocols = protocols::interpret_protocol_specs(position_args.acquisition_protocols).unwrap();
+			let followup_protocols = match protocols::interpret_protocol_specs(position_args.followup_protocols) {
+				Ok(f) => f,
+				Err(e) => {
+					eprintln!("Failed to interpret followup protocols: {}", e);
+					std::process::exit(1);
+				}
+			};
+			let acquisition_protocols = match protocols::interpret_protocol_specs(position_args.acquisition_protocols) {
+				Ok(f) => f,
+				Err(e) => {
+					eprintln!("Failed to interpret acquisition protocols: {}", e);
+					std::process::exit(1);
+				}
+			};
 
 			let spec = PositionSpec::new(position_args.coin, side, target_size);
 			// let acquired = PositionAcquisition::dbg_new(spec).await.unwrap();
-			let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await.unwrap();
-			let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await.unwrap();
+			let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await?;
+			let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await?;
 		}
 	}
+
+	Ok(())
 }

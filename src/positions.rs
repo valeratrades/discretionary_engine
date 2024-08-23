@@ -99,7 +99,7 @@ pub struct PositionFollowup {
 
 #[derive(Debug, Clone, derive_new::new)]
 pub struct PositionCallback {
-	pub sender: tokio::sync::mpsc::Sender<Vec<ProtocolFill>>, // stands for "this nominal qty filled on this protocol order"
+	pub sender: mpsc::Sender<Vec<ProtocolFill>>,
 	pub position_id: Uuid,
 }
 
