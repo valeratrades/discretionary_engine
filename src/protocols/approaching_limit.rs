@@ -1,4 +1,4 @@
-use anyhow::Result;
+use eyre::Result;
 use chrono::{DateTime, Utc};
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;

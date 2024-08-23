@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use anyhow::Result;
 use derive_new::new;
+use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use v_utils::trades::Side;
 
@@ -72,7 +72,7 @@ pub struct ConceptualOrder<Id: IdRequirements> {
 impl<Id: IdRequirements> ConceptualOrder<Id> {
 	pub fn price(&self) -> Result<f64> {
 		match &self.order_type {
-			ConceptualOrderType::Market(_) => anyhow::bail!("Market orders don't have a price"),
+			ConceptualOrderType::Market(_) => bail!("Market orders don't have a price"),
 			ConceptualOrderType::Limit(l) => Ok(l.price),
 			ConceptualOrderType::StopMarket(s) => Ok(s.price),
 		}

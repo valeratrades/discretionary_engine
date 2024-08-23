@@ -5,7 +5,7 @@ use v_utils::prelude::*;
 
 use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
 pub mod order_types;
-use anyhow::Result;
+use eyre::{bail, Result};
 use order_types::{ConceptualOrder, Order};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -179,14 +179,14 @@ impl Market {
 }
 
 impl std::str::FromStr for Market {
-	type Err = anyhow::Error;
+	type Err = eyre::Report;
 
 	fn from_str(s: &str) -> Result<Self> {
 		match s {
 			_ if graphemics!(BinanceFutures).contains(&s) => Ok(Market::BinanceFutures),
 			_ if graphemics!(BinanceSpot).contains(&s) => Ok(Market::BinanceSpot),
 			_ if graphemics!(BinanceMargin).contains(&s) => Ok(Market::BinanceMargin),
-			_ => Err(anyhow::anyhow!("Unknown market: {}", s)),
+			_ => bail!("Unknown market: {}", s),
 		}
 	}
 }
@@ -218,7 +218,7 @@ impl std::fmt::Display for Symbol {
 	}
 }
 impl std::str::FromStr for Symbol {
-	type Err = anyhow::Error;
+	type Err = eyre::Report;
 
 	fn from_str(s: &str) -> Result<Self> {
 		let split = s.split('-').collect::<Vec<&str>>();

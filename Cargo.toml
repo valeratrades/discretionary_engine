@@ -34,14 +34,13 @@ ignored = ["v_utils_macros", "serde_with", "tracing-futures"]
 #tracing-futures = "0.2.5"
 
 [dependencies]
-anyhow = "^1.0.86"
 chrono = "^0.4.38"
 clap = { version = "^4.5.16", features = ["derive"] }
-color-backtrace = "0.6.1"
 config = "0.14.0"
 console-subscriber = "0.4.0"
 derive-new = "0.6.0"
 discretionary_engine_macros = { path = "./discretionary_engine_macros" }
+eyre = "0.6.12"
 futures-util = "0.3.30"
 hex = "^0.4.3"
 hmac = "^0.12.1"

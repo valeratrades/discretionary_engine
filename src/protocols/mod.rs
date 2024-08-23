@@ -4,9 +4,9 @@ mod sar;
 mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
 
-use anyhow::{bail, Result};
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
-use dummy_market::{DummyMarket, DummyMarketWrapper};
+use dummy_market::DummyMarketWrapper;
+use eyre::{bail, Result};
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
@@ -43,7 +43,7 @@ pub enum Protocol {
 	DummyMarket(DummyMarketWrapper),
 }
 impl FromStr for Protocol {
-	type Err = anyhow::Error;
+	type Err = eyre::Report;
 
 	fn from_str(spec: &str) -> Result<Self> {
 		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
@@ -73,15 +73,15 @@ impl Protocol {
 		match self {
 			Protocol::TrailingStop(ts) => match params {
 				ProtocolParams::TrailingStop(ts_params) => ts.update_params(ts_params),
-				_ => Err(anyhow::Error::msg("Mismatched params")),
+				_ => Err(eyre::Report::msg("Mismatched params")),
 			},
 			Protocol::Sar(sar) => match params {
 				ProtocolParams::Sar(sar_params) => sar.update_params(sar_params),
-				_ => Err(anyhow::Error::msg("Mismatched params")),
+				_ => Err(eyre::Report::msg("Mismatched params")),
 			},
 			Protocol::ApproachingLimit(al) => match params {
 				ProtocolParams::ApproachingLimit(al_params) => al.update_params(al_params),
-				_ => Err(anyhow::Error::msg("Mismatched params")),
+				_ => Err(eyre::Report::msg("Mismatched params")),
 			},
 			Protocol::DummyMarket(_) => Ok(()),
 		}
@@ -123,7 +123,7 @@ impl From<ApproachingLimit> for ProtocolParams {
 pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
 	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| s != "").collect();
 	if protocol_specs.len() == 0 {
-		return bail!("No protocols specified");
+		bail!("No protocols specified");
 	}
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
 	let mut protocols = Vec::new();

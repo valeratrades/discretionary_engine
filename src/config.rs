@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
+use eyre::{Context, Result};
 use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
 
 #[derive(Clone, Debug, MyConfigPrimitives)]
@@ -25,7 +25,7 @@ impl AppConfig {
 		let settings: config::Config = builder.build()?;
 		let settings: Self = settings.try_deserialize()?;
 
-		std::fs::create_dir_all(&settings.positions_dir).with_context(|| anyhow!(format!("Failed to create positions directory at {:?}", settings.positions_dir)))?;
+		std::fs::create_dir_all(&settings.positions_dir).wrap_err_with(|| format!("Failed to create positions directory at {:?}", settings.positions_dir))?;
 
 		Ok(settings)
 	}

@@ -6,7 +6,7 @@ use std::{
 	sync::{Arc, RwLock},
 };
 
-use anyhow::{anyhow, Result};
+use eyre::{bail, Result};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 pub use info::futures_exchange_info;
@@ -64,7 +64,8 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 			return Ok(r);
 		}
 
-		let error_html = r.text().await?;
+		let error_html = r.text().await?; // assume it's html because we couldn't parse it into serde_json::Value
+		dbg!(&error_html);
 		if error_html.contains("<TITLE>ERROR: The request could not be satisfied</TITLE>") && attempt <= max_retries {
 			if !encountered_cloudfront_error {
 				tracing::warn!("Encountered CloudFront error. Oh boy, here we go again.");
@@ -80,7 +81,7 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 		return Err(unexpected_response_str(&error_html));
 	}
 
-	Err(anyhow!("Max retries reached. Request failed."))
+	bail!("Max retries reached. Request failed.")
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
@@ -296,7 +297,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 
 	if !response.status().is_success() {
 		let error_body = response.text().await?;
-		anyhow::bail!("Binance API error: {}", error_body);
+		bail!("Binance API error: {}", error_body);
 	}
 
 	let klines: Vec<BinanceKline> = response.json().await?;
@@ -331,6 +332,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 					match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
 						Ok(response) => break response,
 						Err(e) => {
+							dbg!(&e);
 							tracing::warn!("Error polling order: {:?}", e);
 							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 						}

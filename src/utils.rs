@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 use std::time::Duration;
 
-use anyhow::Result;
+use eyre::{bail, Result, eyre};
 use serde::de::DeserializeOwned;
 use tokio::{runtime::Runtime, time::sleep};
 use tracing::{subscriber::set_global_default, Subscriber};
@@ -51,10 +51,10 @@ pub fn deser_reqwest_blocking<T: DeserializeOwned>(r: reqwest::blocking::Respons
 	}
 }
 
-pub fn unexpected_response_str(s: &str) -> anyhow::Error {
+pub fn unexpected_response_str(s: &str) -> eyre::Report {
 	let s = match serde_json::from_str::<serde_json::Value>(s) {
 		Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
 		Err(_) => s.to_owned(),
 	};
-	anyhow::anyhow!("Unexpected API response:\n{}", s)
+	eyre!("Unexpected API response:\n{}", s)
 }

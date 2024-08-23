@@ -1,4 +1,4 @@
-use anyhow::Result;
+use eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
 use tokio::sync::mpsc;
 use v_utils::{macros::CompactFormat, prelude::*, trades::Side};

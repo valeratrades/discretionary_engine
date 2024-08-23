@@ -9,7 +9,7 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
-use anyhow::Result;
+use eyre::Result;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
 use positions::*;
@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
 		}
 	};
 	utils::init_subscriber();
-	color_backtrace::install();
+	//color_backtrace::install();
 	let mut js = JoinSet::new();
 	let tx = exchange_apis::init_hub(config.clone(), &mut js);
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use anyhow::Result;
+use eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{select, sync::mpsc, task::JoinSet};
 use tracing::{info, instrument};
@@ -8,11 +8,10 @@ use uuid::Uuid;
 use v_utils::trades::Side;
 
 use crate::{
-	config::AppConfig,
 	exchange_apis::{
 		binance,
-		order_types::{ConceptualOrder, ConceptualOrderType, Order, OrderType, ProtocolOrderId},
-		HubRx, Symbol,
+		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
+		HubRx,
 	},
 	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType},
 };

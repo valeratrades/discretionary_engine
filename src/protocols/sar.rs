@@ -1,7 +1,7 @@
 #[allow(unused_imports)] // RA bug
 use std::str::FromStr;
 
-use anyhow::Result;
+use eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;

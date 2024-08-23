@@ -28,9 +28,9 @@ pub fn derive_protocol_wrapper(input: TokenStream) -> TokenStream {
 		#[derive(Clone, Debug, Default)]
 		pub struct #wrapper_name(std::sync::Arc<std::sync::RwLock<#name>>);
 		impl std::str::FromStr for #wrapper_name {
-			type Err = anyhow::Error;
+			type Err = eyre::Report;
 
-			fn from_str(spec: &str) -> anyhow::Result<Self> {
+			fn from_str(spec: &str) -> eyre::Result<Self> {
 				let params = #name::from_str(spec)?;
 				Ok(Self(std::sync::Arc::new(std::sync::RwLock::new(params))))
 			}
