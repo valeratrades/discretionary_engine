@@ -9,9 +9,9 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
-use eyre::Result;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
+use eyre::Result;
 use positions::*;
 use tokio::task::JoinSet;
 use v_utils::{

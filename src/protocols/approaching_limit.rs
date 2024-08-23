@@ -1,6 +1,6 @@
-use eyre::Result;
 use chrono::{DateTime, Utc};
 use discretionary_engine_macros::ProtocolWrapper;
+use eyre::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;

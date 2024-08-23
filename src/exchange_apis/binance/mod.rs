@@ -6,17 +6,22 @@ use std::{
 	sync::{Arc, RwLock},
 };
 
-use eyre::{bail, Result};
 use chrono::Utc;
+use eyre::{bail, Result};
 use hmac::{Hmac, Mac};
 pub use info::futures_exchange_info;
 pub use orders::*;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
+use reqwest::{
+	header::{HeaderMap, HeaderValue, CONTENT_TYPE},
+	Method,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
+use serde_with::{serde_as, DisplayFromStr};
 use sha2::Sha256;
 use tokio::{select, task::JoinSet};
-use tracing::trace;
+use tracing::{info, instrument, warn};
 use url::Url;
 use uuid::Uuid;
 use v_utils::trades::Ohlc;
@@ -65,7 +70,6 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 		}
 
 		let error_html = r.text().await?; // assume it's html because we couldn't parse it into serde_json::Value
-		dbg!(&error_html);
 		if error_html.contains("<TITLE>ERROR: The request could not be satisfied</TITLE>") && attempt <= max_retries {
 			if !encountered_cloudfront_error {
 				tracing::warn!("Encountered CloudFront error. Oh boy, here we go again.");
@@ -82,6 +86,20 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 	}
 
 	bail!("Max retries reached. Request failed.")
+}
+
+#[instrument]
+pub async fn unsigned_request(http_method: reqwest::Method, endpoint_str: &str, params: HashMap<&str, String>) -> Result<reqwest::Response> {
+	info!("requesting unsigned\nEndpoint: {}\nParams: {:?}", endpoint_str, &params);
+	let client = reqwest::Client::new();
+	let r = client.request(http_method, endpoint_str).query(&params).send().await?;
+
+	if r.status().is_success() {
+		return Ok(r);
+	}
+
+	let error_html = r.text().await?; // assume it's html because we couldn't parse it into serde_json::Value
+	Err(unexpected_response_str(&error_html))
 }
 
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
@@ -129,7 +147,18 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 	}
 }
 
+#[serde_as]
+#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize)]
+struct PriceResponse {
+	#[serde_as(as = "DisplayFromStr")]
+	price: f64,
+	symbol: String,
+	time: i64,
+}
+
+#[instrument]
 pub async fn futures_price(asset: &str) -> Result<f64> {
+	info!("requesting futures price"); //doesn't flush immediately, needs fixing to be useful
 	let symbol = crate::exchange_apis::Symbol {
 		base: asset.to_string(),
 		quote: "USDT".to_string(),
@@ -141,23 +170,10 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", symbol.to_string());
 
-	let client = reqwest::Client::new();
-	let r = client.get(url).json(&params).send().await?;
-	// let r_json: serde_json::Value = deser_reqwest(r)().await?;
-	// let price = r_json.get("price").unwrap().as_str().unwrap().parse::<f64>()?;
-	// for some reason, can't sumbit with the symbol, so effectively requesting all for now
-	let prices: Vec<serde_json::Value> = deser_reqwest(r).await?;
-	let price = prices
-		.iter()
-		.find(|x| *x.get("symbol").unwrap().as_str().unwrap() == symbol.to_string())
-		.unwrap()
-		.get("price")
-		.unwrap()
-		.as_str()
-		.unwrap()
-		.parse::<f64>()?;
+	let r = unsigned_request(Method::GET, url.as_str(), params).await?;
+	let price_response: PriceResponse = deser_reqwest(r).await?;
 
-	Ok(price)
+	Ok(price_response.price)
 }
 
 pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) -> Result<()> {
@@ -183,7 +199,7 @@ pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) 
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
-	let r = signed_request(reqwest::Method::GET, url.as_str(), HashMap::new(), key, secret).await?;
+	let r = signed_request(Method::GET, url.as_str(), HashMap::new(), key, secret).await?;
 	let positions: Vec<FuturesAllPositionsResponse> = deser_reqwest(r).await?;
 
 	let mut positions_map = HashMap::<String, f64>::new();
@@ -196,18 +212,17 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 }
 
 /// Returns (price_precision, quantity_precision)
+#[instrument]
 pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output = Result<(u8, u8)>> + Send + Sync + 'static> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/exchangeInfo")?;
 	let symbol_str = format!("{}USDT", coin.to_uppercase());
-	dbg!(&symbol_str);
 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
 		let info: info::FuturesExchangeInfo = deser_reqwest(r).await?;
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
-		dbg!(&symbol_info);
 
 		// let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
 		//
@@ -237,7 +252,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", binance_order.base_info.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
-	params.insert("recvWindow", "10000".to_owned()); // dbg currently they are having some issues with response speed
+	params.insert("recvWindow", "15000".to_owned()); // dbg currently they are having some issues with response speed
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
@@ -286,14 +301,16 @@ impl From<BinanceKline> for Ohlc {
 	}
 }
 
+#[instrument]
 pub async fn get_historic_klines(symbol: String, interval: String, limit: usize) -> Result<Vec<BinanceKline>> {
+	dbg!(&"getting historic klines");
+	info!("requesting historic klines"); //doesn't flush immediately, needs fixing to be useful
 	let base_url = Market::BinanceFutures.get_base_url();
 	let endpoint = base_url.join("/fapi/v1/klines")?;
 
 	let params = vec![("symbol", symbol), ("interval", interval), ("limit", limit.to_string())];
 
-	let client = reqwest::Client::new();
-	let response = client.get(endpoint).query(&params).send().await?;
+	let response = unsigned_request(Method::GET, endpoint.as_str(), params.into_iter().collect()).await?;
 
 	if !response.status().is_success() {
 		let error_body = response.text().await?;
@@ -306,7 +323,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: tokio::sync::mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
-	trace!("Binance_runtime started");
+	info!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
@@ -322,23 +339,26 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-			let orders: Vec<_> = {
+			let mut orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
 				currently_deployed_read.iter().cloned().collect()
 			};
+			info!("Local knowledge of deployed orders: {:?}", orders);
+
+			// shuffle orders so there is no positional bias when polling
+			let mut rng = SmallRng::from_entropy();
+			orders.shuffle(&mut rng);
+
 			for (i, order) in orders.iter().enumerate() {
 				// // temp thing until I transfer to websocket
-				let r = loop {
-					match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
-						Ok(response) => break response,
-						Err(e) => {
-							dbg!(&e);
-							tracing::warn!("Error polling order: {:?}", e);
-							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-						}
+				let r: FuturesPositionResponse = match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
+					Ok(r) => r,
+					Err(e) => {
+						warn!("Error polling order: {:?}, breaking to the outer order-pull task loop", e);
+						continue;
 					}
 				};
-				tracing::trace!("Polled order: {:?}", r);
+				info!("Successfully polled order: {:?}", r);
 				//
 
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
@@ -387,7 +407,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 						}
 					}
 				};
-				tracing::trace!("closed orders");
+				info!("closed orders");
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {

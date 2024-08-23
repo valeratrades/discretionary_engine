@@ -1,10 +1,10 @@
 #![allow(dead_code, unused_imports)]
 use std::time::Duration;
 
-use eyre::{bail, Result, eyre};
+use eyre::{bail, eyre, Result};
 use serde::de::DeserializeOwned;
 use tokio::{runtime::Runtime, time::sleep};
-use tracing::{subscriber::set_global_default, Subscriber};
+use tracing::{instrument, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
 use tracing_log::LogTracer;
 use tracing_subscriber::{

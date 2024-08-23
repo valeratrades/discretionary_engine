@@ -1,8 +1,8 @@
 #[allow(unused_imports)] // RA bug
 use std::str::FromStr;
 
-use eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
+use eyre::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinSet};
