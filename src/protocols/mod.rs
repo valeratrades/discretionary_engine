@@ -55,7 +55,7 @@ impl FromStr for Protocol {
 		} else if let Ok(dm) = DummyMarketWrapper::from_str(spec) {
 			Ok(Protocol::DummyMarket(dm))
 		} else {
-			Err(anyhow::Error::msg("Could not convert string to any Protocol\nString: {spec}"))
+			bail!("Could not convert string to any Protocol\nString: {spec}")
 		}
 	}
 }

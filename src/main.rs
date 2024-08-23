@@ -36,9 +36,9 @@ enum Commands {
 }
 #[derive(Args)]
 struct PositionArgs {
-	/// percentage of the total balance to use
+	/// Target change in exposure. So positive for buying, negative for selling.
 	#[arg(long)]
-	size: f64,
+	size_usdt: f64,
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
 	#[arg(long)]
@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
 
 	match cli.command {
 		Commands::New(position_args) => {
+			// Currently here mostly for purposes of checking server connectivity.
 			let balance = match exchange_apis::compile_total_balance(config.clone()).await {
 				Ok(b) => b,
 				Err(e) => {
@@ -80,9 +81,11 @@ async fn main() -> Result<()> {
 					std::process::exit(1);
 				}
 			};
-			let (side, target_size) = match position_args.size {
-				s if s > 0.0 => (Side::Buy, s * balance),
-				s if s < 0.0 => (Side::Sell, -s * balance),
+			println!("Total avialable balance: {}", balance);
+
+			let (side, target_size) = match position_args.size_usdt {
+				s if s > 0.0 => (Side::Buy, s),
+				s if s < 0.0 => (Side::Sell, -s),
 				_ => {
 					eprintln!("Size must be non-zero");
 					std::process::exit(1);
