@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/valeratrades/cargo-sort
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
     - id: cargo-sort-workspace-grouped
   - repo: https://github.com/pre-commit/pre-commit-hooks
