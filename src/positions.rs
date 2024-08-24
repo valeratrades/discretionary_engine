@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{select, sync::mpsc, task::JoinSet};
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
@@ -13,7 +13,7 @@ use crate::{
 		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
 		HubRx,
 	},
-	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFill, ProtocolOrders, ProtocolType},
+	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType},
 };
 
 /// What the Position *is*_
@@ -54,7 +54,7 @@ impl PositionAcquisition {
 		let target_coin_quantity = spec.size_usdt / current_price;
 
 		let position_id = Uuid::now_v7();
-		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);
+		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
@@ -67,8 +67,8 @@ impl PositionAcquisition {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
 					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info).await?;
 				},
-				Some(fills_vec) = rx_fills.recv() => {
-					process_fills_update(&mut last_fill_key, fills_vec, &mut protocols_dynamic_info, &mut executed_notional).await?;
+				Some(protocol_fills) = rx_fills.recv() => {
+					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= target_coin_quantity {
 						break;
 					}
@@ -79,7 +79,7 @@ impl PositionAcquisition {
 			}
 		}
 
-		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, target_coin_quantity);
+		info!("Acquisition completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, target_coin_quantity);
 		Ok(Self {
 			__spec: spec,
 			target_notional: target_coin_quantity,
@@ -98,7 +98,7 @@ pub struct PositionFollowup {
 
 #[derive(Debug, Clone, derive_new::new)]
 pub struct PositionCallback {
-	pub sender: mpsc::Sender<Vec<ProtocolFill>>,
+	pub sender: mpsc::Sender<ProtocolFills>,
 	pub position_id: Uuid,
 }
 
@@ -109,7 +109,7 @@ impl PositionFollowup {
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
 
 		let position_id = Uuid::now_v7();
-		let (tx_fills, mut rx_fills) = mpsc::channel::<Vec<ProtocolFill>>(256);
+		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
 		let position_callback = PositionCallback::new(tx_fills, position_id);
 
 		let mut protocols_dynamic_info: HashMap<String, ProtocolDynamicInfo> = HashMap::new();
@@ -122,11 +122,12 @@ impl PositionFollowup {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
 					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
 				},
-				Some(fills_vec) = rx_fills.recv() => {
-					process_fills_update(&mut last_fill_key, fills_vec, &mut protocols_dynamic_info, &mut executed_notional).await?;
+				Some(protocol_fills) = rx_fills.recv() => {
+					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= acquired.acquired_notional {
 						break;
 					}
+					dbg!(&last_fill_key);
 					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -134,7 +135,7 @@ impl PositionFollowup {
 			}
 		}
 
-		tracing::debug!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, acquired.target_notional);
+		info!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, acquired.target_notional);
 		Ok(Self {
 			_acquisition: acquired,
 			protocols_spec: protocols,
@@ -171,17 +172,17 @@ async fn update_orders(
 	match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
 		Ok(_) => {}
 		Err(e) => {
-			info!("Error sending orders: {:?}", e);
+			debug!("Error sending orders: {:?}", e);
 			return Err(e.into());
 		}
 	};
 	Ok(())
 }
 
-async fn process_fills_update(last_fill_key: &mut Uuid, fills_vec: Vec<ProtocolFill>, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
-	info!("Received fills: {:?}", fills_vec);
-	for f in fills_vec {
-		*last_fill_key = f.key;
+async fn process_fills_update(last_fill_key: &mut Uuid, protocol_fills: ProtocolFills, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
+	debug!("Received fills: {:?}", protocol_fills);
+	*last_fill_key = protocol_fills.key;
+	for f in protocol_fills.fills {
 		let (protocol_order_id, filled_notional) = (f.id, f.qty);
 		*closed_notional += filled_notional;
 		{
@@ -249,7 +250,7 @@ fn recalculate_target_orders(
 }
 
 async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>) -> Result<()> {
-	info!("{:?} sent orders: {:?}", protocol_orders_update.protocol_id, protocol_orders_update.__orders);
+	debug!("{:?} sent orders: {:?}", protocol_orders_update.protocol_id, protocol_orders_update.__orders);
 	if let Some(protocol_info) = dyn_info.get_mut(&protocol_orders_update.protocol_id) {
 		protocol_info.update_orders(protocol_orders_update.clone());
 	} else {

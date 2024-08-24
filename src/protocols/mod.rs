@@ -136,9 +136,14 @@ pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Proto
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct ProtocolFill {
-	pub key: Uuid,
 	pub id: ProtocolOrderId,
 	pub qty: f64,
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct ProtocolFills {
+	pub key: Uuid,
+	pub fills: Vec<ProtocolFill>,
 }
 
 #[derive(Clone, Debug, Default)]

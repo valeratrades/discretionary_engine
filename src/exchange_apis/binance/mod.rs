@@ -21,7 +21,7 @@ use serde_json::{Number, Value};
 use serde_with::{serde_as, DisplayFromStr};
 use sha2::Sha256;
 use tokio::{select, task::JoinSet};
-use tracing::{info, instrument, warn};
+use tracing::{debug, instrument, warn};
 use url::Url;
 use uuid::Uuid;
 use v_utils::trades::Ohlc;
@@ -75,7 +75,7 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 				tracing::warn!("Encountered CloudFront error. Oh boy, here we go again.");
 				encountered_cloudfront_error = true;
 			} else {
-				tracing::info!("CloudFront error encountered again. Attempting retry #{attempt} in {retry_delay:?}");
+				tracing::debug!("CloudFront error encountered again. Attempting retry #{attempt} in {retry_delay:?}");
 			}
 			tokio::time::sleep(retry_delay).await;
 			retry_delay += std::time::Duration::from_secs(1);
@@ -90,7 +90,7 @@ pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoin
 
 #[instrument]
 pub async fn unsigned_request(http_method: reqwest::Method, endpoint_str: &str, params: HashMap<&str, String>) -> Result<reqwest::Response> {
-	info!("requesting unsigned\nEndpoint: {}\nParams: {:?}", endpoint_str, &params);
+	debug!("requesting unsigned\nEndpoint: {}\nParams: {:?}", endpoint_str, &params);
 	let client = reqwest::Client::new();
 	let r = client.request(http_method, endpoint_str).query(&params).send().await?;
 
@@ -158,7 +158,7 @@ struct PriceResponse {
 
 #[instrument]
 pub async fn futures_price(asset: &str) -> Result<f64> {
-	info!("requesting futures price"); //doesn't flush immediately, needs fixing to be useful
+	debug!("requesting futures price"); //doesn't flush immediately, needs fixing to be useful
 	let symbol = crate::exchange_apis::Symbol {
 		base: asset.to_string(),
 		quote: "USDT".to_string(),
@@ -252,7 +252,8 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("symbol", binance_order.base_info.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
-	params.insert("recvWindow", "15000".to_owned()); // dbg currently they are having some issues with response speed
+	params.insert("recvWindow", "20000".to_owned()); // dbg currently they are having some issues with response speed
+	debug!("Polling order {}", binance_order.binance_id.unwrap());
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
@@ -304,7 +305,7 @@ impl From<BinanceKline> for Ohlc {
 #[instrument]
 pub async fn get_historic_klines(symbol: String, interval: String, limit: usize) -> Result<Vec<BinanceKline>> {
 	dbg!(&"getting historic klines");
-	info!("requesting historic klines"); //doesn't flush immediately, needs fixing to be useful
+	debug!("requesting historic klines"); //doesn't flush immediately, needs fixing to be useful
 	let base_url = Market::BinanceFutures.get_base_url();
 	let endpoint = base_url.join("/fapi/v1/klines")?;
 
@@ -323,7 +324,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: tokio::sync::mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
-	info!("Binance_runtime started");
+	debug!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
@@ -343,7 +344,9 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
 				currently_deployed_read.iter().cloned().collect()
 			};
-			info!("Local knowledge of deployed orders: {:?}", orders);
+			debug!("Local knowledge of deployed orders: {:?}", orders);
+
+			// Will update to websocket later, so requesting the actual deployed orders is free.
 
 			// shuffle orders so there is no positional bias when polling
 			let mut rng = SmallRng::from_entropy();
@@ -358,7 +361,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 						continue;
 					}
 				};
-				info!("Successfully polled order: {:?}", r);
+				debug!("Successfully polled order: {:?}", r);
 				//
 
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
@@ -407,7 +410,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 						}
 					}
 				};
-				info!("closed orders");
+				debug!("closed orders");
 
 				let mut just_deployed = Vec::new();
 				for o in target_orders {
@@ -415,7 +418,6 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 						Ok(order) => order,
 						Err(e) => {
 						//TODO!!!: add retry if it's server or connection error. On error of placing an order: match is_payload_error { true => log error, do nothing, false => log warn, retry }. (ensure that in the first case the currently_deployed_orders has a correct value)
-
 							tracing::error!("Error posting order: {:?}", e);
 							continue;
 						}

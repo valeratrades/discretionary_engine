@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-use std::time::Duration;
+use std::{fs::File, io::Write, path::Path, sync::Arc, time::Duration};
 
 use eyre::{bail, eyre, Result};
 use serde::de::DeserializeOwned;
@@ -10,26 +10,28 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{
 	fmt::{self, MakeWriter},
 	layer::SubscriberExt,
+	prelude::*,
 	EnvFilter, Registry,
 };
-
+//let console_layer = console_subscriber::spawn();
 /// # Panics
-pub fn init_subscriber() {
-	// let console_layer = console_subscriber::spawn();
-	// let formatting_layer = BunyanFormattingLayer::new("discretionary_engine".into(), std::io::stdout);
-	let setup = |output: fn() -> Box<dyn std::io::Write>| {
-		let formatting_layer = fmt::layer().json().pretty().with_writer(output).with_file(true).with_line_number(true);
+pub fn init_subscriber(log_path: Option<Box<Path>>) {
+	let setup = |make_writer: Box<dyn Fn() -> Box<dyn Write> + Send + Sync>| {
+		let formatting_layer = fmt::layer().json().pretty().with_writer(make_writer).with_file(true).with_line_number(true);
 		let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info"));
 		let subscriber = Registry::default().with(env_filter).with(JsonStorageLayer).with(formatting_layer);
 		set_global_default(subscriber).expect("Failed to set subscriber");
 	};
 
-	let output = match std::env::var("TEST_LOG") {
-		Ok(_) => || Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
-		Err(_) => || Box::new(std::io::sink()) as Box<dyn std::io::Write>,
+	match log_path {
+		Some(path) => {
+			let path = path.to_owned();
+			setup(Box::new(move || Box::new(File::create(&path).expect("Failed to create log file"))));
+		}
+		None => {
+			setup(Box::new(|| Box::new(std::io::stdout())));
+		}
 	};
-
-	setup(output);
 }
 
 /// Basically reqwest's `json()`, but prints the target's content on deserialization error.

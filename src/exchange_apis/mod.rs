@@ -1,9 +1,14 @@
 pub mod binance;
 use std::collections::HashMap;
 
+use tokio::sync::mpsc;
 use v_utils::prelude::*;
 
-use crate::{positions::PositionCallback, protocols::ProtocolFill, PositionOrderId};
+use crate::{
+	positions::PositionCallback,
+	protocols::{ProtocolFill, ProtocolFills},
+	PositionOrderId,
+};
 pub mod order_types;
 use eyre::{bail, Result};
 use order_types::{ConceptualOrder, Order};
@@ -72,51 +77,66 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx).await;
 		exchange_runtimes_js.join_all().await;
 	});
-	let mut last_fill_key = Uuid::default();
 
 	let ex = &crate::exchange_apis::binance::info::futures_exchange_info;
 
-	let mut position_callbacks: HashMap<Uuid, tokio::sync::mpsc::Sender<Vec<ProtocolFill>>> = HashMap::new();
+	let mut last_fill_key = Uuid::default();
+	let mut position_callbacks: HashMap<Uuid, mpsc::Sender<ProtocolFills>> = HashMap::new();
 	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
+
+	fn handle_hub_rx(
+		hub_rx: HubRx,
+		last_fill_key: &Uuid,
+		requested_orders: &mut HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>>,
+		position_callbacks: &mut HashMap<Uuid, mpsc::Sender<ProtocolFills>>,
+		orders_tx: &tokio::sync::watch::Sender<HubPassforward>,
+	) -> Result<()> {
+		if *last_fill_key != hub_rx.key {
+			tracing::debug!("Key mismatch, ignoring the request. Requested HubRx:\n{:?}\nCorrect key: {last_fill_key}", &hub_rx);
+			return Ok(());
+		}
+		requested_orders.insert(hub_rx.position_callback.position_id, hub_rx.orders);
+		position_callbacks.insert(hub_rx.position_callback.position_id, hub_rx.position_callback.sender);
+
+		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
+		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
+			.into_iter()
+			.map(|o| {
+				let new_id = PositionOrderId::new_from_protocol_id(hub_rx.position_callback.position_id, o.id);
+				ConceptualOrder { id: new_id, ..o }
+			})
+			.collect();
+
+		let target_orders = hub_process_orders(flat_requested_orders_position_id);
+
+		let binance_futures_orders = target_orders
+			.iter()
+			.filter(|o| o.symbol.market == Market::BinanceFutures)
+			.cloned()
+			.collect::<Vec<Order<PositionOrderId>>>();
+
+		let acceptance_token = Uuid::now_v7();
+		let passforward = HubPassforward::new(acceptance_token, binance_futures_orders);
+		orders_tx.send(passforward)?;
+		Ok(())
+	}
+
+	async fn handle_fill(fill: HubCallback, last_fill_key: &mut Uuid, position_callbacks: &HashMap<Uuid, mpsc::Sender<ProtocolFills>>) -> Result<()> {
+		*last_fill_key = fill.key;
+		let position_id = fill.order.id.position_id;
+		let sender = position_callbacks.get(&position_id).unwrap();
+		let vec_fill = vec![ProtocolFill::new(fill.order.id.into(), fill.fill_qty)];
+		sender.send(ProtocolFills::new(*last_fill_key, vec_fill)).await?;
+		Ok(())
+	}
 
 	loop {
 		tokio::select! {
 			Some(hub_rx) = rx.recv() => {
-				if last_fill_key != hub_rx.key {
-					tracing::info!("Key mismatch, ignoring the request. Requested HubRx:\n{:?}", &hub_rx);
-					continue;
-				}
-				requested_orders.insert(hub_rx.position_callback.position_id, hub_rx.orders);
-				position_callbacks.insert(hub_rx.position_callback.position_id, hub_rx.position_callback.sender);
-
-				let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
-				let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
-					.into_iter()
-					.map(|o| {
-						let new_id = PositionOrderId::new_from_protocol_id(hub_rx.position_callback.position_id, o.id);
-						ConceptualOrder { id: new_id, ..o }
-					})
-					.collect();
-
-				let target_orders = hub_process_orders(flat_requested_orders_position_id);
-
-				//HACK: all others are ignored for now
-				let binance_futures_orders = target_orders
-					.iter()
-					.filter(|o| o.symbol.market == Market::BinanceFutures)
-					.cloned()
-					.collect::<Vec<Order<PositionOrderId>>>();
-
-				let acceptance_token = Uuid::now_v7(); //HACK
-				let passforward = HubPassforward::new(acceptance_token, binance_futures_orders);
-				orders_tx.send(passforward)?;
+				handle_hub_rx(hub_rx, &last_fill_key, &mut requested_orders, &mut position_callbacks, &orders_tx)?;
 			},
 			Some(fill) = fills_rx.recv() => {
-				last_fill_key = fill.key;
-				let position_id = fill.order.id.position_id;
-				let sender = position_callbacks.get(&position_id).unwrap();
-				let fills = vec![ProtocolFill::new(fill.key, fill.order.id.into(), fill.fill_qty)];
-				sender.send(fills).await?;
+				handle_fill(fill, &mut last_fill_key, &position_callbacks).await?;
 			},
 			else => break,
 		}
