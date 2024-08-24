@@ -17,16 +17,22 @@ use tracing_subscriber::{
 /// # Panics
 pub fn init_subscriber(log_path: Option<Box<Path>>) {
 	let setup = |make_writer: Box<dyn Fn() -> Box<dyn Write> + Send + Sync>| {
-		let formatting_layer = fmt::layer().json().pretty().with_writer(make_writer).with_file(true).with_line_number(true);
-		let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info"));
-		let subscriber = Registry::default().with(env_filter).with(JsonStorageLayer).with(formatting_layer);
-		set_global_default(subscriber).expect("Failed to set subscriber");
+		let formatting_layer = tracing_subscriber::fmt::layer().json().pretty().with_writer(make_writer).with_file(true).with_line_number(true);
+		let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or(tracing_subscriber::EnvFilter::new("info"));
+		let subscriber = tracing_subscriber::Registry::default()
+			.with(env_filter)
+			.with(tracing_subscriber::fmt::Layer::default())
+			.with(formatting_layer);
+		tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 	};
 
 	match log_path {
 		Some(path) => {
 			let path = path.to_owned();
-			setup(Box::new(move || Box::new(File::create(&path).expect("Failed to create log file"))));
+			setup(Box::new(move || {
+				let file = std::fs::OpenOptions::new().create(true).append(true).open(&path).expect("Failed to open log file");
+				Box::new(file) as Box<dyn Write>
+			}));
 		}
 		None => {
 			setup(Box::new(|| Box::new(std::io::stdout())));

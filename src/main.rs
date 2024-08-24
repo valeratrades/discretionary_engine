@@ -131,7 +131,8 @@ async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::S
 	};
 
 	let spec = PositionSpec::new(position_args.coin, side, target_size);
-	let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await?;
+	let acquired = PositionAcquisition::dbg_new(spec).await?;
+	//let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await?;
 	let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await?;
 
 	Ok(())
