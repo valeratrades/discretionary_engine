@@ -250,7 +250,10 @@ fn recalculate_target_orders(
 }
 
 async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>) -> Result<()> {
-	debug!("{:?} sent orders: {:?}", protocol_orders_update.protocol_id, protocol_orders_update.__orders);
+	debug!(
+		"Position received protocol {:?} sending orders: {:?}",
+		protocol_orders_update.protocol_id, protocol_orders_update.__orders
+	);
 	if let Some(protocol_info) = dyn_info.get_mut(&protocol_orders_update.protocol_id) {
 		protocol_info.update_orders(protocol_orders_update.clone());
 	} else {

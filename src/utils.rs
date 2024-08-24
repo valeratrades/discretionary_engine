@@ -29,6 +29,17 @@ pub fn init_subscriber(log_path: Option<Box<Path>>) {
 	match log_path {
 		Some(path) => {
 			let path = path.to_owned();
+
+			// Truncate the file before setting up the logger
+			{
+				let _ = std::fs::OpenOptions::new()
+					.create(true)
+					.write(true)
+					.truncate(true)
+					.open(&path)
+					.expect("Failed to truncate log file");
+			}
+
 			setup(Box::new(move || {
 				let file = std::fs::OpenOptions::new().create(true).append(true).open(&path).expect("Failed to open log file");
 				Box::new(file) as Box<dyn Write>
