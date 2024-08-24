@@ -1,3 +1,4 @@
+# it often says `skipped` when it actually runs and makes changes. Ignore `skipped`, assume it worked.
 repos:
   - repo: https://github.com/valeratrades/cargo-sort
     rev: v0.1.2
