@@ -34,6 +34,8 @@ ignored = ["v_utils_macros", "serde_with", "tracing-futures"]
 #tracing-futures = "0.2.5"
 
 [dependencies]
+
+anyhow = "*" # should make both machete and sort fail
 chrono = "^0.4.38"
 clap = { version = "^4.5.16", features = ["derive"] }
 config = "0.14.0"
