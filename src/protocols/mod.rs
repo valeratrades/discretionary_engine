@@ -169,11 +169,12 @@ impl ProtocolDynamicInfo {
 		self.protocol_orders = orders;
 	}
 
-	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, &Exchanges) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let size_multiplier = 1.0 / parent_matching_subtype_n as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
+		todo!("calculate min_trade_qties given all exchange infos");
 
-		self.protocol_orders.apply_mask(&self.fills, total_controlled_size)
+		self.protocol_orders.recalculate_protocol_orders_allocation(&self.fills, total_controlled_size)
 	}
 }
 
@@ -184,13 +185,19 @@ pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
+#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+struct RecalculatedAllocation {
+	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	total_offset: Option<f64>,
+}
 impl ProtocolOrders {
 	pub fn empty_mask(&self) -> Vec<f64> {
 		vec![0.; self.__orders.len()]
 	}
 
-	pub fn apply_mask(&self, filled_mask: &[f64], total_controlled_notional: f64) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn recalculate_protocol_orders_allocation(&self, filled_mask: &[f64], total_controlled_notional: f64, min_trade_qties: &[f64]) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let mut total_offset = 0.0;
+		dbg!(&total_controlled_notional, &filled_mask, &self.__orders);
 
 		// subtract filled
 		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
@@ -239,6 +246,7 @@ impl ProtocolOrders {
 
 #[cfg(test)]
 mod tests {
+	use insta::assert_debug_snapshot;
 	use v_utils::trades::Side;
 
 	use super::*;
@@ -261,8 +269,79 @@ mod tests {
 
 		let filled_mask = vec![0.1];
 		let total_controlled_notional = 1.0;
-		let got = orders.apply_mask(&filled_mask, total_controlled_notional);
+		let min_trade_qties = [0.007];
+		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
 		assert_eq!(got.len(), 1);
 		assert_eq!(got[0].qty_notional, 0.4);
+	}
+
+	#[test]
+	fn test_apply_mask_multiple_orders() {
+		let orders = ProtocolOrders::new(
+			"test".to_string(),
+			vec![
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+					Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Buy,
+					0.1,
+				)),
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+					Symbol::new("ETH".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Sell,
+					0.5,
+				)),
+				None,
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+					Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Buy,
+					25.0,
+				)),
+			],
+		);
+
+		let filled_mask = vec![0.05, 0.2, 0.0, 0.0];
+		let total_controlled_notional = 1.0;
+		let min_trade_qties = [0.007, 0.075, f64::NAN, 10.0];
+		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
+
+		let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
+		assert_debug_snapshot!(qties, @r###"
+  [
+      0.05,
+      0.3,
+      25.0,
+  ]
+  "###);
+	}
+
+	#[test]
+	fn test_apply_mask_fully_filled_orders() {
+		let orders = ProtocolOrders::new(
+			"test".to_string(),
+			vec![
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(0.0)),
+					Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Buy,
+					25.0,
+				)),
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(0.0)),
+					Symbol::new("ETH".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Sell,
+					25.0,
+				)),
+			],
+		);
+
+		let filled_mask = vec![25.0, 25.0];
+		let total_controlled_notional = 1.0;
+		let min_trade_qties = [10.0, 10.0];
+		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
+
+		assert_eq!(got.len(), 0);
 	}
 }
