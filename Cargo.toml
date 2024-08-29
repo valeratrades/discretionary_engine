@@ -47,7 +47,7 @@ insta = { version = "1.39.0", features = ["json"] }
 lazy_static = "1.5.0"
 rand = { version = "0.8.5", features = ["small_rng"] }
 reqwest = { version = "0.12.7", features = ["json"] }
-serde = { version = "^1.0.208", features = ["derive"] }
+serde = { version = "^1.0.209", features = ["derive"] }
 serde_json = "^1.0.127"
 serde_urlencoded = "^0.7.1"
 serde_with = "^3.9.0"

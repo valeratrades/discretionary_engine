@@ -9,9 +9,11 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
+use std::sync::Arc;
+
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
-use exchange_apis::HubRx;
+use exchange_apis::{exchanges::Exchanges, hub, hub::HubRx};
 use eyre::Result;
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
@@ -84,20 +86,20 @@ async fn main() -> Result<()> {
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
-	let tx = exchange_apis::init_hub(config.clone(), &mut js);
+	let tx = hub::init_hub(config.clone(), &mut js);
 
 	match cli.command {
 		Commands::New(position_args) => {
-			command_new(position_args, config, tx).await?;
+			command_new(position_args, config, tx, exchanges).await?;
 		}
 	}
 
 	Ok(())
 }
 
-async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>) -> Result<()> {
+async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
-	let balance = match exchange_apis::compile_total_balance(config.clone()).await {
+	let balance = match Exchanges::compile_total_balance(exchanges.clone(), config.clone()).await {
 		Ok(b) => b,
 		Err(e) => {
 			eprintln!("Failed to get balance: {}", e);

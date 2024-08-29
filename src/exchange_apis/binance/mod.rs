@@ -399,7 +399,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 				}
 				dbg!(&target_orders, &currently_deployed_clone);
 
-			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed than target ones are opened.
+			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
 			//Binance docs: currently only LIMIT order modification is supported
 				loop {
 					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {

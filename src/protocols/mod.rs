@@ -169,7 +169,7 @@ impl ProtocolDynamicInfo {
 		self.protocol_orders = orders;
 	}
 
-	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, &Exchanges) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, exchanges: &Exchanges) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let size_multiplier = 1.0 / parent_matching_subtype_n as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
 		todo!("calculate min_trade_qties given all exchange infos");
@@ -185,7 +185,7 @@ pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+#[derive(Clone, Debug, Default, derive_new::new)]
 struct RecalculatedAllocation {
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	total_offset: Option<f64>,
