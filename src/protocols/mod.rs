@@ -269,7 +269,7 @@ mod tests {
 
 	use super::*;
 	use crate::exchange_apis::{
-		order_types::{ConceptualMarket, ConceptualOrderType},
+		order_types::{ConceptualMarket, ConceptualOrderType, ConceptualStopMarket},
 		Market, Symbol,
 	};
 
@@ -310,6 +310,42 @@ mod tests {
 					Side::Sell,
 					0.5,
 				)),
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::StopMarket(ConceptualStopMarket::new(0.42)),
+					Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Sell,
+					30.0,
+				)),
+				Some(ConceptualOrderPercents::new(
+					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+					Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
+					Side::Buy,
+					25.0,
+				)),
+			],
+		);
+
+		let filled_mask = vec![0.05, 0.2, 0.0, 10.0];
+		let total_controlled_notional = 1.0;
+		let min_trade_qties = [0.007, 0.075, 10.0, 10.0];
+		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
+
+		let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
+		assert_debug_snapshot!(qties, @r###"
+	[
+			0.05,
+			0.3,
+			30.0
+			15.0
+	]
+  "###);
+	}
+
+	#[test]
+	fn test_nones_in_orders() {
+		let orders = ProtocolOrders::new(
+			"test".to_string(),
+			vec![
 				None,
 				Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
@@ -320,16 +356,14 @@ mod tests {
 			],
 		);
 
-		let filled_mask = vec![0.05, 0.2, 0.0, 0.0];
+		let filled_mask = vec![0.0, 0.0];
 		let total_controlled_notional = 1.0;
-		let min_trade_qties = [0.007, 0.075, f64::NAN, 10.0];
+		let min_trade_qties = [0.0, 10.0];
 		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
 
 		let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
 		assert_debug_snapshot!(qties, @r###"
   [
-      0.05,
-      0.3,
       25.0,
   ]
   "###);

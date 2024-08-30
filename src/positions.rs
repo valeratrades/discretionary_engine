@@ -9,7 +9,10 @@ use v_utils::trades::Side;
 
 use crate::{
 	exchange_apis::{
-		binance, exchanges::Exchanges, hub::HubRx, order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId}
+		binance,
+		exchanges::Exchanges,
+		hub::HubRx,
+		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
 	},
 	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType},
 };
@@ -197,7 +200,7 @@ fn recalculate_target_orders(
 	left_to_target_notional: f64,
 	side: Side,
 	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
-	exchanges: Arc<Exchanges>
+	exchanges: Arc<Exchanges>,
 ) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 	let mut market_orders = Vec::new();
 	let mut stop_orders = Vec::new();
