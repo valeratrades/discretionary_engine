@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,7 @@ use url::Url;
 use uuid::Uuid;
 use v_utils::{macros::graphemics, prelude::*};
 
+use super::exchanges::Exchanges;
 use crate::{
 	config::AppConfig,
 	exchange_apis::{
@@ -22,20 +23,20 @@ use crate::{
 //? is there a conventional way to introduce these communication locks?
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubCallback {
-	key: Uuid,
-	fill_qty: f64,
-	order: Order<PositionOrderId>,
+	pub key: Uuid,
+	pub fill_qty: f64,
+	pub order: Order<PositionOrderId>,
 }
 
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct HubPassforward {
-	key: Uuid,
-	orders: Vec<Order<PositionOrderId>>,
+	pub key: Uuid,
+	pub orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(config: AppConfig, parent_js: &mut JoinSet<Result<()>>) -> tokio::sync::mpsc::Sender<HubRx> {
-	let (tx, rx) = tokio::sync::mpsc::channel(32);
-	parent_js.spawn(hub(config.clone(), rx));
+pub fn init_hub(config: AppConfig, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<HubRx> {
+	let (tx, rx) = mpsc::channel(32);
+	parent_js.spawn(hub(config.clone(), rx, exchanges));
 	tx
 }
 
@@ -45,7 +46,7 @@ pub struct HubRx {
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	position_callback: PositionCallback,
 }
-pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) -> Result<()> {
+pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
@@ -54,13 +55,13 @@ pub async fn hub(config: AppConfig, mut rx: tokio::sync::mpsc::Receiver<HubRx>) 
 	let config_clone = config.clone();
 	let mut js = JoinSet::new();
 
+	// Spawn Binance
+	let exchanges_clone = exchanges.clone();
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
-		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx).await;
+		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
 		exchange_runtimes_js.join_all().await;
 	});
-
-	let ex = &crate::exchange_apis::binance::info::futures_exchange_info;
 
 	let mut last_fill_key = Uuid::default();
 	let mut position_callbacks: HashMap<Uuid, mpsc::Sender<ProtocolFills>> = HashMap::new();

@@ -86,11 +86,12 @@ async fn main() -> Result<()> {
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
-	let tx = hub::init_hub(config.clone(), &mut js);
+	let exchanges_arc = Arc::new(Exchanges::default());
+	let tx = hub::init_hub(config.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {
 		Commands::New(position_args) => {
-			command_new(position_args, config, tx, exchanges).await?;
+			command_new(position_args, config, tx, exchanges_arc).await?;
 		}
 	}
 

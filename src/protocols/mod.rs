@@ -2,7 +2,7 @@ mod approaching_limit;
 mod dummy_market;
 mod sar;
 mod trailing_stop;
-use std::{collections::HashSet, str::FromStr};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
 use dummy_market::DummyMarketWrapper;
@@ -13,7 +13,10 @@ use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
-use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
+use crate::exchange_apis::{
+	exchanges::Exchanges,
+	order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId},
+};
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 100% for each type with at least one representative.
@@ -146,6 +149,7 @@ pub struct ProtocolFills {
 	pub fills: Vec<ProtocolFill>,
 }
 
+/// Position's knowledge of the protocols in use.
 #[derive(Clone, Debug, Default)]
 pub struct ProtocolDynamicInfo {
 	fills: Vec<f64>,
@@ -169,12 +173,23 @@ impl ProtocolDynamicInfo {
 		self.protocol_orders = orders;
 	}
 
-	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, exchanges: &Exchanges) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+		let orders = &self.protocol_orders.__orders;
 		let size_multiplier = 1.0 / parent_matching_subtype_n as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
-		todo!("calculate min_trade_qties given all exchange infos");
+		let qties_payload = orders.iter().cloned().filter(|o| o.is_some()).map(|o| o.unwrap()).collect::<Vec<ConceptualOrderPercents>>();
+		let min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), qties_payload);
 
-		self.protocol_orders.recalculate_protocol_orders_allocation(&self.fills, total_controlled_size)
+		let mut all_min_trade_qties = Vec::new();
+		for i in 0..orders.len() {
+			match orders.get(i) {
+				Some(Some(_)) => all_min_trade_qties.push(*min_trade_qties.get(i).unwrap()),
+				_ => all_min_trade_qties.push(f64::NAN),
+			}
+		}
+
+		self.protocol_orders
+			.recalculate_protocol_orders_allocation(&self.fills, total_controlled_size, &all_min_trade_qties)
 	}
 }
 
@@ -196,8 +211,11 @@ impl ProtocolOrders {
 	}
 
 	pub fn recalculate_protocol_orders_allocation(&self, filled_mask: &[f64], total_controlled_notional: f64, min_trade_qties: &[f64]) -> Vec<ConceptualOrder<ProtocolOrderId>> {
-		let mut total_offset = 0.0;
+		assert_eq!(self.__orders.len(), filled_mask.len());
+		assert_eq!(self.__orders.len(), min_trade_qties.len());
 		dbg!(&total_controlled_notional, &filled_mask, &self.__orders);
+
+		let mut total_offset = 0.0;
 
 		// subtract filled
 		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self

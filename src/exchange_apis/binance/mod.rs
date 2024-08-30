@@ -9,9 +9,9 @@ use std::{
 use chrono::Utc;
 use eyre::{bail, Result};
 use hmac::{Hmac, Mac};
-pub use info::futures_exchange_info;
 pub use orders::*;
 use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
+use tokio::sync::mpsc;
 use reqwest::{
 	header::{HeaderMap, HeaderValue, CONTENT_TYPE},
 	Method,
@@ -20,13 +20,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::{serde_as, DisplayFromStr};
 use sha2::Sha256;
-use tokio::{select, task::JoinSet};
+use tokio::{select, sync::watch, task::JoinSet};
 use tracing::{debug, instrument, warn};
 use url::Url;
 use uuid::Uuid;
 use v_utils::trades::Ohlc;
 
-use super::{order_types::IdRequirements, HubCallback, HubPassforward};
+use super::{hub::{HubCallback, HubPassforward}, order_types::IdRequirements};
 use crate::{
 	config::AppConfig,
 	exchange_apis::{order_types::Order, Market},
@@ -39,6 +39,11 @@ type HmacSha256 = Hmac<Sha256>;
 pub struct Binance {
 	// And so then many calls will be replaced with just finding info here.
 	futures_symbols: HashMap<String, FuturesSymbol>,
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct BinanceExchange {
+	pub todo: String,
 }
 
 pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoint_str: &str, mut params: HashMap<&'static str, String>, key: S, secret: S) -> Result<reqwest::Response> {
@@ -323,7 +328,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 }
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
-pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: tokio::sync::mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
+pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: mpsc::Sender<HubCallback>, mut hub_rx: watch::Receiver<HubPassforward>, _binance_exchange: Arc<RwLock<BinanceExchange>>) {
 	debug!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;

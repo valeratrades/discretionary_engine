@@ -8,16 +8,6 @@ use crate::{
 	utils::deser_reqwest_blocking,
 };
 
-lazy_static::lazy_static! {
-	// wait, this should be continuously pulled
-	pub static ref futures_exchange_info: FuturesExchangeInfo = {
-		let base_url = Market::BinanceFutures.get_base_url();
-		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
-		let r = reqwest::blocking::get(url).unwrap();
-		deser_reqwest_blocking::<FuturesExchangeInfo>(r).unwrap()
-	};
-}
-
 // FuturesExchangeInfo structs {{{
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
