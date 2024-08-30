@@ -177,7 +177,7 @@ impl ProtocolDynamicInfo {
 		let orders = &self.protocol_orders.__orders;
 		let size_multiplier = 1.0 / parent_matching_subtype_n as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
-		let qties_payload = orders.iter().cloned().filter(|o| o.is_some()).map(|o| o.unwrap()).collect::<Vec<ConceptualOrderPercents>>();
+		let qties_payload = orders.iter().flatten().cloned().collect::<Vec<ConceptualOrderPercents>>();
 		let min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), qties_payload);
 
 		let mut all_min_trade_qties = Vec::new();
@@ -201,19 +201,21 @@ pub struct ProtocolOrders {
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
 #[derive(Clone, Debug, Default, derive_new::new)]
-struct RecalculatedAllocation {
-	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	total_offset: Option<f64>,
+pub struct RecalculatedAllocation {
+	pub orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	pub total_offset: Option<f64>,
 }
 impl ProtocolOrders {
 	pub fn empty_mask(&self) -> Vec<f64> {
 		vec![0.; self.__orders.len()]
 	}
 
+	/// Order is *NOT* preserved. Orders with no remaining size are completely excluded from the output.
+	//BUG: fails to account for asset price. If orders on different assets are mixed, the percent_total_notional per each depends on the asset price (very bad).
+	//TODO!!: actually implement min_trade_qties.
 	pub fn recalculate_protocol_orders_allocation(&self, filled_mask: &[f64], total_controlled_notional: f64, min_trade_qties: &[f64]) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		assert_eq!(self.__orders.len(), filled_mask.len());
 		assert_eq!(self.__orders.len(), min_trade_qties.len());
-		dbg!(&total_controlled_notional, &filled_mask, &self.__orders);
 
 		let mut total_offset = 0.0;
 
@@ -331,13 +333,14 @@ mod tests {
 		let got = orders.recalculate_protocol_orders_allocation(&filled_mask, total_controlled_notional, &min_trade_qties);
 
 		let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
+		// order doesn't have to match.
 		assert_debug_snapshot!(qties, @r###"
-	[
-			0.05,
-			0.3,
-			30.0
-			15.0
-	]
+  [
+      30.0,
+      15.0,
+      0.3,
+      0.05,
+  ]
   "###);
 	}
 

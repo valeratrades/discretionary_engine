@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use eyre::Result;
 
-use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market, Symbol};
+use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market};
 use crate::{config::AppConfig, exchange_apis::binance};
 
 /// [Exchange] itself is passed around as Arc<Self>, RwLock is only present at the level of individual exchanges, as to not lock it all at once when writing.

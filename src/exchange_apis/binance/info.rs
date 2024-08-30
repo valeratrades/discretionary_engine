@@ -3,10 +3,7 @@ use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
 
-use crate::{
-	exchange_apis::{Market, Symbol},
-	utils::deser_reqwest_blocking,
-};
+use crate::exchange_apis::{Market, Symbol};
 
 // FuturesExchangeInfo structs {{{
 #[derive(Debug, Deserialize, Serialize)]

@@ -8,7 +8,7 @@ pub mod order_types;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
-use v_utils::{macros::graphemics, prelude::*};
+use v_utils::macros::graphemics;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Copy)]

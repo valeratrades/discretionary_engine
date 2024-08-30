@@ -1,11 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eyre::{bail, Result};
-use serde::{Deserialize, Serialize};
+use eyre::Result;
 use tokio::sync::mpsc;
-use url::Url;
 use uuid::Uuid;
-use v_utils::{macros::graphemics, prelude::*};
+use v_utils::prelude::*;
 
 use super::exchanges::Exchanges;
 use crate::{
@@ -156,11 +154,11 @@ fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) 
 }
 
 mod tests {
-	use order_types::{ConceptualMarket, ConceptualOrderType, ConceptualStopMarket};
+	use order_types::{ConceptualMarket, ConceptualStopMarket};
 	use v_utils::trades::Side;
 
 	use super::*;
-	use crate::exchange_apis::{Market, Symbol};
+	use crate::exchange_apis::Symbol;
 
 	#[test]
 	fn test_hub_process() {
