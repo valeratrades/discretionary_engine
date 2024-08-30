@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use eyre::Result;
 use serde::{Deserialize, Serialize};
@@ -9,9 +9,7 @@ use v_utils::trades::Side;
 
 use crate::{
 	exchange_apis::{
-		binance,
-		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
-		HubRx,
+		binance, exchanges::Exchanges, hub::HubRx, order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId}
 	},
 	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType},
 };
@@ -45,7 +43,7 @@ impl PositionAcquisition {
 	}
 
 	#[instrument]
-	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
+	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
 
@@ -65,14 +63,14 @@ impl PositionAcquisition {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= target_coin_quantity {
 						break;
 					}
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
@@ -104,7 +102,7 @@ pub struct PositionCallback {
 
 impl PositionFollowup {
 	#[instrument]
-	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>) -> Result<Self> {
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
 
@@ -120,7 +118,7 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
@@ -128,7 +126,7 @@ impl PositionFollowup {
 						break;
 					}
 					dbg!(&last_fill_key);
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info).await?;
+					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
@@ -167,8 +165,9 @@ async fn update_orders(
 	left_to_target_notional: f64,
 	position_side: Side,
 	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
+	exchanges: Arc<Exchanges>,
 ) -> Result<()> {
-	let new_target_orders = recalculate_target_orders(counted_subtypes, left_to_target_notional, position_side, dyn_info);
+	let new_target_orders = recalculate_target_orders(counted_subtypes, left_to_target_notional, position_side, dyn_info, exchanges);
 	match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
 		Ok(_) => {}
 		Err(e) => {
@@ -198,6 +197,7 @@ fn recalculate_target_orders(
 	left_to_target_notional: f64,
 	side: Side,
 	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
+	exchanges: Arc<Exchanges>
 ) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 	let mut market_orders = Vec::new();
 	let mut stop_orders = Vec::new();
@@ -205,7 +205,7 @@ fn recalculate_target_orders(
 	for (protocol_spec_str, info) in dyn_info.iter() {
 		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
 		let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
-		let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional);
+		let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional, exchanges.clone());
 		conceptual_orders.into_iter().for_each(|o| match o.order_type {
 			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
 			ConceptualOrderType::Limit(_) => limit_orders.push(o),

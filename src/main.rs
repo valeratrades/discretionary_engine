@@ -98,9 +98,9 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
+async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
-	let balance = match Exchanges::compile_total_balance(exchanges.clone(), config.clone()).await {
+	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config.clone()).await {
 		Ok(b) => b,
 		Err(e) => {
 			eprintln!("Failed to get balance: {}", e);
@@ -135,8 +135,8 @@ async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::S
 
 	let spec = PositionSpec::new(position_args.coin, side, target_size);
 	//let acquired = PositionAcquisition::dbg_new(spec).await?;
-	let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await?;
-	let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await?;
+	let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone(), exchanges_arc.clone()).await?;
+	let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone(), exchanges_arc.clone()).await?;
 
 	Ok(())
 }
