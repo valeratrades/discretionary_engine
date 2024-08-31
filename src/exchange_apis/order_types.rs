@@ -3,7 +3,7 @@ use std::hash::Hash;
 use derive_new::new;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
-use v_utils::trades::Side;
+use v_utils::{io::Percent, trades::Side};
 
 use crate::{exchange_apis::Symbol, PositionOrderId};
 
@@ -115,7 +115,7 @@ pub struct ConceptualOrderPercents {
 	pub order_type: ConceptualOrderType,
 	pub symbol: Symbol,
 	pub side: Side,
-	pub qty_percent_of_controlled: f64,
+	pub qty_percent_of_controlled: Percent,
 }
 impl ConceptualOrderPercents {
 	pub fn to_exact<Id: IdRequirements>(self, total_controled_size: f64, id: Id) -> ConceptualOrder<Id> {
@@ -124,7 +124,7 @@ impl ConceptualOrderPercents {
 			order_type: self.order_type,
 			symbol: self.symbol,
 			side: self.side,
-			qty_notional: total_controled_size * self.qty_percent_of_controlled,
+			qty_notional: total_controled_size * *self.qty_percent_of_controlled,
 		}
 	}
 

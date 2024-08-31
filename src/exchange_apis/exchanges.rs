@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use eyre::Result;
 
-use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market};
+use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market, Symbol};
 use crate::{config::AppConfig, exchange_apis::binance};
 
 /// [Exchange] itself is passed around as Arc<Self>, RwLock is only present at the level of individual exchanges, as to not lock it all at once when writing.
@@ -27,6 +27,10 @@ impl Exchanges {
 			total_balance += balance;
 		}
 		Ok(total_balance)
+	}
+
+	pub fn symbol_prices_batch(_s: Arc<Self>, symbols: Vec<Symbol>) -> Vec<f64> {
+		todo!()
 	}
 
 	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: Vec<ConceptualOrderPercents>) -> Vec<f64> {

@@ -66,14 +66,16 @@ impl PositionAcquisition {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= target_coin_quantity {
 						break;
 					}
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
@@ -121,7 +123,9 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
+
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
@@ -129,7 +133,8 @@ impl PositionFollowup {
 						break;
 					}
 					dbg!(&last_fill_key);
-					update_orders(hub_tx.clone(), position_callback.clone(), last_fill_key, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone()).await?;
+					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
@@ -160,17 +165,7 @@ fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], a
 	(rx_orders, counted_subtypes)
 }
 
-async fn update_orders(
-	hub_tx: mpsc::Sender<HubRx>,
-	position_callback: PositionCallback,
-	last_fill_key: Uuid,
-	counted_subtypes: &HashMap<ProtocolType, usize>,
-	left_to_target_notional: f64,
-	position_side: Side,
-	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
-	exchanges: Arc<Exchanges>,
-) -> Result<()> {
-	let new_target_orders = recalculate_target_orders(counted_subtypes, left_to_target_notional, position_side, dyn_info, exchanges);
+async fn send_orders_to_hub(hub_tx: mpsc::Sender<HubRx>, position_callback: PositionCallback, last_fill_key: Uuid, new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>>) -> Result<()> {
 	match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
 		Ok(_) => {}
 		Err(e) => {

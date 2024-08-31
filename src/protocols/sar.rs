@@ -157,7 +157,7 @@ impl SarIndicator {
 				order_type: ConceptualOrderType::StopMarket(ConceptualStopMarket::new(self.sar)),
 				symbol: symbol.clone(),
 				side,
-				qty_percent_of_controlled: 1.0,
+				qty_percent_of_controlled: Percent::new(1.0),
 			})
 		} else {
 			None
