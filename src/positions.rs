@@ -202,8 +202,8 @@ fn recalculate_target_orders(
 	let mut limit_orders = Vec::new();
 	for (protocol_spec_str, info) in dyn_info.iter() {
 		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
-		let matching_subtype_n = counted_subtypes.get(&subtype).unwrap();
-		let conceptual_orders = info.conceptual_orders(*matching_subtype_n, left_to_target_notional, exchanges.clone());
+		let n_matching_protocol_subtypes_in_parent_position = counted_subtypes.get(&subtype).unwrap();
+		let conceptual_orders = info.conceptual_orders(*n_matching_protocol_subtypes_in_parent_position, left_to_target_notional, exchanges.clone());
 		conceptual_orders.into_iter().for_each(|o| match o.order_type {
 			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
 			ConceptualOrderType::Limit(_) => limit_orders.push(o),

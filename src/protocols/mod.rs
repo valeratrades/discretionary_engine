@@ -9,6 +9,7 @@ use color_eyre::eyre::{bail, Result};
 use dummy_market::DummyMarketWrapper;
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
+use tracing::instrument;
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
 use v_utils::trades::Side;
@@ -175,9 +176,10 @@ impl ProtocolDynamicInfo {
 		self.protocol_orders = orders;
 	}
 
-	pub fn conceptual_orders(&self, parent_matching_subtype_n: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	#[instrument(skip(exchanges))]
+	pub fn conceptual_orders(&self, n_matching_protocol_subtypes_in_parent_positioon: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 		let orders = &self.protocol_orders.__orders;
-		let size_multiplier = 2.0 / parent_matching_subtype_n as f64;
+		let size_multiplier = 2.0 / n_matching_protocol_subtypes_in_parent_positioon as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
 
 		let qties_payload = orders.iter().flatten().cloned().collect::<Vec<ConceptualOrderPercents>>();
@@ -187,13 +189,14 @@ impl ProtocolDynamicInfo {
 		let prices = Exchanges::symbol_prices_batch(exchanges.clone(), &prices_payload);
 
 		let mut per_order_infos = Vec::new();
-		for i in 1..orders.len() {
+		for i in 0..orders.len() {
 			let info = match orders.get(i) {
 				Some(Some(_)) => RecalculateOrdersPerOrderInfo::new(self.fills[i], min_trade_qties[i], prices[i]),
 				_ => RecalculateOrdersPerOrderInfo::default(),
 			};
 			per_order_infos.push(info);
 		}
+		assert_eq!(per_order_infos.len(), orders.len());
 
 		self.protocol_orders.recalculate_protocol_orders_allocation(total_controlled_size, &per_order_infos)
 	}
@@ -234,9 +237,12 @@ impl ProtocolOrders {
 	}
 
 	/// Order is *NOT* preserved. Orders with no remaining size are completely excluded from the output.
+	///
 	//HACK: doesn't yet work with multiple symbols.
 	//TODO!!: actually implement min_trade_qties.
+	#[instrument(skip(self))]
 	pub fn recalculate_protocol_orders_allocation(&self, total_controlled_notional: f64, per_order_info: &[RecalculateOrdersPerOrderInfo]) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+		assert_eq!(self.__orders.len(), per_order_info.len());
 		let mut total_offset = 1.0;
 
 		// subtract filled
