@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use color_eyre::eyre::Result;
+use tracing::instrument;
 
 use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market, Symbol};
 use crate::{config::AppConfig, exchange_apis::binance};
@@ -42,6 +43,7 @@ impl Exchanges {
 		symbols.iter().map(|_| 1.0).collect()
 	}
 
+	#[instrument(skip(_s))]
 	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: &[ConceptualOrderPercents]) -> Vec<f64> {
 		let mut min_notional_qty_accross_exchanges = Vec::with_capacity(orders_on_symbols.len());
 		for q in min_notional_qty_accross_exchanges.iter_mut() {

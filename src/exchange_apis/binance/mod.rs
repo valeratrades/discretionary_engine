@@ -42,7 +42,7 @@ use crate::{
 };
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct BinanceExchange {
 	pub binance_futures_info: BinanceExchangeFutures,
 }
@@ -53,12 +53,15 @@ impl BinanceExchange {
 	}
 
 	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
-	pub fn min_qties_batch(&self, asset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
+	#[instrument(skip(self))]
+	pub fn min_qties_batch(&self, baseasset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
+		assert_ne!(*self, Self::default());
+
 		let mut min_qties = Vec::new();
-		for (asset, ordertype) in asset_and_ordertype_pairs {
+		for (baseasset, ordertype) in baseasset_and_ordertype_pairs {
 			let mut all_min_notionals_for_asset = Vec::new();
 			for s in &self.binance_futures_info.symbols {
-				if s.symbol == *asset {
+				if s.base_asset == *baseasset {
 					all_min_notionals_for_asset.push(s.min_trade_qty_notional(ordertype));
 				}
 			}

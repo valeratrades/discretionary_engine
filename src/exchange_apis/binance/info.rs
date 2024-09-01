@@ -12,7 +12,7 @@ use crate::{config::AppConfig, exchange_apis::{order_types::ConceptualOrderType,
 use super::unsigned_request;
 
 // FuturesExchangeInfo structs {{{
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceExchangeFutures {
 	pub exchange_filters: Vec<String>,
@@ -42,7 +42,7 @@ impl BinanceExchangeFutures {
 	}
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct RateLimit {
 	pub interval: String,
 	pub intervalNum: u32,
@@ -68,7 +68,7 @@ pub struct RateLimit {
 // 	multiplierDecimal: u32,
 //}
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesSymbol {
 	pub symbol: String,
