@@ -9,7 +9,7 @@ use std::{
 use chrono::Utc;
 use color_eyre::eyre::{bail, Result};
 use hmac::{Hmac, Mac};
-use info::FuturesExchangeInfo;
+use info::BinanceExchangeFutures;
 pub use orders::*;
 use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
 use reqwest::{
@@ -42,11 +42,16 @@ use crate::{
 };
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone, Debug, Default, derive_new::new)]
+#[derive(Clone, Debug, Default)]
 pub struct BinanceExchange {
-	pub binance_futures_info: FuturesExchangeInfo,
+	pub binance_futures_info: BinanceExchangeFutures,
 }
 impl BinanceExchange {
+	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
+		let binance_futures_info = BinanceExchangeFutures::init(config_arc.clone()).await?;
+		Ok(Self { binance_futures_info })
+	}
+
 	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
 	pub fn min_qties_batch(&self, asset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
 		let mut min_qties = Vec::new();
@@ -245,7 +250,7 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
-		let info: info::FuturesExchangeInfo = deser_reqwest(r).await?;
+		let info: info::BinanceExchangeFutures = deser_reqwest(r).await?;
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 		// let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
@@ -348,11 +353,11 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 pub async fn binance_runtime(
-	config: AppConfig,
+	config: Arc<AppConfig>,
 	parent_js: &mut JoinSet<()>,
 	hub_callback: mpsc::Sender<HubCallback>,
 	mut hub_rx: watch::Receiver<HubPassforward>,
-	_binance_exchange: Arc<RwLock<BinanceExchange>>,
+	binance_exchange: Arc<RwLock<BinanceExchange>>,
 ) {
 	debug!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
@@ -365,6 +370,8 @@ pub async fn binance_runtime(
 	let (temp_fills_stack_tx, mut temp_fills_stack_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
+
+	// Polling orders for fills
 	parent_js.spawn(async move {
 		// TODO!!!: make a websocket
 		loop {
@@ -406,6 +413,22 @@ pub async fn binance_runtime(
 		}
 	});
 
+	// Keeping Exchange info up-to-date
+	//TODO!: move to websockets
+	parent_js.spawn(async move {
+		dbg!(&binance_exchange);
+		//- reqwest new value
+		let base_url = Market::BinanceFutures.get_base_url();
+		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
+		let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
+		dbg!(&r);
+		
+		//- acquire lock and update
+
+		tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+	});
+
+	// Main loop
 	loop {
 		select! {
 			Ok(_) = hub_rx.changed(), if last_fill_known_to_hub == last_reported_fill_key => {

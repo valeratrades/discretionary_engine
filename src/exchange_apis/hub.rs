@@ -32,9 +32,9 @@ pub struct HubPassforward {
 	pub orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(config: AppConfig, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<HubRx> {
+pub fn init_hub(config_arc: Arc<AppConfig>, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<HubRx> {
 	let (tx, rx) = mpsc::channel(32);
-	parent_js.spawn(hub(config.clone(), rx, exchanges));
+	parent_js.spawn(hub(config_arc.clone(), rx, exchanges));
 	tx
 }
 
@@ -44,20 +44,20 @@ pub struct HubRx {
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	position_callback: PositionCallback,
 }
-pub async fn hub(config: AppConfig, mut rx: mpsc::Receiver<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
+pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
 	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
 	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubPassforward>(HubPassforward::default());
-	let config_clone = config.clone();
 	let mut js = JoinSet::new();
 
 	// Spawn Binance
 	let exchanges_clone = exchanges.clone();
+	let config_arc_clone = config_arc.clone();
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
-		binance::binance_runtime(config_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
+		binance::binance_runtime(config_arc_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
 		exchange_runtimes_js.join_all().await;
 	});
 
@@ -159,10 +159,9 @@ mod tests {
 	#[allow(unused_imports)] // RA being dumb
 	use v_utils::trades::Side;
 
+	use super::*;
 	#[allow(unused_imports)] // RA being dumb
 	use crate::exchange_apis::Symbol;
-
-	use super::*;
 
 	#[test]
 	fn test_hub_process() {

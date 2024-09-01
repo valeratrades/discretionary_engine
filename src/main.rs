@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
 			std::process::exit(1);
 		}
 	};
+	let config_arc = Arc::new(config);
 	// ensure the artifacts directory exists, if it doesn't, create it.
 	match std::fs::create_dir_all(&cli.artifacts) {
 		Ok(_) => {}
@@ -87,11 +88,11 @@ async fn main() -> Result<()> {
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
-	let exchanges_arc = Arc::new(Exchanges::default());
-	let tx = hub::init_hub(config.clone(), &mut js, exchanges_arc.clone());
+	let exchanges_arc = Arc::new(Exchanges::init(config_arc.clone()).await?);
+	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {
-		Commands::New(position_args) => match command_new(position_args, config, tx, exchanges_arc).await {
+		Commands::New(position_args) => match command_new(position_args, config_arc.clone(), tx, exchanges_arc).await {
 			Ok(_) => {}
 			Err(e) => {
 				eprintln!("{}", utils::format_eyre_chain_for_user(e));
@@ -103,9 +104,9 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
+async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
-	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config.clone()).await {
+	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config_arc.clone()).await {
 		Ok(b) => b,
 		Err(e) => {
 			eprintln!("Failed to get balance: {}", e);

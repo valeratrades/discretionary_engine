@@ -1,14 +1,20 @@
+use std::{collections::HashMap, sync::Arc};
+
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
+use color_eyre::eyre::Result;
 
-use crate::exchange_apis::{order_types::ConceptualOrderType, Market, Symbol};
+use crate::{config::AppConfig, exchange_apis::{order_types::ConceptualOrderType, Market, Symbol}, utils::deser_reqwest};
+
+use super::unsigned_request;
 
 // FuturesExchangeInfo structs {{{
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FuturesExchangeInfo {
+pub struct BinanceExchangeFutures {
 	pub exchange_filters: Vec<String>,
 	pub rate_limits: Vec<RateLimit>,
 	pub server_time: i64,
@@ -16,7 +22,14 @@ pub struct FuturesExchangeInfo {
 	pub symbols: Vec<FuturesSymbol>,
 	pub timezone: String,
 }
-impl FuturesExchangeInfo {
+impl BinanceExchangeFutures {
+	pub async fn init(_config: Arc<AppConfig>) -> Result<Self> {
+		let url = Self::url().to_string();
+		let r = unsigned_request(Method::GET, &url, HashMap::new()).await?;
+		let binance_exchange_futures: Self = deser_reqwest(r).await?;
+		Ok(binance_exchange_futures)
+	}
+
 	pub fn url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v1/exchangeInfo").unwrap()

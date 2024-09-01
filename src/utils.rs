@@ -6,11 +6,13 @@ use serde::de::DeserializeOwned;
 use tokio::{runtime::Runtime, time::sleep};
 use tracing::{instrument, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
+use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::{
 	fmt::{self, MakeWriter},
 	layer::SubscriberExt,
 	prelude::*,
+	util::SubscriberInitExt,
 	EnvFilter, Registry,
 };
 //let console_layer = console_subscriber::spawn();
@@ -18,11 +20,13 @@ use tracing_subscriber::{
 pub fn init_subscriber(log_path: Option<Box<Path>>) {
 	let setup = |make_writer: Box<dyn Fn() -> Box<dyn Write> + Send + Sync>| {
 		let formatting_layer = tracing_subscriber::fmt::layer().json().pretty().with_writer(make_writer).with_file(true).with_line_number(true);
+
 		let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or(tracing_subscriber::EnvFilter::new("info"));
-		let subscriber = tracing_subscriber::Registry::default()
-			.with(env_filter)
-			.with(tracing_subscriber::fmt::Layer::default())
-			.with(formatting_layer);
+
+		let error_layer = ErrorLayer::default();
+
+		let subscriber = tracing_subscriber::Registry::default().with(env_filter).with(formatting_layer).with(error_layer);
+
 		tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 	};
 
