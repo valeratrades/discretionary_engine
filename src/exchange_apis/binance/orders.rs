@@ -40,10 +40,8 @@ impl BinanceOrder {
 				params
 			}
 		};
-
 		params.extend(type_params);
 
-		dbg!(&params);
 		params
 	}
 

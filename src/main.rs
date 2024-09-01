@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 	}
 	let log_path = match std::env::var("TEST_LOG") {
 		Ok(_) => None,
-		Err(_) => Some(cli.artifacts.0.join("log").clone().into_boxed_path()),
+		Err(_) => Some(cli.artifacts.0.join(".log").clone().into_boxed_path()),
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
