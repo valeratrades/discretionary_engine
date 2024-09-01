@@ -414,16 +414,17 @@ pub async fn binance_runtime(
 	});
 
 	// Keeping Exchange info up-to-date
-	//TODO!: move to websockets
+	//TODO!: move to websockets, have them be right here.
 	parent_js.spawn(async move {
-		dbg!(&binance_exchange);
-		//- reqwest new value
 		let base_url = Market::BinanceFutures.get_base_url();
 		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
 		let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
-		dbg!(&r);
+		let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
 		
-		//- acquire lock and update
+		{
+			let mut binance_exchange_lock = binance_exchange.write().unwrap();
+			binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
+		}
 
 		tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 	});

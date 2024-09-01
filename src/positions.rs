@@ -45,7 +45,7 @@ impl PositionAcquisition {
 		})
 	}
 
-	#[instrument]
+	#[instrument(skip(hub_tx, exchanges))]
 	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
@@ -106,7 +106,7 @@ pub struct PositionCallback {
 }
 
 impl PositionFollowup {
-	#[instrument]
+	#[instrument(skip(hub_tx, exchanges))]
 	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, counted_subtypes) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
