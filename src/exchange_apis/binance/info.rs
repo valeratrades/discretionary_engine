@@ -1,27 +1,20 @@
+use std::{collections::HashMap, sync::Arc};
+
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
+use color_eyre::eyre::Result;
 
-use crate::{
-	exchange_apis::{Market, Symbol},
-	utils::deser_reqwest_blocking,
-};
+use crate::{config::AppConfig, exchange_apis::{order_types::ConceptualOrderType, Market, Symbol}, utils::deser_reqwest};
 
-lazy_static::lazy_static! {
-	// wait, this should be continuously pulled
-	pub static ref futures_exchange_info: FuturesExchangeInfo = {
-		let base_url = Market::BinanceFutures.get_base_url();
-		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
-		let r = reqwest::blocking::get(url).unwrap();
-		deser_reqwest_blocking::<FuturesExchangeInfo>(r).unwrap()
-	};
-}
+use super::unsigned_request;
 
 // FuturesExchangeInfo structs {{{
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct FuturesExchangeInfo {
+pub struct BinanceExchangeFutures {
 	pub exchange_filters: Vec<String>,
 	pub rate_limits: Vec<RateLimit>,
 	pub server_time: i64,
@@ -29,7 +22,14 @@ pub struct FuturesExchangeInfo {
 	pub symbols: Vec<FuturesSymbol>,
 	pub timezone: String,
 }
-impl FuturesExchangeInfo {
+impl BinanceExchangeFutures {
+	pub async fn init(_config: Arc<AppConfig>) -> Result<Self> {
+		let url = Self::url().to_string();
+		let r = unsigned_request(Method::GET, &url, HashMap::new()).await?;
+		let binance_exchange_futures: Self = deser_reqwest(r).await?;
+		Ok(binance_exchange_futures)
+	}
+
 	pub fn url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v1/exchangeInfo").unwrap()
@@ -42,7 +42,7 @@ impl FuturesExchangeInfo {
 	}
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct RateLimit {
 	pub interval: String,
 	pub intervalNum: u32,
@@ -68,7 +68,7 @@ pub struct RateLimit {
 // 	multiplierDecimal: u32,
 //}
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesSymbol {
 	pub symbol: String,
@@ -167,7 +167,7 @@ pub struct MaxNumAlgoOrdersFilter {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MinNotionalFilter {
 	#[serde_as(as = "DisplayFromStr")]
-	pub notional: f32,
+	pub notional: f64,
 }
 
 #[serde_as]
@@ -218,6 +218,15 @@ impl FuturesSymbol {
 
 	pub fn percent_price_filter(&self) -> Option<PercentPriceFilter> {
 		self.get_filter("PERCENT_PRICE")
+	}
+
+	pub fn min_trade_qty_notional(&self, order_type: &ConceptualOrderType) -> f64 {
+		let min_notional_for_limit = self.min_notional_filter().unwrap(); //HACK: this only checks limit orders.
+		match order_type {
+			ConceptualOrderType::Market(_) => min_notional_for_limit.notional,
+			ConceptualOrderType::StopMarket(_) => min_notional_for_limit.notional,
+			_ => min_notional_for_limit.notional,
+		}
 	}
 }
 

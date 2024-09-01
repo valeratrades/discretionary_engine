@@ -1,7 +1,7 @@
+use color_eyre::eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
-use eyre::Result;
 use tokio::sync::mpsc;
-use v_utils::{macros::CompactFormat, prelude::*, trades::Side};
+use v_utils::{io::Percent, macros::CompactFormat, prelude::*, trades::Side};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
@@ -24,7 +24,7 @@ impl ProtocolTrait for DummyMarketWrapper {
 			market: Market::BinanceFutures,
 		};
 		let m = ConceptualMarket::new(1.0);
-		let order = ConceptualOrderPercents::new(ConceptualOrderType::Market(m), symbol.clone(), protocol_side, 1.0);
+		let order = ConceptualOrderPercents::new(ConceptualOrderType::Market(m), symbol.clone(), protocol_side, Percent::new(1.0));
 
 		let protocol_spec = self.0.read().unwrap().to_string();
 		let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);

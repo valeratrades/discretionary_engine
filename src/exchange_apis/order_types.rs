@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
+use color_eyre::eyre::{bail, Result};
 use derive_new::new;
-use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
-use v_utils::trades::Side;
+use v_utils::{io::Percent, trades::Side};
 
 use crate::{exchange_apis::Symbol, PositionOrderId};
 
@@ -80,7 +80,7 @@ impl<Id: IdRequirements> ConceptualOrder<Id> {
 }
 
 /// Generics for defining order types and their whereabouts. Details of execution do not concern us here. We are only trying to specify what we are trying to capture.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
 pub enum ConceptualOrderType {
 	Market(ConceptualMarket),
 	Limit(ConceptualLimit),
@@ -93,18 +93,18 @@ impl Default for ConceptualOrderType {
 }
 
 /// Will be executed via above-the-price limits most of the time to prevent excessive slippages.
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualStopMarket {
 	pub price: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualLimit {
 	pub price: f64,
 	pub limit_only: bool,
@@ -115,7 +115,7 @@ pub struct ConceptualOrderPercents {
 	pub order_type: ConceptualOrderType,
 	pub symbol: Symbol,
 	pub side: Side,
-	pub qty_percent_of_controlled: f64,
+	pub qty_percent_of_controlled: Percent,
 }
 impl ConceptualOrderPercents {
 	pub fn to_exact<Id: IdRequirements>(self, total_controled_size: f64, id: Id) -> ConceptualOrder<Id> {
@@ -124,7 +124,7 @@ impl ConceptualOrderPercents {
 			order_type: self.order_type,
 			symbol: self.symbol,
 			side: self.side,
-			qty_notional: total_controled_size * self.qty_percent_of_controlled,
+			qty_notional: total_controled_size * *self.qty_percent_of_controlled,
 		}
 	}
 

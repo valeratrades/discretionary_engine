@@ -1,5 +1,5 @@
+use color_eyre::eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
-use eyre::Result;
 use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -93,7 +93,7 @@ impl TrailingStopIndicator {
 			if side == Side::Buy {
 				let target_price = price * ((1.0 + percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
-				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, 1.0));
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, Percent::new(1.0)));
 				return order;
 			}
 		}
@@ -102,7 +102,7 @@ impl TrailingStopIndicator {
 			if side == Side::Sell {
 				let target_price = price * ((1.0 - percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
-				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, 1.0));
+				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, Percent::new(1.0)));
 				return order;
 			}
 		}

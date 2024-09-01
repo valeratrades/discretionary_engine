@@ -7,9 +7,9 @@ use std::{
 };
 
 use chrono::Utc;
-use eyre::{bail, Result};
+use color_eyre::eyre::{bail, Result};
 use hmac::{Hmac, Mac};
-pub use info::futures_exchange_info;
+use info::BinanceExchangeFutures;
 pub use orders::*;
 use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
 use reqwest::{
@@ -20,13 +20,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::{serde_as, DisplayFromStr};
 use sha2::Sha256;
-use tokio::{select, task::JoinSet};
+use tokio::{
+	select,
+	sync::{mpsc, watch},
+	task::JoinSet,
+};
 use tracing::{debug, instrument, warn};
 use url::Url;
 use uuid::Uuid;
 use v_utils::trades::Ohlc;
 
-use super::{order_types::IdRequirements, HubCallback, HubPassforward};
+use super::{
+	hub::{HubCallback, HubPassforward},
+	order_types::{ConceptualOrderType, IdRequirements},
+};
 use crate::{
 	config::AppConfig,
 	exchange_apis::{order_types::Order, Market},
@@ -35,10 +42,35 @@ use crate::{
 };
 type HmacSha256 = Hmac<Sha256>;
 
-#[allow(dead_code)]
-pub struct Binance {
-	// And so then many calls will be replaced with just finding info here.
-	futures_symbols: HashMap<String, FuturesSymbol>,
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct BinanceExchange {
+	pub binance_futures_info: BinanceExchangeFutures,
+}
+impl BinanceExchange {
+	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
+		let binance_futures_info = BinanceExchangeFutures::init(config_arc.clone()).await?;
+		Ok(Self { binance_futures_info })
+	}
+
+	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
+	#[instrument(skip(self))]
+	pub fn min_qties_batch(&self, baseasset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
+		assert_ne!(*self, Self::default());
+
+		let mut min_qties = Vec::new();
+		for (baseasset, ordertype) in baseasset_and_ordertype_pairs {
+			let mut all_min_notionals_for_asset = Vec::new();
+			for s in &self.binance_futures_info.symbols {
+				if s.base_asset == *baseasset {
+					all_min_notionals_for_asset.push(s.min_trade_qty_notional(ordertype));
+				}
+			}
+			//- other sub-markets
+			assert!(!all_min_notionals_for_asset.is_empty(), "No such asset found in the exchange info");
+			min_qties.push(all_min_notionals_for_asset.iter().sum());
+		}
+		min_qties
+	}
 }
 
 pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoint_str: &str, mut params: HashMap<&'static str, String>, key: S, secret: S) -> Result<reqwest::Response> {
@@ -221,7 +253,7 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 	Ok(async move {
 		let r = reqwest::get(url).await?;
 
-		let info: info::FuturesExchangeInfo = deser_reqwest(r).await?;
+		let info: info::BinanceExchangeFutures = deser_reqwest(r).await?;
 		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
 
 		// let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
@@ -323,7 +355,13 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 }
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
-pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub_callback: tokio::sync::mpsc::Sender<HubCallback>, mut hub_rx: tokio::sync::watch::Receiver<HubPassforward>) {
+pub async fn binance_runtime(
+	config: Arc<AppConfig>,
+	parent_js: &mut JoinSet<()>,
+	hub_callback: mpsc::Sender<HubCallback>,
+	mut hub_rx: watch::Receiver<HubPassforward>,
+	binance_exchange: Arc<RwLock<BinanceExchange>>,
+) {
 	debug!("Binance_runtime started");
 	let mut last_fill_known_to_hub = Uuid::now_v7();
 	let mut last_reported_fill_key = last_fill_known_to_hub;
@@ -335,6 +373,8 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 	let (temp_fills_stack_tx, mut temp_fills_stack_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
 	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
+
+	// Polling orders for fills
 	parent_js.spawn(async move {
 		// TODO!!!: make a websocket
 		loop {
@@ -376,6 +416,23 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 		}
 	});
 
+	// Keeping Exchange info up-to-date
+	//TODO!: move to websockets, have them be right here.
+	parent_js.spawn(async move {
+		let base_url = Market::BinanceFutures.get_base_url();
+		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
+		let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
+		let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
+		
+		{
+			let mut binance_exchange_lock = binance_exchange.write().unwrap();
+			binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
+		}
+
+		tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+	});
+
+	// Main loop
 	loop {
 		select! {
 			Ok(_) = hub_rx.changed(), if last_fill_known_to_hub == last_reported_fill_key => {
@@ -399,7 +456,7 @@ pub async fn binance_runtime(config: AppConfig, parent_js: &mut JoinSet<()>, hub
 				}
 				dbg!(&target_orders, &currently_deployed_clone);
 
-			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed than target ones are opened.
+			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
 			//Binance docs: currently only LIMIT order modification is supported
 				loop {
 					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {

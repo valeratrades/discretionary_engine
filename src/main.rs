@@ -9,10 +9,12 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
+use std::sync::Arc;
+
 use clap::{Args, Parser, Subcommand};
+use color_eyre::eyre::{bail, Context, Result};
 use config::AppConfig;
-use exchange_apis::HubRx;
-use eyre::Result;
+use exchange_apis::{exchanges::Exchanges, hub, hub::HubRx};
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
 use v_utils::{
@@ -38,7 +40,7 @@ enum Commands {
 	/// Start the program
 	New(PositionArgs),
 }
-#[derive(Args)]
+#[derive(Args, Debug, Clone)]
 struct PositionArgs {
 	/// Target change in exposure. So positive for buying, negative for selling.
 	#[arg(long)]
@@ -62,6 +64,7 @@ struct PositionArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+	color_eyre::install()?;
 	let cli = Cli::parse();
 	let config = match AppConfig::new(cli.config) {
 		Ok(cfg) => cfg,
@@ -70,6 +73,7 @@ async fn main() -> Result<()> {
 			std::process::exit(1);
 		}
 	};
+	let config_arc = Arc::new(config);
 	// ensure the artifacts directory exists, if it doesn't, create it.
 	match std::fs::create_dir_all(&cli.artifacts) {
 		Ok(_) => {}
@@ -84,56 +88,48 @@ async fn main() -> Result<()> {
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
-	let tx = exchange_apis::init_hub(config.clone(), &mut js);
+	let exchanges_arc = Arc::new(Exchanges::init(config_arc.clone()).await?);
+	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {
-		Commands::New(position_args) => {
-			command_new(position_args, config, tx).await?;
-		}
+		Commands::New(position_args) => match command_new(position_args, config_arc.clone(), tx, exchanges_arc).await {
+			Ok(_) => {}
+			Err(e) => {
+				eprintln!("{}", utils::format_eyre_chain_for_user(e));
+				std::process::exit(1);
+			}
+		},
 	}
 
 	Ok(())
 }
 
-async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::Sender<HubRx>) -> Result<()> {
+async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
-	let balance = match exchange_apis::compile_total_balance(config.clone()).await {
+	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config_arc.clone()).await {
 		Ok(b) => b,
 		Err(e) => {
 			eprintln!("Failed to get balance: {}", e);
 			std::process::exit(1);
 		}
 	};
-	println!("Total available balance: {}", balance);
+	println!("Starting creation of a new position.\nCurrent total available balance: {}\n", balance);
 
 	let (side, target_size) = match position_args.size_usdt {
 		s if s > 0.0 => (Side::Buy, s),
 		s if s < 0.0 => (Side::Sell, -s),
 		_ => {
-			eprintln!("Size must be non-zero");
-			std::process::exit(1);
+			bail!("Size must be non-zero");
 		}
 	};
 
-	let followup_protocols = match protocols::interpret_protocol_specs(position_args.followup_protocols) {
-		Ok(f) => f,
-		Err(e) => {
-			eprintln!("Failed to interpret followup protocols: {}", e);
-			std::process::exit(1);
-		}
-	};
-	let acquisition_protocols = match protocols::interpret_protocol_specs(position_args.acquisition_protocols) {
-		Ok(f) => f,
-		Err(e) => {
-			eprintln!("Failed to interpret acquisition protocols: {}", e);
-			std::process::exit(1);
-		}
-	};
+	let followup_protocols = protocols::interpret_protocol_specs(position_args.followup_protocols).wrap_err("Failed to interpret followup protocols")?;
+	let acquisition_protocols = protocols::interpret_protocol_specs(position_args.acquisition_protocols).wrap_err("Failed to interpret acquisition protocols")?;
 
 	let spec = PositionSpec::new(position_args.coin, side, target_size);
-	let acquired = PositionAcquisition::dbg_new(spec).await?;
-	//let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone()).await?;
-	let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone()).await?;
+	//let acquired = PositionAcquisition::dbg_new(spec).await?;
+	let acquired = PositionAcquisition::do_acquisition(spec, acquisition_protocols, tx.clone(), exchanges_arc.clone()).await?;
+	let _followed = PositionFollowup::do_followup(acquired, followup_protocols, tx.clone(), exchanges_arc.clone()).await?;
 
 	Ok(())
 }
