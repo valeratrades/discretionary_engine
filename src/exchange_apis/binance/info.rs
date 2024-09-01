@@ -3,10 +3,10 @@ use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
 
-use crate::exchange_apis::{Market, Symbol};
+use crate::exchange_apis::{order_types::ConceptualOrderType, Market, Symbol};
 
 // FuturesExchangeInfo structs {{{
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesExchangeInfo {
 	pub exchange_filters: Vec<String>,
@@ -29,7 +29,7 @@ impl FuturesExchangeInfo {
 	}
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RateLimit {
 	pub interval: String,
 	pub intervalNum: u32,
@@ -55,7 +55,7 @@ pub struct RateLimit {
 // 	multiplierDecimal: u32,
 //}
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesSymbol {
 	pub symbol: String,
@@ -154,7 +154,7 @@ pub struct MaxNumAlgoOrdersFilter {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MinNotionalFilter {
 	#[serde_as(as = "DisplayFromStr")]
-	pub notional: f32,
+	pub notional: f64,
 }
 
 #[serde_as]
@@ -205,6 +205,15 @@ impl FuturesSymbol {
 
 	pub fn percent_price_filter(&self) -> Option<PercentPriceFilter> {
 		self.get_filter("PERCENT_PRICE")
+	}
+
+	pub fn min_trade_qty_notional(&self, order_type: &ConceptualOrderType) -> f64 {
+		let min_notional_for_limit = self.min_notional_filter().unwrap(); //HACK: this only checks limit orders.
+		match order_type {
+			ConceptualOrderType::Market(_) => min_notional_for_limit.notional,
+			ConceptualOrderType::StopMarket(_) => min_notional_for_limit.notional,
+			_ => min_notional_for_limit.notional,
+		}
 	}
 }
 

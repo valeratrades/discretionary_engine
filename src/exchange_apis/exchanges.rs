@@ -29,11 +29,34 @@ impl Exchanges {
 		Ok(total_balance)
 	}
 
-	pub fn symbol_prices_batch(_s: Arc<Self>, symbols: Vec<Symbol>) -> Vec<f64> {
-		todo!()
+	/// Currently a dummy function with sole role of establishing architecture that would work with multi-symbol returns from protocols. Right now just hardcodes the answer.
+	pub fn symbol_prices_batch(_s: Arc<Self>, symbols: &[Symbol]) -> Vec<f64> {
+		let diff_symbols: std::collections::HashSet<Symbol> = symbols.iter().cloned().collect();
+		assert_eq!(diff_symbols.len(), 1, "Different symbols are not yet supported");
+
+		symbols.iter().map(|_| 1.0).collect()
 	}
 
-	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: Vec<ConceptualOrderPercents>) -> Vec<f64> {
-		todo!()
+	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: &[ConceptualOrderPercents]) -> Vec<f64> {
+		let mut min_notional_qty_accross_exchanges = Vec::with_capacity(orders_on_symbols.len());
+		for q in min_notional_qty_accross_exchanges.iter_mut() {
+			*q = f64::MAX;
+		}
+
+		let binances_qties_batch_payload = orders_on_symbols.iter().map(|o| (o.symbol.base.clone(), o.order_type)).collect::<Vec<_>>();
+		let binance_min_notional_qties = {
+			let binance_lock = _s.binance.read().unwrap();
+			binance_lock.min_qties_batch(&binances_qties_batch_payload)
+		};
+		assert_eq!(binance_min_notional_qties.len(), orders_on_symbols.len());
+		for (i, q) in binance_min_notional_qties.iter().enumerate() {
+			if *q < min_notional_qty_accross_exchanges[i] {
+				min_notional_qty_accross_exchanges[i] = *q;
+			}
+		}
+
+		//- same for other exchanges
+
+		min_notional_qty_accross_exchanges
 	}
 }

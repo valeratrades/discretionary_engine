@@ -9,6 +9,7 @@ use std::{
 use chrono::Utc;
 use eyre::{bail, Result};
 use hmac::{Hmac, Mac};
+use info::FuturesExchangeInfo;
 pub use orders::*;
 use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
 use reqwest::{
@@ -31,7 +32,7 @@ use v_utils::trades::Ohlc;
 
 use super::{
 	hub::{HubCallback, HubPassforward},
-	order_types::IdRequirements,
+	order_types::{ConceptualOrderType, IdRequirements},
 };
 use crate::{
 	config::AppConfig,
@@ -41,15 +42,27 @@ use crate::{
 };
 type HmacSha256 = Hmac<Sha256>;
 
-#[allow(dead_code)]
-pub struct Binance {
-	// And so then many calls will be replaced with just finding info here.
-	futures_symbols: HashMap<String, FuturesSymbol>,
-}
-
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct BinanceExchange {
-	pub todo: String,
+	pub binance_futures_info: FuturesExchangeInfo,
+}
+impl BinanceExchange {
+	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
+	pub fn min_qties_batch(&self, asset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
+		let mut min_qties = Vec::new();
+		for (asset, ordertype) in asset_and_ordertype_pairs {
+			let mut all_min_notionals_for_asset = Vec::new();
+			for s in &self.binance_futures_info.symbols {
+				if s.symbol == *asset {
+					all_min_notionals_for_asset.push(s.min_trade_qty_notional(ordertype));
+				}
+			}
+			//- other sub-markets
+			assert!(!all_min_notionals_for_asset.is_empty(), "No such asset found in the exchange info");
+			min_qties.push(all_min_notionals_for_asset.iter().sum());
+		}
+		min_qties
+	}
 }
 
 pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoint_str: &str, mut params: HashMap<&'static str, String>, key: S, secret: S) -> Result<reqwest::Response> {

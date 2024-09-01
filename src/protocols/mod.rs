@@ -181,10 +181,10 @@ impl ProtocolDynamicInfo {
 		let total_controlled_size = parent_notional * size_multiplier;
 
 		let qties_payload = orders.iter().flatten().cloned().collect::<Vec<ConceptualOrderPercents>>();
-		let min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), qties_payload);
+		let min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), &qties_payload);
 
 		let prices_payload = orders.iter().flatten().map(|o| o.symbol.clone()).collect::<Vec<Symbol>>();
-		let prices = Exchanges::symbol_prices_batch(exchanges.clone(), prices_payload);
+		let prices = Exchanges::symbol_prices_batch(exchanges.clone(), &prices_payload);
 
 		let mut per_order_infos = Vec::new();
 		for i in 1..orders.len() {

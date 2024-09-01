@@ -80,7 +80,7 @@ impl<Id: IdRequirements> ConceptualOrder<Id> {
 }
 
 /// Generics for defining order types and their whereabouts. Details of execution do not concern us here. We are only trying to specify what we are trying to capture.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
 pub enum ConceptualOrderType {
 	Market(ConceptualMarket),
 	Limit(ConceptualLimit),
@@ -93,18 +93,18 @@ impl Default for ConceptualOrderType {
 }
 
 /// Will be executed via above-the-price limits most of the time to prevent excessive slippages.
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
 	pub maximum_slippage_percent: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualStopMarket {
 	pub price: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualLimit {
 	pub price: f64,
 	pub limit_only: bool,
