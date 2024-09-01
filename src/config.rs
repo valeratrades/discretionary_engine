@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::{Context, Result};
+use color_eyre::eyre::{Context, Result};
 use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
 
 #[derive(Clone, Debug, MyConfigPrimitives)]

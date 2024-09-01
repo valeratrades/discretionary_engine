@@ -5,7 +5,7 @@ pub mod exchanges;
 pub mod hub;
 pub mod order_types;
 
-use eyre::{bail, Result};
+use color_eyre::eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use v_utils::macros::graphemics;

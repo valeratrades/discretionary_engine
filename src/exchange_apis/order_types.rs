@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
+use color_eyre::eyre::{bail, Result};
 use derive_new::new;
-use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use v_utils::{io::Percent, trades::Side};
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eyre::Result;
+use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use v_utils::prelude::*;
@@ -154,11 +154,15 @@ fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) 
 }
 
 mod tests {
+	#[allow(unused_imports)] // RA being dumb
 	use order_types::{ConceptualMarket, ConceptualStopMarket};
+	#[allow(unused_imports)] // RA being dumb
 	use v_utils::trades::Side;
 
-	use super::*;
+	#[allow(unused_imports)] // RA being dumb
 	use crate::exchange_apis::Symbol;
+
+	use super::*;
 
 	#[test]
 	fn test_hub_process() {

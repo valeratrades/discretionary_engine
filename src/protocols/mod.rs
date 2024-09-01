@@ -5,8 +5,8 @@ mod trailing_stop;
 use std::{cmp::Ordering, collections::HashSet, str::FromStr, sync::Arc};
 
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
+use color_eyre::eyre::{bail, Result};
 use dummy_market::DummyMarketWrapper;
-use eyre::{bail, Result};
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
@@ -127,7 +127,7 @@ impl From<ApproachingLimit> for ProtocolParams {
 
 pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
 	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| s != "").collect();
-	if protocol_specs.len() == 1 {
+	if protocol_specs.len() == 0 {
 		bail!("No protocols specified");
 	}
 	assert_eq!(protocol_specs.len(), protocol_specs.iter().collect::<HashSet<&String>>().len()); // protocol specs are later used as their IDs
@@ -291,7 +291,7 @@ mod tests {
 
 	use super::*;
 	use crate::exchange_apis::{
-		order_types::{ConceptualMarket, ConceptualOrderType, ConceptualStopMarket},
+		order_types::{ConceptualMarket, ConceptualOrderType},
 		Market, Symbol,
 	};
 

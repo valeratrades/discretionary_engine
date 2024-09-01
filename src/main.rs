@@ -12,9 +12,9 @@ pub mod utils;
 use std::sync::Arc;
 
 use clap::{Args, Parser, Subcommand};
+use color_eyre::eyre::{bail, Context, Result};
 use config::AppConfig;
 use exchange_apis::{exchanges::Exchanges, hub, hub::HubRx};
-use eyre::Result;
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
 use v_utils::{
@@ -40,7 +40,7 @@ enum Commands {
 	/// Start the program
 	New(PositionArgs),
 }
-#[derive(Args)]
+#[derive(Args, Debug, Clone)]
 struct PositionArgs {
 	/// Target change in exposure. So positive for buying, negative for selling.
 	#[arg(long)]
@@ -90,9 +90,13 @@ async fn main() -> Result<()> {
 	let tx = hub::init_hub(config.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {
-		Commands::New(position_args) => {
-			command_new(position_args, config, tx, exchanges_arc).await?;
-		}
+		Commands::New(position_args) => match command_new(position_args, config, tx, exchanges_arc).await {
+			Ok(_) => {}
+			Err(e) => {
+				eprintln!("{}", utils::format_eyre_chain_for_user(e));
+				std::process::exit(1);
+			}
+		},
 	}
 
 	Ok(())
@@ -107,31 +111,18 @@ async fn command_new(position_args: PositionArgs, config: AppConfig, tx: mpsc::S
 			std::process::exit(1);
 		}
 	};
-	println!("Total available balance: {}", balance);
+	println!("Starting creation of a new position.\nCurrent total available balance: {}\n", balance);
 
 	let (side, target_size) = match position_args.size_usdt {
 		s if s > 0.0 => (Side::Buy, s),
 		s if s < 0.0 => (Side::Sell, -s),
 		_ => {
-			eprintln!("Size must be non-zero");
-			std::process::exit(1);
+			bail!("Size must be non-zero");
 		}
 	};
 
-	let followup_protocols = match protocols::interpret_protocol_specs(position_args.followup_protocols) {
-		Ok(f) => f,
-		Err(e) => {
-			eprintln!("Failed to interpret followup protocols: {}", e);
-			std::process::exit(1);
-		}
-	};
-	let acquisition_protocols = match protocols::interpret_protocol_specs(position_args.acquisition_protocols) {
-		Ok(f) => f,
-		Err(e) => {
-			eprintln!("Failed to interpret acquisition protocols: {}", e);
-			std::process::exit(1);
-		}
-	};
+	let followup_protocols = protocols::interpret_protocol_specs(position_args.followup_protocols).wrap_err("Failed to interpret followup protocols")?;
+	let acquisition_protocols = protocols::interpret_protocol_specs(position_args.acquisition_protocols).wrap_err("Failed to interpret acquisition protocols")?;
 
 	let spec = PositionSpec::new(position_args.coin, side, target_size);
 	//let acquired = PositionAcquisition::dbg_new(spec).await?;

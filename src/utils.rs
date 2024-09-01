@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 use std::{fs::File, io::Write, path::Path, sync::Arc, time::Duration};
 
-use eyre::{bail, eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use serde::de::DeserializeOwned;
 use tokio::{runtime::Runtime, time::sleep};
 use tracing::{instrument, subscriber::set_global_default, Subscriber};
@@ -49,6 +49,19 @@ pub fn init_subscriber(log_path: Option<Box<Path>>) {
 			setup(Box::new(|| Box::new(std::io::stdout())));
 		}
 	};
+}
+
+pub fn format_eyre_chain_for_user(e: eyre::Report) -> String {
+	let chain = e.chain().rev().collect::<Vec<_>>();
+	let mut s = String::new();
+	for (i, e) in chain.into_iter().enumerate() {
+		if i > 0 {
+			s.push('\n');
+		}
+		s.push_str("-> ");
+		s.push_str(&e.to_string());
+	}
+	s
 }
 
 /// Basically reqwest's `json()`, but prints the target's content on deserialization error.

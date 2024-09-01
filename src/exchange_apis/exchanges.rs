@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use eyre::Result;
+use color_eyre::eyre::Result;
 
 use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market, Symbol};
 use crate::{config::AppConfig, exchange_apis::binance};

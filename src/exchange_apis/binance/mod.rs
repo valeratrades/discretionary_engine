@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::Utc;
-use eyre::{bail, Result};
+use color_eyre::eyre::{bail, Result};
 use hmac::{Hmac, Mac};
 use info::FuturesExchangeInfo;
 pub use orders::*;

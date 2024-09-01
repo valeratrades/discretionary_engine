@@ -36,6 +36,7 @@ ignored = ["v_utils_macros", "tracing-futures"]
 [dependencies]
 chrono = "^0.4.38"
 clap = { version = "^4.5.16", features = ["derive"] }
+color-eyre = "0.6.3"
 config = "0.14.0"
 derive-new = "0.6.0"
 discretionary_engine_macros = { path = "./discretionary_engine_macros" }
