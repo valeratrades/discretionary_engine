@@ -141,8 +141,7 @@ jobs:
       - name: Outdated error-handling crates
         run: |
           if rg -E 'anyhow|^eyre' Cargo.toml; then
-            echo "WARNING: Found anyhow or eyre in Cargo.toml. Consider switching to color-eyre for improved error handling and reporting."
-            echo "To switch, replace anyhow or eyre with color-eyre in your Cargo.toml and update your code accordingly."
+            echo "WARNING: Found anyhow or eyre in Cargo.toml. Switch to color-eyre, it's always a superset."
           fi
 
   sort:

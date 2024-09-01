@@ -18,6 +18,7 @@ impl Exchanges {
 		Ok(Self { binance: Arc::new(RwLock::new(binance)) })
 	}
 
+	#[instrument(skip(_s, config))]
 	pub async fn compile_total_balance(_s: Arc<Self>, config: Arc<AppConfig>) -> Result<f64> {
 		let read_key = config.binance.read_key.clone();
 		let read_secret = config.binance.read_secret.clone();
@@ -46,8 +47,8 @@ impl Exchanges {
 	#[instrument(skip(_s))]
 	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: &[ConceptualOrderPercents]) -> Vec<f64> {
 		let mut min_notional_qty_accross_exchanges = Vec::with_capacity(orders_on_symbols.len());
-		for q in min_notional_qty_accross_exchanges.iter_mut() {
-			*q = f64::MAX;
+		for _ in 0..orders_on_symbols.len() {
+			min_notional_qty_accross_exchanges.push(f64::MAX);
 		}
 
 		let binances_qties_batch_payload = orders_on_symbols.iter().map(|o| (o.symbol.base.clone(), o.order_type)).collect::<Vec<_>>();
@@ -56,6 +57,7 @@ impl Exchanges {
 			binance_lock.min_qties_batch(&binances_qties_batch_payload)
 		};
 		assert_eq!(binance_min_notional_qties.len(), orders_on_symbols.len());
+		assert_ne!(min_notional_qty_accross_exchanges.len(), 0);
 		for (i, q) in binance_min_notional_qties.iter().enumerate() {
 			if *q < min_notional_qty_accross_exchanges[i] {
 				min_notional_qty_accross_exchanges[i] = *q;
