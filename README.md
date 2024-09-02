@@ -3,7 +3,7 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/discretionary_engine.svg?color=fc8d62&logo=rust" height="20" style=flat-square>](https://crates.io/crates/discretionary_engine)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs&style=flat-square" height="20">](https://docs.rs/discretionary_engine)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/valeratrades/discretionary_engine/ci.yml?branch=master&style=for-the-badge&style=flat-square" height="20">](https://github.com/valeratrades/discretionary_engine/actions?query=branch%3Amaster)
-![Lines Of Code](https://img.shields.io/badge/LoC-2776-lightblue)
+![Lines Of Code](https://img.shields.io/badge/LoC-2745-lightblue)
 
 Places and follows a position from a definition of _what the target position is_
 
@@ -26,10 +26,13 @@ Config is read from ${HOME}/.config/discretionary_engine.toml by default, but ca
 
 An example config can be found in ./examples/config.toml
 
-## Current assumptions
-- no two positions are opened on the same symbol
+## Assumptions
+- strictly one asset per `Position`. No methods for acquiring several assets at once will ever be introduced.
 
-- no new positions on account are opened outside of the engine
+### Current (may change in the future)
+- no two `Position`s are opened on the same symbol
+
+- no new `Position`s on account are opened outside of the engine
 
 - orders are placed immediately (not that far off, as most of the time we will spam the thing until it accepts, and only other action that will need to be taken is to prevent any increases in exposure while we have any mismatches).
 
