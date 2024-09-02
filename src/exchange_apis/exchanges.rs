@@ -5,8 +5,8 @@ use tracing::instrument;
 
 use super::{
 	binance::BinanceExchange,
-	order_types::{ConceptualOrderPercents, ConceptualOrderType},
-	Market, Symbol,
+	order_types::ConceptualOrderType,
+	Market,
 };
 use crate::{config::AppConfig, exchange_apis::binance};
 
@@ -53,7 +53,7 @@ impl Exchanges {
 
 		let binance_min_notional_qties = {
 			let binance_lock = _s.binance.read().unwrap();
-			binance_lock.min_qties_batch(&base_asset, &ordertypes)
+			binance_lock.min_qties_batch(base_asset, ordertypes)
 		};
 		assert_eq!(binance_min_notional_qties.len(), ordertypes.len());
 		assert_ne!(min_notional_qties_accross_exchanges.len(), 0);

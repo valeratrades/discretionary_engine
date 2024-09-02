@@ -1,24 +1,22 @@
 mod approaching_limit;
-use tracing::debug;
 mod dummy_market;
 mod sar;
 mod trailing_stop;
-use std::{cmp::Ordering, collections::HashSet, str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
 use color_eyre::eyre::{bail, Result};
 use dummy_market::DummyMarketWrapper;
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
-use tracing::{info, instrument};
+use tracing::instrument;
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
-use v_utils::trades::Side;
+use v_utils::{io::Percent, trades::Side};
 
 use crate::exchange_apis::{
 	exchanges::Exchanges,
 	order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId},
-	Symbol,
 };
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
@@ -188,10 +186,10 @@ impl ProtocolDynamicInfo {
 	) -> RecalculatedAllocation {
 		let orders = &self.protocol_orders.__orders;
 		let size_multiplier = 1.0 / n_matching_protocol_subtypes_in_parent_positioon as f64;
-		let total_controlled_notional = parent_position_desired_notional_left * size_multiplier;
+		let protocol_controlled_notional = parent_position_desired_notional_left * size_multiplier;
 
 		let qties_payload = orders.iter().flatten().map(|o| o.order_type).collect::<Vec<ConceptualOrderType>>();
-		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), &parent_position_asset, &qties_payload);
+		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), parent_position_asset, &qties_payload);
 
 		let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = self
 			.fills
@@ -203,7 +201,7 @@ impl ProtocolDynamicInfo {
 			})
 			.collect();
 
-		self.protocol_orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional)
+		self.protocol_orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional)
 	}
 }
 
@@ -248,10 +246,11 @@ impl ProtocolOrders {
 	//HACK: doesn't yet work with multiple symbols.
 	// Matter of fact, none of this does. Currently all Positions assume working with specific asset.
 	#[instrument(skip(self))]
-	pub fn recalculate_protocol_orders_allocation(&self, per_order_infos: &[RecalculateOrdersPerOrderInfo], total_controlled_notional: f64) -> RecalculatedAllocation {
+	pub fn recalculate_protocol_orders_allocation(&self, per_order_infos: &[RecalculateOrdersPerOrderInfo], protocol_controlled_notional: f64) -> RecalculatedAllocation {
 		assert_eq!(self.__orders.len(), per_order_infos.len());
 
-		let mut left_controlled_notional = total_controlled_notional - per_order_infos.iter().map(|info| info.filled).sum::<f64>();
+		let mut left_controlled_notional = protocol_controlled_notional - per_order_infos.iter().map(|info| info.filled).sum::<f64>();
+		let mut per_order_additional_percents_from_skipped = Percent::new(0.0);
 
 		let orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
 			.__orders
@@ -259,17 +258,19 @@ impl ProtocolOrders {
 			.enumerate()
 			.filter_map(|(i, order)| match order {
 				Some(order) => {
-					let desired_notional_i = *order.qty_percent_of_controlled * left_controlled_notional;
+					let desired_notional_i = *(order.qty_percent_of_controlled + per_order_additional_percents_from_skipped) * left_controlled_notional;
 					if desired_notional_i > per_order_infos[i].min_possible_qty {
-						Some(ConceptualOrder::new(
+						let order = ConceptualOrder::new(
 							ProtocolOrderId::new(self.protocol_id.clone(), i),
 							order.order_type,
 							order.symbol.clone(),
 							order.side,
 							desired_notional_i,
-						))
+						);
+						left_controlled_notional -= desired_notional_i;
+						Some(order)
 					} else {
-						left_controlled_notional += desired_notional_i;
+						per_order_additional_percents_from_skipped += *order.qty_percent_of_controlled / (self.__orders.len() - (i+1)) as f64;
 						None
 					}
 				}
@@ -307,9 +308,9 @@ mod tests {
 			))],
 		);
 
-		let total_controlled_notional = 2.0;
+		let protocol_controlled_notional = 2.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(1.1, 0.007)];
-		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {
       orders: [
@@ -332,7 +333,7 @@ mod tests {
               qty_notional: 0.8999999999999999,
           },
       ],
-      left_to_fill_total_notional: 0.8999999999999999,
+      left_to_fill_total_notional: 0.0,
   }
   "###);
 	}
@@ -352,9 +353,9 @@ mod tests {
 			],
 		);
 
-		let total_controlled_notional = 100.0;
+		let protocol_controlled_notional = 100.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(0.0, 10.0), RecalculateOrdersPerOrderInfo::new(0.0, 10.0)];
-		let recalculated_allocation = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
+		let recalculated_allocation = orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
 
 		let qties = recalculated_allocation.orders.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
 		assert_debug_snapshot!(qties, @r###"
@@ -372,21 +373,21 @@ mod tests {
 				Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
 					Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
-					Side::Buy,
-					Percent::new(0.75),
+					Side::Sell,
+					Percent::new(0.25),
 				)),
 				Some(ConceptualOrderPercents::new(
 					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
 					Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
-					Side::Sell,
-					Percent::new(0.25),
+					Side::Buy,
+					Percent::new(0.75),
 				)),
 			],
 		);
 
-		let total_controlled_notional = 100.0;
+		let protocol_controlled_notional = 100.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(75.0, 10.0), RecalculateOrdersPerOrderInfo::new(25.0, 10.0)];
-		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {
       orders: [],
@@ -394,14 +395,44 @@ mod tests {
   }
   "###);
 
-		let total_controlled_notional = 2.0;
+		let protocol_controlled_notional = 2.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(25.0, 10.0), RecalculateOrdersPerOrderInfo::new(25.0, 10.0)];
-		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
 		//TODO!!!: start returning by how much we were off. In the next snapshot we overdo it by 48.0, yet all we get is a success with empty vec of orders to deploy.
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {
       orders: [],
-      total_offset: 48.0,
+      left_to_fill_total_notional: -48.0,
+  }
+  "###);
+
+		let protocol_controlled_notional = 15.0;
+		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(0.0, 10.0), RecalculateOrdersPerOrderInfo::new(0.0, 10.0)];
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
+		//TODO!!!: start returning by how much we were off. In the next snapshot we overdo it by 48.0, yet all we get is a success with empty vec of orders to deploy.
+		assert_debug_snapshot!(got, @r###"
+  RecalculatedAllocation {
+      orders: [
+          ConceptualOrder {
+              id: ProtocolOrderId {
+                  protocol_id: "test",
+                  ordinal: 1,
+              },
+              order_type: Market(
+                  ConceptualMarket {
+                      maximum_slippage_percent: 1.0,
+                  },
+              ),
+              symbol: Symbol {
+                  base: "ADA",
+                  quote: "USDT",
+                  market: BinanceFutures,
+              },
+              side: Buy,
+              qty_notional: 15.0,
+          },
+      ],
+      left_to_fill_total_notional: 0.0,
   }
   "###);
 	}
