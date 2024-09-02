@@ -66,7 +66,7 @@ impl PositionAcquisition {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_target_orders(&counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_target_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
@@ -74,7 +74,7 @@ impl PositionAcquisition {
 					if executed_notional >= target_coin_quantity {
 						break;
 					}
-					let new_target_orders = recalculate_target_orders(&counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_target_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -123,9 +123,8 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_target_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
-
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
@@ -133,7 +132,7 @@ impl PositionFollowup {
 						break;
 					}
 					dbg!(&last_fill_key);
-					let new_target_orders = recalculate_target_orders(&counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_target_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -191,6 +190,7 @@ async fn process_fills_update(last_fill_key: &mut Uuid, protocol_fills: Protocol
 }
 
 fn recalculate_target_orders(
+	parent_protocol_asset: &str,
 	counted_subtypes: &HashMap<ProtocolType, usize>,
 	left_to_target_notional: f64,
 	side: Side,
@@ -203,7 +203,7 @@ fn recalculate_target_orders(
 	for (protocol_spec_str, info) in dyn_info.iter() {
 		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
 		let n_matching_protocol_subtypes_in_parent_position = counted_subtypes.get(&subtype).unwrap();
-		let recalculated_allocation = info.conceptual_orders(*n_matching_protocol_subtypes_in_parent_position, left_to_target_notional, exchanges.clone());
+		let recalculated_allocation = info.conceptual_orders(parent_protocol_asset, *n_matching_protocol_subtypes_in_parent_position, left_to_target_notional, exchanges.clone());
 		recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
 			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
 			ConceptualOrderType::Limit(_) => limit_orders.push(o),

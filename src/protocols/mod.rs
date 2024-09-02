@@ -17,7 +17,7 @@ use v_utils::trades::Side;
 
 use crate::exchange_apis::{
 	exchanges::Exchanges,
-	order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId},
+	order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId},
 	Symbol,
 };
 
@@ -177,31 +177,47 @@ impl ProtocolDynamicInfo {
 		self.protocol_orders = orders;
 	}
 
+	/// If `Position` has `Protocol`s of different subtypes, we don't care to have them mix, - from the orders produced here (in full size for each `Protocol` subtype) position will choose the closest ones, ignoring the rest.
 	#[instrument(skip(exchanges))]
-	pub fn conceptual_orders(&self, n_matching_protocol_subtypes_in_parent_positioon: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> RecalculatedAllocation {
+	pub fn conceptual_orders(
+		&self,
+		parent_position_asset: &str,
+		n_matching_protocol_subtypes_in_parent_positioon: usize,
+		parent_position_desired_notional_left: f64,
+		exchanges: Arc<Exchanges>,
+	) -> RecalculatedAllocation {
 		let orders = &self.protocol_orders.__orders;
-		let size_multiplier = 2.0 / n_matching_protocol_subtypes_in_parent_positioon as f64;
-		let total_controlled_size = parent_notional * size_multiplier;
+		let size_multiplier = 1.0 / n_matching_protocol_subtypes_in_parent_positioon as f64;
+		let total_controlled_notional = parent_position_desired_notional_left * size_multiplier;
 
-		let qties_payload = orders.iter().flatten().cloned().collect::<Vec<ConceptualOrderPercents>>();
-		let min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), &qties_payload);
+		let qties_payload = orders.iter().flatten().map(|o| o.order_type).collect::<Vec<ConceptualOrderType>>();
+		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), &parent_position_asset, &qties_payload);
 
-		let prices_payload = orders.iter().flatten().map(|o| o.symbol.clone()).collect::<Vec<Symbol>>();
-		let prices = Exchanges::symbol_prices_batch(exchanges.clone(), &prices_payload);
+		let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = self
+			.fills
+			.iter()
+			.enumerate()
+			.map(|(i, filled)| {
+				let min_possible_qty = asset_min_trade_qties[i];
+				RecalculateOrdersPerOrderInfo::new(*filled, min_possible_qty)
+			})
+			.collect();
 
-		let mut per_order_infos = Vec::new();
-		debug!("self.fills: {:?}", self.fills);
-		for i in 0..orders.len() {
-			let info = match orders.get(i) {
-				Some(Some(_)) => RecalculateOrdersPerOrderInfo::new(self.fills[i], min_trade_qties[i], prices[i]),
-				_ => RecalculateOrdersPerOrderInfo::default(),
-			};
-			per_order_infos.push(info);
-		}
-		assert_eq!(per_order_infos.len(), orders.len());
-
-		self.protocol_orders.recalculate_protocol_orders_allocation(total_controlled_size, &per_order_infos)
+		self.protocol_orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional)
 	}
+}
+
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct RecalculatedAllocation {
+	pub orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	/// positive offset - can fill more, negative offset - filled too much.
+	pub left_to_fill_total_notional: f64,
+}
+
+#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+pub struct RecalculateOrdersPerOrderInfo {
+	pub filled: f64,
+	pub min_possible_qty: f64,
 }
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
@@ -212,19 +228,8 @@ pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
-#[derive(Clone, Debug, Default, derive_new::new)]
-pub struct RecalculatedAllocation {
-	pub orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	/// positive offset - can fill more, negative offset - filled too much.
-	pub total_offset: f64,
-}
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
-pub struct RecalculateOrdersPerOrderInfo {
-	pub fill_notional: f64,
-	pub min_trade_qty: f64,
-	pub asset_price_usd: f64,
-}
 impl ProtocolOrders {
+	#[instrument(fields(protocol_id))]
 	pub fn new(protocol_id: String, orders: Vec<Option<ConceptualOrderPercents>>) -> Self {
 		let mut symbols_set = HashSet::new();
 		for order in &orders.iter().flatten().collect::<Vec<&ConceptualOrderPercents>>() {
@@ -241,52 +246,41 @@ impl ProtocolOrders {
 	/// Order is *NOT* preserved. Orders with no remaining size are completely excluded from the output.
 	///
 	//HACK: doesn't yet work with multiple symbols.
-	//TODO!!: actually implement min_trade_qties.
+	// Matter of fact, none of this does. Currently all Positions assume working with specific asset.
 	#[instrument(skip(self))]
-	pub fn recalculate_protocol_orders_allocation(&self, total_controlled_notional: f64, per_order_info: &[RecalculateOrdersPerOrderInfo]) -> RecalculatedAllocation {
-		assert_eq!(self.__orders.len(), per_order_info.len());
-		let mut total_offset = 0.0;
+	pub fn recalculate_protocol_orders_allocation(&self, per_order_infos: &[RecalculateOrdersPerOrderInfo], total_controlled_notional: f64) -> RecalculatedAllocation {
+		assert_eq!(self.__orders.len(), per_order_infos.len());
 
-		// subtract filled
-		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
+		let mut left_controlled_notional = total_controlled_notional - per_order_infos.iter().map(|info| info.filled).sum::<f64>();
+
+		let orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
 			.__orders
 			.iter()
 			.enumerate()
-			.filter_map(|(i, order)| {
-				if let Some(o) = order.clone() {
-					let mut exact_order = o.to_exact(total_controlled_notional, ProtocolOrderId::new(self.protocol_id.clone(), i));
-					let filled = per_order_info[i].fill_notional;
-
-					if filled > exact_order.qty_notional - per_order_info[i].min_trade_qty {
-						total_offset += filled - exact_order.qty_notional;
-						return None;
+			.filter_map(|(i, order)| match order {
+				Some(order) => {
+					let desired_notional_i = *order.qty_percent_of_controlled * left_controlled_notional;
+					if desired_notional_i > per_order_infos[i].min_possible_qty {
+						Some(ConceptualOrder::new(
+							ProtocolOrderId::new(self.protocol_id.clone(), i),
+							order.order_type,
+							order.symbol.clone(),
+							order.side,
+							desired_notional_i,
+						))
+					} else {
+						left_controlled_notional += desired_notional_i;
+						None
 					}
-
-					exact_order.qty_notional -= filled;
-					Some(exact_order)
-				} else {
-					None
 				}
+				None => None,
 			})
 			.collect();
 
-		// redistribute the total size
-		orders.sort_by(|a, b| b.qty_notional.partial_cmp(&a.qty_notional).unwrap_or(Ordering::Equal));
-		let mut l = orders.len();
-		let individual_offset = total_offset / l as f64;
-		for i in (1..l).rev() {
-			if orders[i].qty_notional < individual_offset {
-				orders.remove(i);
-				total_offset -= orders[i].qty_notional;
-				l -= 2;
-			} else {
-				// if reached this once, all following elements will also eval to true, so the total_offset is constant now.
-				orders[i].qty_notional -= individual_offset;
-			}
+		RecalculatedAllocation {
+			orders,
+			left_to_fill_total_notional: left_controlled_notional,
 		}
-
-		info!(total_offset);
-		RecalculatedAllocation { orders, total_offset }
 	}
 }
 
@@ -314,8 +308,8 @@ mod tests {
 		);
 
 		let total_controlled_notional = 2.0;
-		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(1.1, 0.007, 50_000.0)];
-		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
+		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(1.1, 0.007)];
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {
       orders: [
@@ -338,64 +332,11 @@ mod tests {
               qty_notional: 0.8999999999999999,
           },
       ],
-      total_offset: 0.0,
+      left_to_fill_total_notional: 0.8999999999999999,
   }
   "###);
 	}
 
-	//TODO: implement
-	//#[test]
-	//fn test_recalculate_allocation_different_symbols() {
-	//	let orders = ProtocolOrders::new(
-	//		"test".to_string(),
-	//		vec![
-	//			Some(ConceptualOrderPercents::new(
-	//				ConceptualOrderType::Market(ConceptualMarket::new(2.0)),
-	//				Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
-	//				Side::Buy,
-	//				Percent::new(0.25),
-	//			)),
-	//			Some(ConceptualOrderPercents::new(
-	//				ConceptualOrderType::Market(ConceptualMarket::new(2.0)),
-	//				Symbol::new("ETH".to_string(), "USDT".to_string(), Market::BinanceFutures),
-	//				Side::Sell,
-	//				Percent::new(0.25),
-	//			)),
-	//			Some(ConceptualOrderPercents::new(
-	//				ConceptualOrderType::StopMarket(ConceptualStopMarket::new(1.42)),
-	//				Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
-	//				Side::Sell,
-	//				Percent::new(0.25),
-	//			)),
-	//			Some(ConceptualOrderPercents::new(
-	//				ConceptualOrderType::Market(ConceptualMarket::new(2.0)),
-	//				Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
-	//				Side::Buy,
-	//				Percent::new(0.25),
-	//			)),
-	//		],
-	//	);
-	//
-	//	let total_controlled_notional = 2.0;
-	//	let per_order_infos = vec![
-	//		RecalculateOrdersPerOrderInfo::new(1.05, 0.007, 50_000.0),
-	//		RecalculateOrdersPerOrderInfo::new(0.2, 0.075, 3_000.0),
-	//		RecalculateOrdersPerOrderInfo::new(0.0, 10.0, 0.42),
-	//		RecalculateOrdersPerOrderInfo::new(10.0, 10.0, 0.42),
-	//	];
-	//	let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
-	//
-	//	let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
-	//	// order doesn't have to match.
-	//	assert_debug_snapshot!(qties, @r###"
-	// [
-	//     31.0,
-	//     16.0,
-	//     1.3,
-	//     1.05,
-	// ]
-	// "###);
-	//}
 	#[test]
 	fn test_nones_in_orders() {
 		let orders = ProtocolOrders::new(
@@ -412,8 +353,8 @@ mod tests {
 		);
 
 		let total_controlled_notional = 100.0;
-		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(0.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(0.0, 10.0, 0.42)];
-		let recalculated_allocation = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
+		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(0.0, 10.0), RecalculateOrdersPerOrderInfo::new(0.0, 10.0)];
+		let recalculated_allocation = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
 
 		let qties = recalculated_allocation.orders.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
 		assert_debug_snapshot!(qties, @r###"
@@ -444,18 +385,18 @@ mod tests {
 		);
 
 		let total_controlled_notional = 100.0;
-		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(75.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42)];
-		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
+		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(75.0, 10.0), RecalculateOrdersPerOrderInfo::new(25.0, 10.0)];
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {
       orders: [],
-      total_offset: 0.0,
+      left_to_fill_total_notional: 0.0,
   }
   "###);
 
 		let total_controlled_notional = 2.0;
-		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42)];
-		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
+		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(25.0, 10.0), RecalculateOrdersPerOrderInfo::new(25.0, 10.0)];
+		let got = orders.recalculate_protocol_orders_allocation(&per_order_infos, total_controlled_notional);
 		//TODO!!!: start returning by how much we were off. In the next snapshot we overdo it by 48.0, yet all we get is a success with empty vec of orders to deploy.
 		assert_debug_snapshot!(got, @r###"
   RecalculatedAllocation {

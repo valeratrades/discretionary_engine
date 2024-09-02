@@ -3,7 +3,11 @@ use std::sync::{Arc, RwLock};
 use color_eyre::eyre::Result;
 use tracing::instrument;
 
-use super::{binance::BinanceExchange, order_types::ConceptualOrderPercents, Market, Symbol};
+use super::{
+	binance::BinanceExchange,
+	order_types::{ConceptualOrderPercents, ConceptualOrderType},
+	Market, Symbol,
+};
 use crate::{config::AppConfig, exchange_apis::binance};
 
 /// [Exchange] itself is passed around as Arc<Self>, RwLock is only present at the level of individual exchanges, as to not lock it all at once when writing.
@@ -38,36 +42,29 @@ impl Exchanges {
 		Ok(total_balance)
 	}
 
-	/// Currently a dummy function with sole role of establishing architecture that would work with multi-symbol returns from protocols. Right now just hardcodes the answer.
-	pub fn symbol_prices_batch(_s: Arc<Self>, symbols: &[Symbol]) -> Vec<f64> {
-		let diff_symbols: std::collections::HashSet<Symbol> = symbols.iter().cloned().collect();
-		assert_eq!(diff_symbols.len(), 1, "Different symbols are not yet supported");
-
-		symbols.iter().map(|_| 1.0).collect()
-	}
-
+	//TODO!: update so that we don't concern ourselves with potential of differing base assets (here or lower down the callstack this starts, don't remember).
+	/// Returns the absolute minimum trade quantity for (order_type, base_asset) pair, /*as min trade qty can depend on whever the order is market or not*/
 	#[instrument(skip(_s))]
-	pub fn compile_min_trade_qties(_s: Arc<Self>, orders_on_symbols: &[ConceptualOrderPercents]) -> Vec<f64> {
-		let mut min_notional_qty_accross_exchanges = Vec::with_capacity(orders_on_symbols.len());
-		for _ in 0..orders_on_symbols.len() {
-			min_notional_qty_accross_exchanges.push(f64::MAX);
+	pub fn compile_min_trade_qties(_s: Arc<Self>, base_asset: &str, ordertypes: &[ConceptualOrderType]) -> Vec<f64> {
+		let mut min_notional_qties_accross_exchanges = Vec::with_capacity(ordertypes.len());
+		for _ in 0..ordertypes.len() {
+			min_notional_qties_accross_exchanges.push(f64::MAX);
 		}
 
-		let binances_qties_batch_payload = orders_on_symbols.iter().map(|o| (o.symbol.base.clone(), o.order_type)).collect::<Vec<_>>();
 		let binance_min_notional_qties = {
 			let binance_lock = _s.binance.read().unwrap();
-			binance_lock.min_qties_batch(&binances_qties_batch_payload)
+			binance_lock.min_qties_batch(&base_asset, &ordertypes)
 		};
-		assert_eq!(binance_min_notional_qties.len(), orders_on_symbols.len());
-		assert_ne!(min_notional_qty_accross_exchanges.len(), 0);
+		assert_eq!(binance_min_notional_qties.len(), ordertypes.len());
+		assert_ne!(min_notional_qties_accross_exchanges.len(), 0);
 		for (i, q) in binance_min_notional_qties.iter().enumerate() {
-			if *q < min_notional_qty_accross_exchanges[i] {
-				min_notional_qty_accross_exchanges[i] = *q;
+			if *q < min_notional_qties_accross_exchanges[i] {
+				min_notional_qties_accross_exchanges[i] = *q;
 			}
 		}
 
 		//- same for other exchanges
 
-		min_notional_qty_accross_exchanges
+		min_notional_qties_accross_exchanges
 	}
 }

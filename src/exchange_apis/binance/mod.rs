@@ -54,21 +54,22 @@ impl BinanceExchange {
 
 	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
 	#[instrument(skip(self))]
-	pub fn min_qties_batch(&self, baseasset_and_ordertype_pairs: &[(String, ConceptualOrderType)]) -> Vec<f64> {
+	pub fn min_qties_batch(&self, base_asset: &str, ordertypes: &[ConceptualOrderType]) -> Vec<f64> {
 		assert_ne!(*self, Self::default());
 
 		let mut min_qties = Vec::new();
-		for (baseasset, ordertype) in baseasset_and_ordertype_pairs {
-			let mut all_min_notionals_for_asset = Vec::new();
-			for s in &self.binance_futures_info.symbols {
-				if s.base_asset == *baseasset {
+		for s in &self.binance_futures_info.symbols {
+			if s.base_asset == *base_asset {
+				let mut all_min_notionals_for_asset = Vec::new();
+				for ordertype in ordertypes {
 					all_min_notionals_for_asset.push(s.min_trade_qty_notional(ordertype));
 				}
+				//- other sub-markets
+				assert!(!all_min_notionals_for_asset.is_empty(), "No such asset found in the exchange info");
+				min_qties.push(all_min_notionals_for_asset.iter().sum());
 			}
-			//- other sub-markets
-			assert!(!all_min_notionals_for_asset.is_empty(), "No such asset found in the exchange info");
-			min_qties.push(all_min_notionals_for_asset.iter().sum());
 		}
+
 		min_qties
 	}
 }
