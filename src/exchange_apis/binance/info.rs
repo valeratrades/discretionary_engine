@@ -1,15 +1,18 @@
 use std::{collections::HashMap, sync::Arc};
 
+use color_eyre::eyre::Result;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
-use color_eyre::eyre::Result;
-
-use crate::{config::AppConfig, exchange_apis::{order_types::ConceptualOrderType, Market, Symbol}, utils::deser_reqwest};
 
 use super::unsigned_request;
+use crate::{
+	config::AppConfig,
+	exchange_apis::{order_types::ConceptualOrderType, Market, Symbol},
+	utils::deser_reqwest,
+};
 
 // FuturesExchangeInfo structs {{{
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]

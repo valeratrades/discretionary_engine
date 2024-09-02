@@ -423,7 +423,7 @@ pub async fn binance_runtime(
 		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
 		let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
 		let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
-		
+
 		{
 			let mut binance_exchange_lock = binance_exchange.write().unwrap();
 			binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;

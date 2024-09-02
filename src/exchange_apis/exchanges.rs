@@ -15,7 +15,9 @@ pub struct Exchanges {
 impl Exchanges {
 	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
 		let binance = BinanceExchange::init(config_arc.clone()).await?;
-		Ok(Self { binance: Arc::new(RwLock::new(binance)) })
+		Ok(Self {
+			binance: Arc::new(RwLock::new(binance)),
+		})
 	}
 
 	#[instrument(skip(_s, config))]

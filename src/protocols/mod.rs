@@ -1,4 +1,5 @@
 mod approaching_limit;
+use tracing::debug;
 mod dummy_market;
 mod sar;
 mod trailing_stop;
@@ -9,7 +10,7 @@ use color_eyre::eyre::{bail, Result};
 use dummy_market::DummyMarketWrapper;
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
-use tracing::instrument;
+use tracing::{info, instrument};
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
 use v_utils::trades::Side;
@@ -177,7 +178,7 @@ impl ProtocolDynamicInfo {
 	}
 
 	#[instrument(skip(exchanges))]
-	pub fn conceptual_orders(&self, n_matching_protocol_subtypes_in_parent_positioon: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn conceptual_orders(&self, n_matching_protocol_subtypes_in_parent_positioon: usize, parent_notional: f64, exchanges: Arc<Exchanges>) -> RecalculatedAllocation {
 		let orders = &self.protocol_orders.__orders;
 		let size_multiplier = 2.0 / n_matching_protocol_subtypes_in_parent_positioon as f64;
 		let total_controlled_size = parent_notional * size_multiplier;
@@ -189,6 +190,7 @@ impl ProtocolDynamicInfo {
 		let prices = Exchanges::symbol_prices_batch(exchanges.clone(), &prices_payload);
 
 		let mut per_order_infos = Vec::new();
+		debug!("self.fills: {:?}", self.fills);
 		for i in 0..orders.len() {
 			let info = match orders.get(i) {
 				Some(Some(_)) => RecalculateOrdersPerOrderInfo::new(self.fills[i], min_trade_qties[i], prices[i]),
@@ -210,6 +212,18 @@ pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct RecalculatedAllocation {
+	pub orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+	/// positive offset - can fill more, negative offset - filled too much.
+	pub total_offset: f64,
+}
+#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+pub struct RecalculateOrdersPerOrderInfo {
+	pub fill_notional: f64,
+	pub min_trade_qty: f64,
+	pub asset_price_usd: f64,
+}
 impl ProtocolOrders {
 	pub fn new(protocol_id: String, orders: Vec<Option<ConceptualOrderPercents>>) -> Self {
 		let mut symbols_set = HashSet::new();
@@ -219,21 +233,9 @@ impl ProtocolOrders {
 		assert_eq!(symbols_set.len(), 1, "Different symbols in return of the same protocol are not yet implemented");
 		Self { protocol_id, __orders: orders }
 	}
-}
-#[derive(Clone, Debug, Default, derive_new::new)]
-struct RecalculatedAllocation {
-	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	total_offset: Option<f64>,
-}
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
-pub struct RecalculateOrdersPerOrderInfo {
-	pub fill_notional: f64,
-	pub min_trade_qty: f64,
-	pub asset_price_usd: f64,
-}
-impl ProtocolOrders {
+
 	pub fn empty_fills_mask(&self) -> Vec<f64> {
-		vec![1.; self.__orders.len()]
+		vec![0.0; self.__orders.len()]
 	}
 
 	/// Order is *NOT* preserved. Orders with no remaining size are completely excluded from the output.
@@ -241,9 +243,9 @@ impl ProtocolOrders {
 	//HACK: doesn't yet work with multiple symbols.
 	//TODO!!: actually implement min_trade_qties.
 	#[instrument(skip(self))]
-	pub fn recalculate_protocol_orders_allocation(&self, total_controlled_notional: f64, per_order_info: &[RecalculateOrdersPerOrderInfo]) -> Vec<ConceptualOrder<ProtocolOrderId>> {
+	pub fn recalculate_protocol_orders_allocation(&self, total_controlled_notional: f64, per_order_info: &[RecalculateOrdersPerOrderInfo]) -> RecalculatedAllocation {
 		assert_eq!(self.__orders.len(), per_order_info.len());
-		let mut total_offset = 1.0;
+		let mut total_offset = 0.0;
 
 		// subtract filled
 		let mut orders: Vec<ConceptualOrder<ProtocolOrderId>> = self
@@ -282,11 +284,9 @@ impl ProtocolOrders {
 				orders[i].qty_notional -= individual_offset;
 			}
 		}
-		if orders.len() == 1 && total_offset != 0.0 {
-			tracing::warn!("Missed by {total_offset}");
-		}
 
-		orders
+		info!(total_offset);
+		RecalculatedAllocation { orders, total_offset }
 	}
 }
 
@@ -317,26 +317,29 @@ mod tests {
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(1.1, 0.007, 50_000.0)];
 		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
 		assert_debug_snapshot!(got, @r###"
-  [
-      ConceptualOrder {
-          id: ProtocolOrderId {
-              protocol_id: "test",
-              ordinal: 0,
-          },
-          order_type: Market(
-              ConceptualMarket {
-                  maximum_slippage_percent: 1.0,
+  RecalculatedAllocation {
+      orders: [
+          ConceptualOrder {
+              id: ProtocolOrderId {
+                  protocol_id: "test",
+                  ordinal: 0,
               },
-          ),
-          symbol: Symbol {
-              base: "BTC",
-              quote: "USDT",
-              market: BinanceFutures,
+              order_type: Market(
+                  ConceptualMarket {
+                      maximum_slippage_percent: 1.0,
+                  },
+              ),
+              symbol: Symbol {
+                  base: "BTC",
+                  quote: "USDT",
+                  market: BinanceFutures,
+              },
+              side: Buy,
+              qty_notional: 0.8999999999999999,
           },
-          side: Buy,
-          qty_notional: 0.8999999999999999,
-      },
-  ]
+      ],
+      total_offset: 0.0,
+  }
   "###);
 	}
 
@@ -410,9 +413,9 @@ mod tests {
 
 		let total_controlled_notional = 100.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(0.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(0.0, 10.0, 0.42)];
-		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
+		let recalculated_allocation = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
 
-		let qties = got.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
+		let qties = recalculated_allocation.orders.into_iter().map(|co| co.qty_notional).collect::<Vec<f64>>();
 		assert_debug_snapshot!(qties, @r###"
   [
       100.0,
@@ -443,12 +446,22 @@ mod tests {
 		let total_controlled_notional = 100.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(75.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42)];
 		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
-		assert_debug_snapshot!(got, @"[]");
+		assert_debug_snapshot!(got, @r###"
+  RecalculatedAllocation {
+      orders: [],
+      total_offset: 0.0,
+  }
+  "###);
 
 		let total_controlled_notional = 2.0;
 		let per_order_infos = vec![RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42), RecalculateOrdersPerOrderInfo::new(25.0, 10.0, 0.42)];
 		let got = orders.recalculate_protocol_orders_allocation(total_controlled_notional, &per_order_infos);
 		//TODO!!!: start returning by how much we were off. In the next snapshot we overdo it by 48.0, yet all we get is a success with empty vec of orders to deploy.
-		assert_debug_snapshot!(got, @"[]");
+		assert_debug_snapshot!(got, @r###"
+  RecalculatedAllocation {
+      orders: [],
+      total_offset: 48.0,
+  }
+  "###);
 	}
 }
