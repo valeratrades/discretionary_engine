@@ -10,7 +10,6 @@ use tokio_tungstenite::connect_async;
 use v_utils::{
 	io::Percent,
 	macros::CompactFormat,
-	prelude::*,
 	trades::{Ohlc, Side, Timeframe},
 };
 

@@ -2,9 +2,9 @@ use color_eyre::eyre::Result;
 use discretionary_engine_macros::ProtocolWrapper;
 use futures_util::StreamExt;
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_tungstenite::connect_async;
-use v_utils::{io::Percent, macros::CompactFormat, prelude::*, trades::Side};
+use v_utils::{io::Percent, macros::CompactFormat, trades::Side};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},

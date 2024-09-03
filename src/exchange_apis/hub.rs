@@ -1,9 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use color_eyre::eyre::Result;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinSet};
 use uuid::Uuid;
-use v_utils::prelude::*;
 
 use super::exchanges::Exchanges;
 use crate::{
