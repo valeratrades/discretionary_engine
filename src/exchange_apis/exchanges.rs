@@ -3,11 +3,7 @@ use std::sync::{Arc, RwLock};
 use color_eyre::eyre::Result;
 use tracing::instrument;
 
-use super::{
-	binance::BinanceExchange,
-	order_types::ConceptualOrderType,
-	Market,
-};
+use super::{binance::BinanceExchange, order_types::ConceptualOrderType, Market};
 use crate::{config::AppConfig, exchange_apis::binance};
 
 /// [Exchange] itself is passed around as Arc<Self>, RwLock is only present at the level of individual exchanges, as to not lock it all at once when writing.

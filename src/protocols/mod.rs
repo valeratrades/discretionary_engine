@@ -154,8 +154,8 @@ pub struct ProtocolFills {
 /// Position's knowledge of the protocols in use.
 #[derive(Clone, Debug, Default)]
 pub struct ProtocolDynamicInfo {
-	fills: Vec<f64>,
-	protocol_orders: ProtocolOrders,
+	pub fills: Vec<f64>,
+	pub protocol_orders: ProtocolOrders,
 }
 impl ProtocolDynamicInfo {
 	pub fn new(protocol_orders: ProtocolOrders) -> Self {
@@ -270,7 +270,7 @@ impl ProtocolOrders {
 						left_controlled_notional -= desired_notional_i;
 						Some(order)
 					} else {
-						per_order_additional_percents_from_skipped += *order.qty_percent_of_controlled / (self.__orders.len() - (i+1)) as f64;
+						per_order_additional_percents_from_skipped += *order.qty_percent_of_controlled / (self.__orders.len() - (i + 1)) as f64;
 						None
 					}
 				}

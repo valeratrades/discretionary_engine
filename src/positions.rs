@@ -14,7 +14,7 @@ use crate::{
 		hub::HubRx,
 		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
 	},
-	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType},
+	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType, RecalculateOrdersPerOrderInfo},
 };
 
 /// What the Position *is*_
@@ -189,8 +189,13 @@ async fn process_fills_update(last_fill_key: &mut Uuid, protocol_fills: Protocol
 	Ok(())
 }
 
+
+/// Reapply fills knowledge to orders supplied by [Protocol]s.
+///
+/// If `Position` has [Protocol]s of different subtypes, we don't care to have them mix, - from the orders produced here (in full size for each `Protocol` subtype) position will choose the closest ones, ignoring the rest.
+#[instrument(skip(exchanges))]
 fn recalculate_target_orders(
-	parent_protocol_asset: &str,
+	parent_position_asset: &str,
 	counted_subtypes: &HashMap<ProtocolType, usize>,
 	left_to_target_notional: f64,
 	side: Side,
@@ -203,12 +208,26 @@ fn recalculate_target_orders(
 	for (protocol_spec_str, info) in dyn_info.iter() {
 		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
 		let n_matching_protocol_subtypes_in_parent_position = counted_subtypes.get(&subtype).unwrap();
-		let recalculated_allocation = info.conceptual_orders(
-			parent_protocol_asset,
-			*n_matching_protocol_subtypes_in_parent_position,
-			left_to_target_notional,
-			exchanges.clone(),
-		);
+
+		let orders = &info.protocol_orders.__orders;
+		let size_multiplier = 1.0 / *n_matching_protocol_subtypes_in_parent_position as f64;
+		let protocol_controlled_notional = left_to_target_notional * size_multiplier;
+
+		let qties_payload = orders.iter().flatten().map(|o| o.order_type).collect::<Vec<ConceptualOrderType>>();
+		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), parent_position_asset, &qties_payload);
+
+		let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = info
+			.fills
+			.iter()
+			.enumerate()
+			.map(|(i, filled)| {
+				let min_possible_qty = asset_min_trade_qties[i];
+				RecalculateOrdersPerOrderInfo::new(*filled, min_possible_qty)
+			})
+			.collect();
+
+		let recalculated_allocation = info.protocol_orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
+
 		recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
 			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
 			ConceptualOrderType::Limit(_) => limit_orders.push(o),
