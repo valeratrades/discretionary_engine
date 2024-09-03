@@ -65,12 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-docs-rs
       - name: Download modified by pre-ci Cargo.toml files
         uses: actions/download-artifact@v4
         with:
           name: modified-cargo-files
-      - run: cargo docs-rs
+      - run: RUSTDOCFLAGS="-Dwarnings" cargo doc --no-deps
 
   clippy:
     name: Clippy
