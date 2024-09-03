@@ -36,7 +36,7 @@ clap = { version = "^4.5.16", features = ["derive"] }
 color-eyre = "0.6.3"
 config = "0.14.0"
 derive-new = "0.7.0"
-discretionary_engine_macros = { path = "../discretionary_engine_macros" } #ga: sub path
+discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.0" } #ga: rm path
 eyre = "0.6.12"
 futures-util = "0.3.30"
 hex = "^0.4.3"
@@ -58,4 +58,4 @@ tracing-log = "0.2.0"
 tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry", "env-filter"] }
 url = "^2.5.2"
 uuid = { version = "^1.10.0", features = ["serde", "v4", "v7", "v8"] }
-v_utils = { features = ["full"], path = "../../v_utils/v_utils" } #ga: sub path
+v_utils = { features = ["full"], path = "../../v_utils/v_utils", version = "^1.7.2" } #ga: rm path
