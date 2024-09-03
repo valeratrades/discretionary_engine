@@ -1,64 +1,8 @@
-cargo-features = ["codegen-backend"]
+[workspace]
+members = ["discretionary_engine", "discretionary_engine_*"]
+resolver = "2"
 
-[package]
-name = "discretionary_engine"
-version = "0.1.1"
-authors = ["Valera <valeratrades@gmail.com>"]
-categories = ["trading", "trade-execution"]
-description = "LaTeX of trading"
-documentation = "https://docs.rs/discretionary_engine"
-edition = "2021"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/valeratrades/discretionary_engine"
-rust-version = "1.80.0"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html#[[test]]#name = "tests"#path = "tests/main.rs"##[dev-dependencies]#trybuild = { version = "^1.0.89", features = ["diff"]}
-
-# wait, so does it work or no?
-[lints.clippy]
-cmp_float = "allow" # is bad for `==` direct comparisons, but `<` and `>` should be allowed
-#get_first = "allow" # const fn, so actually more performant
-len_zero = "allow" # `.empty()` is O(1) but on &str only
-comparison_to_empyt = "allow" # same reasons as `len_zero`
-
-[package.metadata.docs.rs]
-cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
-
-[profile.dev]
-codegen-backend = "cranelift" #ga: comment out
+default-members = ["discretionary_engine"]
 
 [workspace.lints.rust]
 unused_crate_dependencies = "warn"
-
-[package.metadata.cargo-machete]
-ignored = ["v_utils_macros", "tracing-futures"]
-#tracing-futures = "0.2.5"
-
-[dependencies]
-chrono = "^0.4.38"
-clap = { version = "^4.5.16", features = ["derive"] }
-color-eyre = "0.6.3"
-config = "0.14.0"
-derive-new = "0.7.0"
-discretionary_engine_macros = { path = "./discretionary_engine_macros" }
-eyre = "0.6.12"
-futures-util = "0.3.30"
-hex = "^0.4.3"
-hmac = "^0.12.1"
-insta = { version = "1.39.0", features = ["json"] }
-rand = { version = "0.8.5", features = ["small_rng"] }
-reqwest = { version = "0.12.7", features = ["json"] }
-serde = { version = "^1.0.209", features = ["derive"] }
-serde_json = "^1.0.127"
-serde_urlencoded = "^0.7.1"
-serde_with = "^3.9.0"
-sha2 = "^0.10.8"
-tokio = { version = "^1.40.0", features = ["full"] }
-tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
-tracing = { version = "^0.1.40", features = ["log", "std", "async-await"] }
-tracing-bunyan-formatter = "0.3.9"
-tracing-error = "0.2.0"
-tracing-log = "0.2.0"
-tracing-subscriber = { version = "^0.3.18", features = ["fmt", "json", "registry", "env-filter"] }
-url = "^2.5.2"
-uuid = { version = "^1.10.0", features = ["serde", "v4", "v7", "v8"] }
-v_utils = { features = ["full"], path = "../v_utils/v_utils" } #ga: sub path
