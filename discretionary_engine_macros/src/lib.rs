@@ -27,6 +27,12 @@ pub fn derive_protocol_wrapper(input: TokenStream) -> TokenStream {
 	let expanded = quote! {
 		#[derive(Clone, Debug, Default)]
 		pub struct #wrapper_name(std::sync::Arc<std::sync::RwLock<#name>>);
+		impl #wrapper_name {
+			pub fn signature(&self) -> String {
+				self.0.read().unwrap().to_string()
+			}
+		}
+
 		impl std::str::FromStr for #wrapper_name {
 			type Err = eyre::Report;
 

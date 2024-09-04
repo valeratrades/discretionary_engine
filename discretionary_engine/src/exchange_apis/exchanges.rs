@@ -5,7 +5,7 @@ use tracing::instrument;
 
 use super::{
 	binance::BinanceExchange,
-	order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, IdRequirements, ProtocolOrderId},
+	order_types::{ConceptualOrderPercents, ConceptualOrderType, IdRequirements},
 	Market,
 };
 use crate::{config::AppConfig, exchange_apis::binance};
@@ -74,6 +74,13 @@ impl Exchanges {
 	///
 	/// We find max of the min_qty values for all order_types here, while for limits and stop markets we take the maximum distance from the price exchange allows for.
 	pub fn min_qty_any_ordertype(_s: Arc<Self>, base_asset: &str) -> f64 {
-		todo!()
+		let binance_min_qty_any_ordertype = {
+			let binance_lock = _s.binance.read().unwrap();
+			binance_lock.min_qty_any_ordertype(base_asset)
+		};
+
+		//- same for other exchanges
+
+		binance_min_qty_any_ordertype
 	}
 }

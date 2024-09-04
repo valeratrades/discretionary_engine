@@ -28,11 +28,11 @@ use tokio::{
 use tracing::{debug, instrument, warn};
 use url::Url;
 use uuid::Uuid;
-use v_utils::trades::Ohlc;
+use v_utils::{io::Percent, trades::Ohlc};
 
 use super::{
 	hub::{HubCallback, HubPassforward},
-	order_types::{ConceptualOrderType, IdRequirements},
+	order_types::{ConceptualMarket, ConceptualOrderType, IdRequirements},
 };
 use crate::{
 	config::AppConfig,
@@ -53,6 +53,7 @@ impl BinanceExchange {
 	}
 
 	// Finds all pairs with the given base asset, returns absolute minimal order trade size for it.
+	//TODO!!: switch to requesting full orders. This is not general, so for limit and stop market orders must know the offset to determine the accurate min_qty.
 	#[instrument(skip(self))]
 	pub fn min_qties_batch(&self, base_asset: &str, ordertypes: &[ConceptualOrderType]) -> Vec<f64> {
 		assert_ne!(*self, Self::default());
@@ -71,6 +72,18 @@ impl BinanceExchange {
 		}
 
 		min_qties
+	}
+
+	#[instrument(skip(self))]
+	pub fn min_qty_any_ordertype(&self, base_asset: &str) -> f64 {
+		let mut on_different_pairs = Vec::new();
+		for s in &self.binance_futures_info.symbols {
+			if s.base_asset == *base_asset {
+				//HACK: just assumes that there is no way to hit a smaller min_qty limit by placing a limit order, no matter at what offset to the price.
+				on_different_pairs.push(s.min_trade_qty_notional(&ConceptualOrderType::Market(ConceptualMarket::new(Percent(1.0)))));
+			}
+		}
+		on_different_pairs.iter().sum()
 	}
 }
 

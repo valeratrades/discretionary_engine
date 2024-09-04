@@ -48,13 +48,13 @@ pub struct StopMarketOrder {
 
 #[derive(Debug, Hash, Clone, Default, PartialEq, new, Serialize, Deserialize)]
 pub struct ProtocolOrderId {
-	pub protocol_id: String,
+	pub protocol_signature: String,
 	pub ordinal: usize,
 }
 impl From<PositionOrderId> for ProtocolOrderId {
 	fn from(p: PositionOrderId) -> Self {
 		ProtocolOrderId {
-			protocol_id: p.protocol_id,
+			protocol_signature: p.protocol_id,
 			ordinal: p.ordinal,
 		}
 	}
@@ -96,7 +96,7 @@ impl Default for ConceptualOrderType {
 #[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]
 pub struct ConceptualMarket {
 	/// 1.0 will be translated into an actual Market order. Others, most of the time, will be expressed via limit orders.
-	pub maximum_slippage_percent: f64,
+	pub maximum_slippage_percent: Percent,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, new, Serialize, Deserialize, Copy)]

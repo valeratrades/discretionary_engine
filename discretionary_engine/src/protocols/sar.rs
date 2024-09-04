@@ -95,7 +95,7 @@ impl ProtocolTrait for SarWrapper {
 		Ok(())
 	}
 
-	fn get_subtype(&self) -> ProtocolType {
+	fn get_type(&self) -> ProtocolType {
 		ProtocolType::Momentum
 	}
 }

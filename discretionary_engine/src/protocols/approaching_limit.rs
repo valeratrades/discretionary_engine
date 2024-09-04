@@ -74,7 +74,7 @@ impl ProtocolTrait for ApproachingLimitWrapper {
 		Ok(())
 	}
 
-	fn get_subtype(&self) -> ProtocolType {
+	fn get_type(&self) -> ProtocolType {
 		ProtocolType::Momentum
 	}
 }

@@ -2,7 +2,7 @@ mod approaching_limit;
 mod dummy_market;
 mod sar;
 mod trailing_stop;
-use std::{collections::HashSet, str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr};
 
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
 use color_eyre::eyre::{bail, Result};
@@ -14,10 +14,7 @@ use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
 use v_utils::{io::Percent, trades::Side};
 
-use crate::exchange_apis::{
-	exchanges::Exchanges,
-	order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId},
-};
+use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 
 /// Used when determining sizing or the changes in it, in accordance to the current distribution of rm on types of algorithms.
 ///
@@ -36,7 +33,7 @@ pub trait ProtocolTrait {
 	/// Requested orders are being sent over the mspc with uuid of the protocol on each batch, as we want to replace the previous requested batch if any.
 	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()>;
 	fn update_params(&self, params: Self::Params) -> Result<()>;
-	fn get_subtype(&self) -> ProtocolType;
+	fn get_type(&self) -> ProtocolType;
 }
 
 // HACK: Protocol enum. Seems suboptimal {\{{
@@ -92,12 +89,21 @@ impl Protocol {
 		}
 	}
 
-	pub fn get_subtype(&self) -> ProtocolType {
+	pub fn get_type(&self) -> ProtocolType {
 		match self {
-			Protocol::TrailingStop(ts) => ts.get_subtype(),
-			Protocol::Sar(sar) => sar.get_subtype(),
-			Protocol::ApproachingLimit(al) => al.get_subtype(),
-			Protocol::DummyMarket(dm) => dm.get_subtype(),
+			Protocol::TrailingStop(ts) => ts.get_type(),
+			Protocol::Sar(sar) => sar.get_type(),
+			Protocol::ApproachingLimit(al) => al.get_type(),
+			Protocol::DummyMarket(dm) => dm.get_type(),
+		}
+	}
+
+	pub fn signature(&self) -> String {
+		match self {
+			Protocol::TrailingStop(ts) => ts.signature(),
+			Protocol::Sar(sar) => sar.signature(),
+			Protocol::ApproachingLimit(al) => al.signature(),
+			Protocol::DummyMarket(dm) => dm.signature(),
 		}
 	}
 }
@@ -199,7 +205,7 @@ pub struct ProtocolOrders {
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
 }
 impl ProtocolOrders {
-	#[instrument(fields(protocol_id))]
+	#[instrument(skip(orders))]
 	pub fn new(protocol_id: String, orders: Vec<Option<ConceptualOrderPercents>>) -> Self {
 		assert_ne!(
 			orders.len(),
@@ -293,7 +299,7 @@ mod tests {
 			let orders = ProtocolOrders::new(
 				"test".to_string(),
 				vec![Some(ConceptualOrderPercents::new(
-					ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+					ConceptualOrderType::Market(ConceptualMarket::new(Percent(1.0))),
 					Symbol::new("BTC".to_string(), "USDT".to_string(), Market::BinanceFutures),
 					Side::Buy,
 					Percent::new(1.0),
@@ -309,12 +315,14 @@ mod tests {
        orders: [
            ConceptualOrder {
                id: ProtocolOrderId {
-                   protocol_id: "test",
+                   protocol_signature: "test",
                    ordinal: 0,
                },
                order_type: Market(
                    ConceptualMarket {
-                       maximum_slippage_percent: 1.0,
+                       maximum_slippage_percent: Percent(
+                           1.0,
+                       ),
                    },
                ),
                symbol: Symbol {
@@ -338,7 +346,7 @@ mod tests {
 				vec![
 					None,
 					Some(ConceptualOrderPercents::new(
-						ConceptualOrderType::Market(ConceptualMarket::new(2.0)),
+						ConceptualOrderType::Market(ConceptualMarket::new(Percent(2.0))),
 						Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
 						Side::Buy,
 						Percent::new(1.0),
@@ -367,13 +375,13 @@ mod tests {
 					"test".to_string(),
 					vec![
 						Some(ConceptualOrderPercents::new(
-							ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+							ConceptualOrderType::Market(ConceptualMarket::new(Percent(1.0))),
 							Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
 							Side::Sell,
 							Percent::new(0.25),
 						)),
 						Some(ConceptualOrderPercents::new(
-							ConceptualOrderType::Market(ConceptualMarket::new(1.0)),
+							ConceptualOrderType::Market(ConceptualMarket::new(Percent(1.0))),
 							Symbol::new("ADA".to_string(), "USDT".to_string(), Market::BinanceFutures),
 							Side::Buy,
 							Percent::new(0.75),
@@ -425,12 +433,14 @@ mod tests {
         orders: [
             ConceptualOrder {
                 id: ProtocolOrderId {
-                    protocol_id: "test",
+                    protocol_signature: "test",
                     ordinal: 1,
                 },
                 order_type: Market(
                     ConceptualMarket {
-                        maximum_slippage_percent: 1.0,
+                        maximum_slippage_percent: Percent(
+                            1.0,
+                        ),
                     },
                 ),
                 symbol: Symbol {

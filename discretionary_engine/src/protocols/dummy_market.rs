@@ -23,7 +23,7 @@ impl ProtocolTrait for DummyMarketWrapper {
 			quote: "USDT".to_owned(),
 			market: Market::BinanceFutures,
 		};
-		let m = ConceptualMarket::new(1.0);
+		let m = ConceptualMarket::new(Percent(1.0));
 		let order = ConceptualOrderPercents::new(ConceptualOrderType::Market(m), symbol.clone(), protocol_side, Percent::new(1.0));
 
 		let protocol_spec = self.0.read().unwrap().to_string();
@@ -43,7 +43,7 @@ impl ProtocolTrait for DummyMarketWrapper {
 		unimplemented!()
 	}
 
-	fn get_subtype(&self) -> ProtocolType {
+	fn get_type(&self) -> ProtocolType {
 		ProtocolType::StopEntry
 	}
 }

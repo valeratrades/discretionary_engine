@@ -36,7 +36,7 @@ clap = { version = "^4.5.16", features = ["derive"] }
 color-eyre = "0.6.3"
 config = "0.14.0"
 derive-new = "0.7.0"
-discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.0" } #ga: rm path
+discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.0" }
 eyre = "0.6.12"
 futures-util = "0.3.30"
 hex = "^0.4.3"
