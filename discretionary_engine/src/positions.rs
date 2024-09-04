@@ -12,7 +12,7 @@ use crate::{
 		binance,
 		exchanges::Exchanges,
 		hub::HubRx,
-		order_types::{ConceptualOrder, ConceptualOrderType, ProtocolOrderId},
+		order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId},
 	},
 	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType, RecalculateOrdersPerOrderInfo},
 };
@@ -66,15 +66,16 @@ impl PositionAcquisition {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_target_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
-					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
+					last_fill_key = protocol_fills.key;
+					process_fills_update(protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= target_coin_quantity {
 						break;
 					}
-					let new_target_orders = recalculate_target_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&spec.asset, &counted_subtypes, target_coin_quantity - executed_notional, spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -123,16 +124,17 @@ impl PositionFollowup {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_target_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
-					process_fills_update(&mut last_fill_key, protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
+					last_fill_key = protocol_fills.key;
+					process_fills_update(protocol_fills, &mut protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional >= acquired.acquired_notional {
 						break;
 					}
 					dbg!(&last_fill_key);
-					let new_target_orders = recalculate_target_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&acquired.__spec.asset, &counted_subtypes, acquired.acquired_notional - executed_notional, acquired.__spec.side, &protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -175,9 +177,8 @@ async fn send_orders_to_hub(hub_tx: mpsc::Sender<HubRx>, position_callback: Posi
 	Ok(())
 }
 
-async fn process_fills_update(last_fill_key: &mut Uuid, protocol_fills: ProtocolFills, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
+async fn process_fills_update(protocol_fills: ProtocolFills, dyn_info: &mut HashMap<String, ProtocolDynamicInfo>, closed_notional: &mut f64) -> Result<()> {
 	debug!("Received fills: {:?}", protocol_fills);
-	*last_fill_key = protocol_fills.key;
 	for f in protocol_fills.fills {
 		let (protocol_order_id, filled_notional) = (f.id, f.qty);
 		*closed_notional += filled_notional;
@@ -189,22 +190,23 @@ async fn process_fills_update(last_fill_key: &mut Uuid, protocol_fills: Protocol
 	Ok(())
 }
 
-
 /// Reapply fills knowledge to orders supplied by [Protocol]s.
 ///
 /// If `Position` has [Protocol]s of different subtypes, we don't care to have them mix, - from the orders produced here (in full size for each `Protocol` subtype) position will choose the closest ones, ignoring the rest.
-#[instrument(skip(exchanges))]
-fn recalculate_target_orders(
+#[instrument(skip(exchanges_arc))]
+fn recalculate_protocol_orders(
 	parent_position_asset: &str,
 	counted_subtypes: &HashMap<ProtocolType, usize>,
 	left_to_target_notional: f64,
 	side: Side,
 	dyn_info: &HashMap<String, ProtocolDynamicInfo>,
-	exchanges: Arc<Exchanges>,
+	exchanges_arc: Arc<Exchanges>,
 ) -> Vec<ConceptualOrder<ProtocolOrderId>> {
 	let mut market_orders = Vec::new();
 	let mut stop_orders = Vec::new();
 	let mut limit_orders = Vec::new();
+	let mut total_accumulated_offset = 0.0;
+
 	for (protocol_spec_str, info) in dyn_info.iter() {
 		let subtype = Protocol::from_str(protocol_spec_str).unwrap().get_subtype();
 		let n_matching_protocol_subtypes_in_parent_position = counted_subtypes.get(&subtype).unwrap();
@@ -213,8 +215,8 @@ fn recalculate_target_orders(
 		let size_multiplier = 1.0 / *n_matching_protocol_subtypes_in_parent_position as f64;
 		let protocol_controlled_notional = left_to_target_notional * size_multiplier;
 
-		let qties_payload = orders.iter().flatten().map(|o| o.order_type).collect::<Vec<ConceptualOrderType>>();
-		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges.clone(), parent_position_asset, &qties_payload);
+		let qties_payload: Vec<ConceptualOrderPercents> = orders.iter().flatten().cloned().collect();
+		let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges_arc.clone(), parent_position_asset, &qties_payload);
 
 		let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = info
 			.fills
@@ -225,15 +227,28 @@ fn recalculate_target_orders(
 				RecalculateOrdersPerOrderInfo::new(*filled, min_possible_qty)
 			})
 			.collect();
+		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges_arc.clone(), parent_position_asset);
 
-		let recalculated_allocation = info.protocol_orders.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional);
+		let recalculated_allocation = info
+			.protocol_orders
+			.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional, min_qty_any_ordertype);
 
-		recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
-			ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
-			ConceptualOrderType::Limit(_) => limit_orders.push(o),
-			ConceptualOrderType::Market(_) => market_orders.push(o),
-		});
+		match recalculated_allocation.leftovers {
+			Some(offset) => {total_accumulated_offset += offset},
+			None => {
+				recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
+					ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
+					ConceptualOrderType::Limit(_) => limit_orders.push(o),
+					ConceptualOrderType::Market(_) => market_orders.push(o),
+				});
+			}
+		}
 	}
+
+	//- match leftovers {
+	//- > 0 => nothing
+	//- < 0 => reduce total controlled approximately
+	//}
 
 	/// NB: Market-like orders MUST be ran first
 	fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
