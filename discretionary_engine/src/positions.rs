@@ -241,7 +241,8 @@ fn recalculate_protocol_orders(
 
 		#[allow(clippy::never_loop)] // clippy being dumb
 		loop {
-			for (i, (signature, info)) in in_play_protocols_map.clone().iter().enumerate() { // clone to avoid using unsafe on `remove`
+			for (i, (signature, info)) in in_play_protocols_map.clone().iter().enumerate() {
+				// clone to avoid using unsafe on `remove`
 				let info = match info.as_ref() {
 					Some(info) => info,
 					None => continue, // Protocol is _yet to_ send orders. We assume it's always intentional.
@@ -272,7 +273,7 @@ fn recalculate_protocol_orders(
 						match i {
 							x if x == in_play_protocols_map.len() - 1 => {
 								info!("Discarding leftovers for {:?}", _protocol_type);
-							},
+							}
 							_ => {
 								#[allow(unused_assignments)] // clippy being dumb
 								accumulated_leftovers += offset;

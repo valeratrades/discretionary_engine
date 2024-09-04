@@ -87,6 +87,7 @@ impl BinanceExchange {
 	}
 }
 
+#[instrument(skip(key, secret))]
 pub async fn signed_request<S: AsRef<str>>(http_method: reqwest::Method, endpoint_str: &str, mut params: HashMap<&'static str, String>, key: S, secret: S) -> Result<reqwest::Response> {
 	let mut headers = HeaderMap::new();
 	headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
@@ -148,6 +149,7 @@ pub async fn unsigned_request(http_method: reqwest::Method, endpoint_str: &str, 
 	Err(unexpected_response_str(&error_html))
 }
 
+#[instrument(skip(key, secret))]
 pub async fn get_balance(key: String, secret: String, market: Market) -> Result<f64> {
 	let mut params = HashMap::<&str, String>::new();
 	params.insert("recvWindow", "60000".to_owned());
@@ -464,18 +466,25 @@ pub async fn binance_runtime(
 
 				last_reported_fill_key = last_fill_known_to_hub; //dbg
 
-				let currently_deployed_clone;
-				{
-					currently_deployed_clone = currently_deployed.read().unwrap().clone();
-				}
-				dbg!(&target_orders, &currently_deployed_clone);
 
-			// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
-			//Binance docs: currently only LIMIT order modification is supported
+				// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
+				//Binance docs: currently only LIMIT order modification is supported
 				loop {
+					let currently_deployed_clone;
+					{
+						currently_deployed_clone = currently_deployed.read().unwrap().clone();
+					}
 					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {
 						Ok(_) => break,
 						Err(e) => {
+							let inner_unexpected_response_str = e.chain().last().unwrap();
+							if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
+								if let Some(error_code) = error_value.get("code") {
+									if error_code == -2011 {
+										tracing::warn!("Tried to close an order not existing on the remote: {:?}. Will try to lock_read the new value. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+									}
+								}
+							}
 							tracing::error!("Error closing orders: {:?}", e);
 							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 						}

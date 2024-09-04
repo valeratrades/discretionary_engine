@@ -92,5 +92,6 @@ pub fn unexpected_response_str(s: &str) -> eyre::Report {
 		Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
 		Err(_) => s.to_owned(),
 	};
-	eyre!("Unexpected API response:\n{}", s)
+	let report = eyre::Report::msg(s);
+	report.wrap_err("Unexpected API response")
 }
