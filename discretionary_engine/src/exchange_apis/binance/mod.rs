@@ -31,7 +31,7 @@ use uuid::Uuid;
 use v_utils::{io::Percent, trades::Ohlc};
 
 use super::{
-	hub::{HubCallback, HubPassforward},
+	hub::{ExchangeToHub, HubToExchange},
 	order_types::{ConceptualMarket, ConceptualOrderType, IdRequirements},
 };
 use crate::{
@@ -244,6 +244,7 @@ pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) 
 	Ok(())
 }
 
+#[instrument(fields())]
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
@@ -279,7 +280,8 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 	})
 }
 
-pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<PositionOrderId>) -> Result<BinanceOrder> {
+#[instrument(skip(key, secret))]
+pub async fn post_futures_order(key: String, secret: String, order: &Order<PositionOrderId>) -> Result<BinanceOrder> {
 	let url = FuturesPositionResponse::get_url();
 
 	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
@@ -294,6 +296,7 @@ pub async fn post_futures_order<S: AsRef<str>>(key: S, secret: S, order: &Order<
 
 /// Normally, the only cases where the return from this poll is going to be _reacted_ to, is when response.status == OrderStatus::Filled or an error is returned.
 // TODO!: translate to websockets
+#[instrument(skip(key, secret))]
 pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order: &BinanceOrder) -> Result<FuturesPositionResponse> {
 	let url = FuturesPositionResponse::get_url();
 
@@ -301,7 +304,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	params.insert("symbol", binance_order.base_info.symbol.to_string());
 	params.insert("orderId", format!("{}", &binance_order.binance_id.unwrap()));
 	params.insert("recvWindow", "20000".to_owned()); // dbg currently they are having some issues with response speed
-	debug!("Polling order {}", binance_order.binance_id.unwrap());
+	debug!("Polling order");
 
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
@@ -310,6 +313,7 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 
 /// Binance wants both qty and price in orders to always respect the minimum step of the price
 // TODO!!!: Store all needed exchange info locally
+#[instrument]
 pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
 	let (price_precision, _) = futures_precisions(coin)?.await?;
 	let factor = 10_f64.powi(price_precision as i32);
@@ -317,6 +321,7 @@ pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
 	Ok(adjusted)
 }
 
+#[instrument]
 pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
 	let (_, qty_precision) = futures_precisions(coin)?.await?;
 	let factor = 10_f64.powi(qty_precision as i32);
@@ -350,10 +355,14 @@ impl From<BinanceKline> for Ohlc {
 	}
 }
 
+#[derive(Clone, Debug, Default, derive_new::new)]
+struct FillFromPolling {
+	order: Order<PositionOrderId>,
+	new_executed_qty: f64,
+}
+
 #[instrument]
 pub async fn get_historic_klines(symbol: String, interval: String, limit: usize) -> Result<Vec<BinanceKline>> {
-	dbg!(&"getting historic klines");
-	debug!("requesting historic klines"); //doesn't flush immediately, needs fixing to be useful
 	let base_url = Market::BinanceFutures.get_base_url();
 	let endpoint = base_url.join("/fapi/v1/klines")?;
 
@@ -371,16 +380,16 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 }
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
+#[instrument(fields())]
 pub async fn binance_runtime(
 	config: Arc<AppConfig>,
 	parent_js: &mut JoinSet<()>,
-	hub_callback: mpsc::Sender<HubCallback>,
-	mut hub_rx: watch::Receiver<HubPassforward>,
+	hub_callback: mpsc::Sender<ExchangeToHub>,
+	mut hub_rx: watch::Receiver<HubToExchange>,
 	binance_exchange: Arc<RwLock<BinanceExchange>>,
 ) {
 	debug!("Binance_runtime started");
-	let mut last_fill_known_to_hub = Uuid::now_v7();
-	let mut last_reported_fill_key = last_fill_known_to_hub;
+	let mut last_reported_fill_key = Uuid::default();
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
 	let full_key = config.binance.full_key.clone();
@@ -392,7 +401,7 @@ pub async fn binance_runtime(
 
 	// Polling orders for fills
 	parent_js.spawn(async move {
-		// TODO!!!: make a websocket
+		// TODO!!!: make into a websocket
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -426,7 +435,7 @@ pub async fn binance_runtime(
 					{
 						currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
 					}
-					temp_fills_stack_tx.send((Uuid::now_v7(), order.base_info.clone(), executed_qty)).await.unwrap();
+					temp_fills_stack_tx.send(FillFromPolling::new(order.base_info.clone(), executed_qty)).await.unwrap();
 				}
 			}
 		}
@@ -435,96 +444,106 @@ pub async fn binance_runtime(
 	// Keeping Exchange info up-to-date
 	//TODO!: move to websockets, have them be right here.
 	parent_js.spawn(async move {
-		let base_url = Market::BinanceFutures.get_base_url();
-		let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
-		let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
-		let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
+		loop {
+			let base_url = Market::BinanceFutures.get_base_url();
+			let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
+			let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
+			let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
 
-		{
-			let mut binance_exchange_lock = binance_exchange.write().unwrap();
-			binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
+			{
+				let mut binance_exchange_lock = binance_exchange.write().unwrap();
+				binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
+			}
+
+			tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 		}
-
-		tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 	});
 
 	// Main loop
 	loop {
 		select! {
-			Ok(_) = hub_rx.changed(), if last_fill_known_to_hub == last_reported_fill_key => {
-				let target_orders: Vec<Order<PositionOrderId>>;
-				{
-					let hub_passforward = hub_rx.borrow();
-					last_fill_known_to_hub = hub_passforward.key; //dbg
-					target_orders = match hub_passforward.key == last_fill_known_to_hub {
-						true => hub_passforward.orders.clone(), //?  take()
-						false => {
-							continue;
-						},
-					};
-				}
-
-				last_reported_fill_key = last_fill_known_to_hub; //dbg
-
-
-				// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
-				//Binance docs: currently only LIMIT order modification is supported
-				//HACK
-				loop {
-					let currently_deployed_clone;
-					{
-						currently_deployed_clone = currently_deployed.read().unwrap().clone();
-					}
-					match close_orders(full_key.clone(), full_secret.clone(), &currently_deployed_clone).await {
-						Ok(_) => break,
-						Err(e) => {
-							let inner_unexpected_response_str = e.chain().last().unwrap();
-							if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
-								if let Some(error_code) = error_value.get("code") {
-									if error_code == -2011 {
-										tracing::warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
-									}
-								}
-							}
-							tracing::error!("Error closing orders: {:?}.\nWill loop forever until this succeeds.", e);
-							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-						}
-					}
-				};
-				debug!("closed orders");
-
-				let mut just_deployed = Vec::new();
-				for o in target_orders {
-					let b = match post_futures_order(full_key.clone(), full_secret.clone(), &o).await {
-						Ok(order) => order,
-						Err(e) => {
-						//TODO!!!: add retry if it's server or connection error. On error of placing an order: match is_payload_error { true => log error, do nothing, false => log warn, retry }. (ensure that in the first case the currently_deployed_orders has a correct value)
-							tracing::error!("Error posting order: {:?}", e);
-							continue;
-						}
-					};
-					just_deployed.push(b);
-				}
-				{
-					let mut current_lock = currently_deployed.write().unwrap();
-					*current_lock = just_deployed;
-				}
+			Ok(_) = hub_rx.changed() => {
+				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone()).await;
 			},
-
-			_ = async {
-				while let Ok(fills) = temp_fills_stack_rx.try_recv() {
-					let fill_key = fills.0;
-					let order = fills.1;
-					let total_fill_notional = fills.2;
-					dbg!(&order, &total_fill_notional);
-
-					let callback = HubCallback::new(fill_key, total_fill_notional, order);
-					hub_callback.send(callback).await.unwrap();
-					last_reported_fill_key = fill_key;
-				}
-				tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
-			} => {},
+			_ = handle_temp_fills_stack(&mut temp_fills_stack_rx, &hub_callback, &mut last_reported_fill_key) => {},
 		}
+	}
+}
+
+#[instrument(skip(hub_callback))]
+async fn handle_temp_fills_stack(
+    temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>,
+    hub_callback: &mpsc::Sender<ExchangeToHub>,
+    last_reported_fill_key: &mut Uuid,
+) {
+    while let Ok(f) = temp_fills_stack_rx.try_recv() {
+        let new_fill_key = Uuid::now_v7();
+        let callback = ExchangeToHub::new(new_fill_key, f.new_executed_qty, f.order);
+        hub_callback.send(callback).await.unwrap();
+        *last_reported_fill_key = new_fill_key;
+    }
+}
+
+#[instrument(skip(hub_rx, full_key, full_secret))]
+async fn handle_hub_orders_update(
+	hub_rx: &watch::Receiver<HubToExchange>,
+	last_reported_fill_key: &mut Uuid,
+	full_key: &str,
+	full_secret: &str,
+	currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>,
+) {
+	let target_orders: Vec<Order<PositionOrderId>>;
+	{
+		let hub_passforward = hub_rx.borrow();
+		target_orders = if hub_passforward.key == *last_reported_fill_key {
+			hub_passforward.orders.clone()
+		} else {
+			debug!("fill keys don't match.\nCorrect: {last_reported_fill_key}, Received: {}", hub_passforward.key);
+			return;
+		};
+	}
+	debug!("fill keys match");
+
+	// Close currently deployed orders
+	loop {
+		let currently_deployed_clone;
+		{
+			currently_deployed_clone = currently_deployed.read().unwrap().clone();
+		}
+		match close_orders(full_key.to_string(), full_secret.to_string(), &currently_deployed_clone).await {
+			Ok(_) => break,
+			Err(e) => {
+				let inner_unexpected_response_str = e.chain().last().unwrap();
+				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
+					if let Some(error_code) = error_value.get("code") {
+						if error_code == -2011 {
+							tracing::warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+							continue;
+						}
+					}
+				}
+				tracing::error!("Error closing orders: {:?}.\nWill loop forever until this succeeds.", e);
+				tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+			}
+		}
+	}
+	debug!("closed orders");
+
+	let mut just_deployed = Vec::new();
+	for o in target_orders {
+		let b = match post_futures_order(full_key.to_string(), full_secret.to_string(), &o).await {
+			Ok(order) => order,
+			Err(e) => {
+				tracing::error!("Error posting order: {:?}", e);
+				continue;
+			}
+		};
+		just_deployed.push(b);
+	}
+
+	{
+		let mut current_lock = currently_deployed.write().unwrap();
+		*current_lock = just_deployed;
 	}
 }
 

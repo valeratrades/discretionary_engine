@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use color_eyre::eyre::Result;
 use tokio::{sync::mpsc, task::JoinSet};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::exchanges::Exchanges;
@@ -19,14 +20,14 @@ use crate::{
 
 //? is there a conventional way to introduce these communication locks?
 #[derive(Clone, Debug, Default, derive_new::new)]
-pub struct HubCallback {
+pub struct ExchangeToHub {
 	pub key: Uuid,
 	pub fill_qty: f64,
 	pub order: Order<PositionOrderId>,
 }
 
 #[derive(Clone, Debug, Default, derive_new::new)]
-pub struct HubPassforward {
+pub struct HubToExchange {
 	pub key: Uuid,
 	pub orders: Vec<Order<PositionOrderId>>,
 }
@@ -43,12 +44,13 @@ pub struct HubRx {
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 	position_callback: PositionCallback,
 }
+#[instrument(fields())]
 pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<HubCallback>(32);
-	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubPassforward>(HubPassforward::default());
+	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<ExchangeToHub>(32);
+	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubToExchange>(HubToExchange::default());
 	let mut js = JoinSet::new();
 
 	// Spawn Binance
@@ -69,9 +71,10 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exch
 		last_fill_key: &Uuid,
 		requested_orders: &mut HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>>,
 		position_callbacks: &mut HashMap<Uuid, mpsc::Sender<ProtocolFills>>,
-		orders_tx: &tokio::sync::watch::Sender<HubPassforward>,
+		orders_tx: &tokio::sync::watch::Sender<HubToExchange>,
 	) -> Result<()> {
 		if *last_fill_key != hub_rx.key {
+			// by internal convention, on init the key is Uuid::default()
 			tracing::debug!("Key mismatch, ignoring the request. Requested HubRx:\n{:?}\nCorrect key: {last_fill_key}", &hub_rx);
 			return Ok(());
 		}
@@ -96,12 +99,12 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exch
 			.collect::<Vec<Order<PositionOrderId>>>();
 
 		let acceptance_token = Uuid::now_v7();
-		let passforward = HubPassforward::new(acceptance_token, binance_futures_orders);
+		let passforward = HubToExchange::new(acceptance_token, binance_futures_orders);
 		orders_tx.send(passforward)?;
 		Ok(())
 	}
 
-	async fn handle_fill(fill: HubCallback, last_fill_key: &mut Uuid, position_callbacks: &HashMap<Uuid, mpsc::Sender<ProtocolFills>>) -> Result<()> {
+	async fn handle_fill(fill: ExchangeToHub, last_fill_key: &mut Uuid, position_callbacks: &HashMap<Uuid, mpsc::Sender<ProtocolFills>>) -> Result<()> {
 		*last_fill_key = fill.key;
 		let position_id = fill.order.id.position_id;
 		let sender = position_callbacks.get(&position_id).unwrap();
