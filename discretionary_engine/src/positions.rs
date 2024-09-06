@@ -73,7 +73,7 @@ impl PositionAcquisition {
 				Some(protocol_fills) = rx_fills.recv() => {
 					last_fill_key = protocol_fills.key;
 					process_fills_update(protocol_fills, &mut position_protocols_dynamic_info, &mut executed_notional).await?;
-					if executed_notional >= target_coin_quantity {
+					if executed_notional > target_coin_quantity + min_qty_any_ordertype {
 						break;
 					}
 					let new_target_orders = recalculate_protocol_orders(&spec.asset,min_qty_any_ordertype,  target_coin_quantity - executed_notional, spec.side, &position_protocols_dynamic_info, exchanges.clone());
@@ -162,7 +162,7 @@ fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], a
 	let mut protocol_type_mapped_order: HashMap<ProtocolType, HashMap<String, Option<ProtocolDynamicInfo>>> = HashMap::new();
 	for protocol in protocols {
 		let subtype = protocol.get_type();
-		let map_entry = protocol_type_mapped_order.entry(subtype).or_insert(HashMap::new());
+		let map_entry = protocol_type_mapped_order.entry(subtype).or_default();
 		map_entry.insert(protocol.signature(), None);
 	}
 
@@ -272,7 +272,7 @@ fn recalculate_protocol_orders(
 					Some(offset) => {
 						match i {
 							x if x == in_play_protocols_map.len() - 1 => {
-								info!("Discarding leftovers for {:?}", _protocol_type);
+								debug!("Discarding leftovers for {:?}", _protocol_type);
 							}
 							_ => {
 								#[allow(unused_assignments)] // clippy being dumb

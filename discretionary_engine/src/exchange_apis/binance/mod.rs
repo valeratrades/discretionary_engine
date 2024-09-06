@@ -469,6 +469,7 @@ pub async fn binance_runtime(
 
 				// Later on we will be devising a strategy of transferring current orders to the new target, but for now all orders are simply closed, then target ones are opened.
 				//Binance docs: currently only LIMIT order modification is supported
+				//HACK
 				loop {
 					let currently_deployed_clone;
 					{
@@ -481,11 +482,11 @@ pub async fn binance_runtime(
 							if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
 								if let Some(error_code) = error_value.get("code") {
 									if error_code == -2011 {
-										tracing::warn!("Tried to close an order not existing on the remote: {:?}. Will try to lock_read the new value. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+										tracing::warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
 									}
 								}
 							}
-							tracing::error!("Error closing orders: {:?}", e);
+							tracing::error!("Error closing orders: {:?}.\nWill loop forever until this succeeds.", e);
 							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 						}
 					}
@@ -741,3 +742,4 @@ struct CancelOrdersResponse {
 	self_trade_prevention_mode: String,
 	good_till_date: i64,
 }
+//,}}}
