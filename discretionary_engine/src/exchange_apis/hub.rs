@@ -22,10 +22,11 @@ use crate::{
 	PositionOrderId,
 };
 
-//? is there a conventional way to introduce these communication locks?
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct ExchangeToHub {
 	pub key: Uuid,
+	/// Market from which the fill comes
+	pub market: Market,
 	pub fill_qty: f64,
 	pub order: Order<PositionOrderId>,
 }
@@ -57,6 +58,12 @@ struct PositionLocalKnowledge {
 	pub requested_orders: Vec<ConceptualOrder<ProtocolOrderId>>,
 }
 
+#[derive(Clone, Debug, Default, derive_new::new)]
+struct ExchangeLocalKnowledge {
+	pub key: Uuid,
+	pub target_orders: Vec<Order<PositionOrderId>>,
+}
+
 #[instrument(skip_all)]
 pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
@@ -75,10 +82,8 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 		exchange_runtimes_js.join_all().await;
 	});
 
-	//let mut last_fill_key = Uuid::default();
-	//let mut position_callbacks: HashMap<Uuid, mpsc::Sender<ProtocolFills>> = HashMap::new();
-	//let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
 	let mut positions_local_knowledge: HashMap<Uuid, PositionLocalKnowledge> = HashMap::new();
+	let mut exchanges_local_knowledge: HashMap<Market, ExchangeLocalKnowledge> = HashMap::new();
 
 	loop {
 		select! {
@@ -86,9 +91,10 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 				handle_hub_rx(hub_rx, &mut positions_local_knowledge, &orders_tx)?;
 			},
 			Some(fill) = fills_rx.recv() => {
-				//TODO!!!: update our knowledge of exchange's keys
+				let exchange_local_knowledge = exchanges_local_knowledge.entry(fill.market).or_default();
+				exchange_local_knowledge.key = fill.key;
+				//TODO!!!: update our knowledge of exchange's target_orders. Currently returning directly, which is a hack that would only work with one Market.
 				let position_local_knowledge = positions_local_knowledge.get_mut(&fill.order.id.position_id).expect("Can't receive a fill without a position first requesting those orders");
-
 				handle_fill(fill, position_local_knowledge).await?;
 			},
 			else => break,

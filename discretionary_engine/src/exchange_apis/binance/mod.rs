@@ -474,7 +474,7 @@ pub async fn binance_runtime(
 async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid) {
 	while let Ok(f) = temp_fills_stack_rx.try_recv() {
 		let new_fill_key = Uuid::now_v7();
-		let callback = ExchangeToHub::new(new_fill_key, f.new_executed_qty, f.order);
+		let callback = ExchangeToHub::new(new_fill_key, Market::BinanceFutures, f.new_executed_qty, f.order);
 		hub_callback.send(callback).await.unwrap();
 		*last_reported_fill_key = new_fill_key;
 	}
