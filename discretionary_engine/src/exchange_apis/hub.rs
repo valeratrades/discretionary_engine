@@ -1,8 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{hash_map::{Entry, OccupiedEntry}, HashMap}, sync::Arc};
 
 use color_eyre::eyre::Result;
-use tokio::{sync::mpsc, task::JoinSet};
-use tracing::instrument;
+use tokio::{
+	select,
+	sync::{mpsc, watch},
+	task::JoinSet,
+};
+use tracing::{debug, field::Empty, instrument, Span};
 use uuid::Uuid;
 
 use super::exchanges::Exchanges;
@@ -13,7 +17,7 @@ use crate::{
 		order_types::{ConceptualOrder, ConceptualOrderType, Order, ProtocolOrderId},
 		Market,
 	},
-	positions::PositionCallback,
+	positions::HubToPosition,
 	protocols::{ProtocolFill, ProtocolFills},
 	PositionOrderId,
 };
@@ -32,25 +36,34 @@ pub struct HubToExchange {
 	pub orders: Vec<Order<PositionOrderId>>,
 }
 
-pub fn init_hub(config_arc: Arc<AppConfig>, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<HubRx> {
+#[instrument(skip_all)]
+pub fn init_hub(config_arc: Arc<AppConfig>, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<PositionToHub> {
 	let (tx, rx) = mpsc::channel(32);
 	parent_js.spawn(hub(config_arc.clone(), rx, exchanges));
 	tx
 }
 
 #[derive(Clone, Debug, derive_new::new)]
-pub struct HubRx {
+pub struct PositionToHub {
 	key: Uuid,
 	orders: Vec<ConceptualOrder<ProtocolOrderId>>,
-	position_callback: PositionCallback,
+	position_callback: HubToPosition,
 }
-#[instrument(fields())]
-pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exchanges: Arc<Exchanges>) -> Result<()> {
+
+#[derive(Clone, Debug, derive_new::new)]
+struct PositionLocalKnowledge {
+	pub key: Uuid,
+	pub callback: mpsc::Sender<ProtocolFills>,
+	pub requested_orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+}
+
+#[instrument(skip_all)]
+pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
-	let (fills_tx, mut fills_rx) = tokio::sync::mpsc::channel::<ExchangeToHub>(32);
-	let (orders_tx, orders_rx) = tokio::sync::watch::channel::<HubToExchange>(HubToExchange::default());
+	let (fills_tx, mut fills_rx) = mpsc::channel::<ExchangeToHub>(32);
+	let (orders_tx, orders_rx) = watch::channel::<HubToExchange>(HubToExchange::default());
 	let mut js = JoinSet::new();
 
 	// Spawn Binance
@@ -62,64 +75,21 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exch
 		exchange_runtimes_js.join_all().await;
 	});
 
-	let mut last_fill_key = Uuid::default();
-	let mut position_callbacks: HashMap<Uuid, mpsc::Sender<ProtocolFills>> = HashMap::new();
-	let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
-
-	fn handle_hub_rx(
-		hub_rx: HubRx,
-		last_fill_key: &Uuid,
-		requested_orders: &mut HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>>,
-		position_callbacks: &mut HashMap<Uuid, mpsc::Sender<ProtocolFills>>,
-		orders_tx: &tokio::sync::watch::Sender<HubToExchange>,
-	) -> Result<()> {
-		if *last_fill_key != hub_rx.key {
-			// by internal convention, on init the key is Uuid::default()
-			tracing::debug!("Key mismatch, ignoring the request. Requested HubRx:\n{:?}\nCorrect key: {last_fill_key}", &hub_rx);
-			return Ok(());
-		}
-		requested_orders.insert(hub_rx.position_callback.position_id, hub_rx.orders);
-		position_callbacks.insert(hub_rx.position_callback.position_id, hub_rx.position_callback.sender);
-
-		let flat_requested_orders = requested_orders.values().flatten().cloned().collect::<Vec<ConceptualOrder<ProtocolOrderId>>>();
-		let flat_requested_orders_position_id: Vec<ConceptualOrder<PositionOrderId>> = flat_requested_orders
-			.into_iter()
-			.map(|o| {
-				let new_id = PositionOrderId::new_from_protocol_id(hub_rx.position_callback.position_id, o.id);
-				ConceptualOrder { id: new_id, ..o }
-			})
-			.collect();
-
-		let target_orders = hub_process_orders(flat_requested_orders_position_id);
-
-		let binance_futures_orders = target_orders
-			.iter()
-			.filter(|o| o.symbol.market == Market::BinanceFutures)
-			.cloned()
-			.collect::<Vec<Order<PositionOrderId>>>();
-
-		let acceptance_token = Uuid::now_v7();
-		let passforward = HubToExchange::new(acceptance_token, binance_futures_orders);
-		orders_tx.send(passforward)?;
-		Ok(())
-	}
-
-	async fn handle_fill(fill: ExchangeToHub, last_fill_key: &mut Uuid, position_callbacks: &HashMap<Uuid, mpsc::Sender<ProtocolFills>>) -> Result<()> {
-		*last_fill_key = fill.key;
-		let position_id = fill.order.id.position_id;
-		let sender = position_callbacks.get(&position_id).unwrap();
-		let vec_fill = vec![ProtocolFill::new(fill.order.id.into(), fill.fill_qty)];
-		sender.send(ProtocolFills::new(*last_fill_key, vec_fill)).await?;
-		Ok(())
-	}
+	//let mut last_fill_key = Uuid::default();
+	//let mut position_callbacks: HashMap<Uuid, mpsc::Sender<ProtocolFills>> = HashMap::new();
+	//let mut requested_orders: HashMap<Uuid, Vec<ConceptualOrder<ProtocolOrderId>>> = HashMap::new();
+	let mut positions_local_knowledge: HashMap<Uuid, PositionLocalKnowledge> = HashMap::new();
 
 	loop {
-		tokio::select! {
+		select! {
 			Some(hub_rx) = rx.recv() => {
-				handle_hub_rx(hub_rx, &last_fill_key, &mut requested_orders, &mut position_callbacks, &orders_tx)?;
+				handle_hub_rx(hub_rx, &mut positions_local_knowledge, &orders_tx)?;
 			},
 			Some(fill) = fills_rx.recv() => {
-				handle_fill(fill, &mut last_fill_key, &position_callbacks).await?;
+				//TODO!!!: update our knowledge of exchange's keys
+				let position_local_knowledge = positions_local_knowledge.get_mut(&fill.order.id.position_id).expect("Can't receive a fill without a position first requesting those orders");
+
+				handle_fill(fill, position_local_knowledge).await?;
 			},
 			else => break,
 		}
@@ -129,8 +99,56 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<HubRx>, exch
 	Ok(())
 }
 
+#[instrument(skip(orders_tx, positions_local_knowledge), fields(position_local_knowledge = Empty))]
+fn handle_hub_rx(hub_rx: PositionToHub, positions_local_knowledge: &mut HashMap<Uuid, PositionLocalKnowledge>, orders_tx: &tokio::sync::watch::Sender<HubToExchange>) -> Result<()> {
+	let position_id = hub_rx.position_callback.position_id;
+	let position_local_knowledge = positions_local_knowledge
+		.entry(position_id)
+		.or_insert(PositionLocalKnowledge::new(Uuid::default(), hub_rx.position_callback.sender, Vec::new()));
+	Span::current().record("position_local_knowledge", format!("{:?}", position_local_knowledge));
+
+	match position_local_knowledge.key != hub_rx.key { // by internal convention, on init the key is Uuid::default()
+		true => position_local_knowledge.key = hub_rx.key,
+		false => {
+			debug!("Key mismatch, ignoring the request.");
+			return Ok(());
+		}
+	}
+	position_local_knowledge.requested_orders = hub_rx.orders;
+
+	let mut requested_orders_all_positions: Vec<ConceptualOrder<PositionOrderId>> = Vec::new();
+	for (position_id, plk) in positions_local_knowledge.iter() {
+		let remap_to_position_id = plk.requested_orders.iter().map(|o| {
+			let new_id = PositionOrderId::new_from_protocol_id(*position_id, o.id.clone());
+			ConceptualOrder { id: new_id, ..o.clone() }
+		});
+		requested_orders_all_positions.extend(remap_to_position_id);
+	};
+	let target_orders = hub_process_orders(requested_orders_all_positions);
+
+	let binance_futures_orders = target_orders
+		.iter()
+		.filter(|o| o.symbol.market == Market::BinanceFutures)
+		.cloned()
+		.collect::<Vec<Order<PositionOrderId>>>();
+
+	let acceptance_token = Uuid::now_v7();
+	let passforward = HubToExchange::new(acceptance_token, binance_futures_orders);
+	orders_tx.send(passforward)?;
+	Ok(())
+}
+
+#[instrument]
+async fn handle_fill(fill: ExchangeToHub, position_local_knowledge: &mut PositionLocalKnowledge) -> Result<()> {
+	position_local_knowledge.key = fill.key;
+	let vec_fill = vec![ProtocolFill::new(fill.order.id.into(), fill.fill_qty)];
+	position_local_knowledge.callback.send(ProtocolFills::new(position_local_knowledge.key, vec_fill)).await?;
+	Ok(())
+}
+
 // HACK
 /// Thing that applies all the logic for deciding on how to best express ensemble of requested orders.
+#[instrument]
 fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) -> Vec<Order<PositionOrderId>> {
 	let mut orders: Vec<Order<PositionOrderId>> = Vec::new();
 	for o in conceptual_orders {

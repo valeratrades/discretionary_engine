@@ -15,9 +15,10 @@ use std::sync::Arc;
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
 use config::AppConfig;
-use exchange_apis::{exchanges::Exchanges, hub, hub::HubRx};
+use exchange_apis::{exchanges::Exchanges, hub, hub::PositionToHub};
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
+use tracing::{info, instrument};
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
@@ -105,7 +106,8 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
+#[instrument(fields(position_args))]
+async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
 	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config_arc.clone()).await {
 		Ok(b) => b,
@@ -114,7 +116,8 @@ async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx
 			std::process::exit(1);
 		}
 	};
-	println!("Starting creation of a new position.\nCurrent total available balance: {}\n", balance);
+	info!("Total balance: {}", balance);
+	println!("Current total available balance: {}", balance);
 
 	let (side, target_size) = match position_args.size_usdt {
 		s if s > 0.0 => (Side::Buy, s),

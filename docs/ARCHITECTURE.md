@@ -99,3 +99,6 @@ All available protocols are predefined, and an api for manual on-demand creation
 Interface through Hub, meant to synchronize information of all outstanding to allow for more efficient rerouting (considering e.g., current balances on exchanges). Hub keeps track of the _last_ sent Orders update from each Position, dynamically deciding how exactly and on which exchanges they should be executed, having ability to move them around.
 
 Exchange interfaces themselves keep track only of the orders given to them by the Hub, and mostly deal with specifics of api of their respective exchange. No order changes transpire at this level, they are placed exactly as directed by the Hub.
+
+### Communication
+when sending or receiving orders every actor attaches a `last_fill_key`. It must match the last key attached to the latest report to this actor by however handles execution of its requests. It's used to ensure that all client's requests are based on the up-to-date knowledge of the relevant state. By internal convention, if the client is yet to receive any reports, it sends `Uuid::default()`.

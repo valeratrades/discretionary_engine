@@ -244,7 +244,7 @@ pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) 
 	Ok(())
 }
 
-#[instrument(fields())]
+#[instrument(skip_all)]
 pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMap<String, f64>> {
 	let url = FuturesAllPositionsResponse::get_url();
 
@@ -380,7 +380,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 }
 
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
-#[instrument(fields())]
+#[instrument(skip_all)]
 pub async fn binance_runtime(
 	config: Arc<AppConfig>,
 	parent_js: &mut JoinSet<()>,
@@ -471,17 +471,13 @@ pub async fn binance_runtime(
 }
 
 #[instrument(skip(hub_callback))]
-async fn handle_temp_fills_stack(
-    temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>,
-    hub_callback: &mpsc::Sender<ExchangeToHub>,
-    last_reported_fill_key: &mut Uuid,
-) {
-    while let Ok(f) = temp_fills_stack_rx.try_recv() {
-        let new_fill_key = Uuid::now_v7();
-        let callback = ExchangeToHub::new(new_fill_key, f.new_executed_qty, f.order);
-        hub_callback.send(callback).await.unwrap();
-        *last_reported_fill_key = new_fill_key;
-    }
+async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid) {
+	while let Ok(f) = temp_fills_stack_rx.try_recv() {
+		let new_fill_key = Uuid::now_v7();
+		let callback = ExchangeToHub::new(new_fill_key, f.new_executed_qty, f.order);
+		hub_callback.send(callback).await.unwrap();
+		*last_reported_fill_key = new_fill_key;
+	}
 }
 
 #[instrument(skip(hub_rx, full_key, full_secret))]

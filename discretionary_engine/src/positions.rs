@@ -11,7 +11,7 @@ use crate::{
 	exchange_apis::{
 		binance,
 		exchanges::Exchanges,
-		hub::HubRx,
+		hub::PositionToHub,
 		order_types::{ConceptualOrder, ConceptualOrderPercents, ConceptualOrderType, ProtocolOrderId},
 	},
 	protocols::{Protocol, ProtocolDynamicInfo, ProtocolFills, ProtocolOrders, ProtocolType, RecalculateOrdersPerOrderInfo},
@@ -46,7 +46,7 @@ impl PositionAcquisition {
 	}
 
 	#[instrument(skip(hub_tx, exchanges))]
-	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges: Arc<Exchanges>) -> Result<Self> {
+	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
 
@@ -56,7 +56,7 @@ impl PositionAcquisition {
 
 		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = PositionCallback::new(tx_fills, position_id);
+		let position_callback = HubToPosition::new(tx_fills, position_id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
@@ -102,20 +102,20 @@ pub struct PositionFollowup {
 }
 
 #[derive(Debug, Clone, derive_new::new)]
-pub struct PositionCallback {
+pub struct HubToPosition {
 	pub sender: mpsc::Sender<ProtocolFills>,
 	pub position_id: Uuid,
 }
 
 impl PositionFollowup {
 	#[instrument(skip(hub_tx, exchanges_arc))]
-	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<HubRx>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
+	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
 
 		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = PositionCallback::new(tx_fills, position_id);
+		let position_callback = HubToPosition::new(tx_fills, position_id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
@@ -169,8 +169,13 @@ fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], a
 	(rx_orders, PositionProtocolsDynamicInfo(protocol_type_mapped_order))
 }
 
-async fn send_orders_to_hub(hub_tx: mpsc::Sender<HubRx>, position_callback: PositionCallback, last_fill_key: Uuid, new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>>) -> Result<()> {
-	match hub_tx.send(HubRx::new(last_fill_key, new_target_orders, position_callback)).await {
+async fn send_orders_to_hub(
+	hub_tx: mpsc::Sender<PositionToHub>,
+	position_callback: HubToPosition,
+	last_fill_key: Uuid,
+	new_target_orders: Vec<ConceptualOrder<ProtocolOrderId>>,
+) -> Result<()> {
+	match hub_tx.send(PositionToHub::new(last_fill_key, new_target_orders, position_callback)).await {
 		Ok(_) => {}
 		Err(e) => {
 			debug!("Error sending orders: {:?}", e);
