@@ -1,4 +1,4 @@
-use std::{collections::{hash_map::{Entry, OccupiedEntry}, HashMap}, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use color_eyre::eyre::Result;
 use tokio::{
@@ -87,8 +87,8 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 
 	loop {
 		select! {
-			Some(hub_rx) = rx.recv() => {
-				handle_hub_rx(hub_rx, &mut positions_local_knowledge, &orders_tx)?;
+			Some(update_from_position) = rx.recv() => {
+				handle_update_from_position(update_from_position, &mut positions_local_knowledge, &orders_tx, &mut exchanges_local_knowledge)?;
 			},
 			Some(fill) = fills_rx.recv() => {
 				let exchange_local_knowledge = exchanges_local_knowledge.entry(fill.market).or_default();
@@ -105,20 +105,23 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 	Ok(())
 }
 
-#[instrument(skip(orders_tx, positions_local_knowledge), fields(position_local_knowledge = Empty))]
-fn handle_hub_rx(hub_rx: PositionToHub, positions_local_knowledge: &mut HashMap<Uuid, PositionLocalKnowledge>, orders_tx: &tokio::sync::watch::Sender<HubToExchange>) -> Result<()> {
+#[instrument(skip(orders_tx, positions_local_knowledge, exchanges_local_knowledge), fields(position_local_knowledge = Empty, exchange_local_knowledge = Empty))]
+fn handle_update_from_position(
+	hub_rx: PositionToHub,
+	positions_local_knowledge: &mut HashMap<Uuid, PositionLocalKnowledge>,
+	orders_tx: &tokio::sync::watch::Sender<HubToExchange>,
+	exchanges_local_knowledge: &mut HashMap<Market, ExchangeLocalKnowledge>,
+) -> Result<()> {
 	let position_id = hub_rx.position_callback.position_id;
 	let position_local_knowledge = positions_local_knowledge
 		.entry(position_id)
 		.or_insert(PositionLocalKnowledge::new(Uuid::default(), hub_rx.position_callback.sender, Vec::new()));
 	Span::current().record("position_local_knowledge", format!("{:?}", position_local_knowledge));
 
-	match position_local_knowledge.key != hub_rx.key { // by internal convention, on init the key is Uuid::default()
-		true => position_local_knowledge.key = hub_rx.key,
-		false => {
-			debug!("Key mismatch, ignoring the request.");
-			return Ok(());
-		}
+	if position_local_knowledge.key != hub_rx.key {
+		// by internal convention, on init the key is Uuid::default()
+		debug!("Key mismatch, ignoring the request.");
+		return Ok(());
 	}
 	position_local_knowledge.requested_orders = hub_rx.orders;
 
@@ -129,18 +132,22 @@ fn handle_hub_rx(hub_rx: PositionToHub, positions_local_knowledge: &mut HashMap<
 			ConceptualOrder { id: new_id, ..o.clone() }
 		});
 		requested_orders_all_positions.extend(remap_to_position_id);
-	};
+	}
 	let target_orders = hub_process_orders(requested_orders_all_positions);
 
+	
+	// // Binance Futures
 	let binance_futures_orders = target_orders
 		.iter()
 		.filter(|o| o.symbol.market == Market::BinanceFutures)
 		.cloned()
 		.collect::<Vec<Order<PositionOrderId>>>();
 
-	let acceptance_token = Uuid::now_v7();
-	let passforward = HubToExchange::new(acceptance_token, binance_futures_orders);
+	let exchange_local_knowledge = exchanges_local_knowledge.entry(Market::BinanceFutures).or_default();
+	Span::current().record("exchange_local_knowledge", format!("{:?}", exchange_local_knowledge));
+	let passforward = HubToExchange::new(exchange_local_knowledge.key, binance_futures_orders);
 	orders_tx.send(passforward)?;
+	//
 	Ok(())
 }
 
@@ -149,6 +156,7 @@ async fn handle_fill(fill: ExchangeToHub, position_local_knowledge: &mut Positio
 	position_local_knowledge.key = fill.key;
 	let vec_fill = vec![ProtocolFill::new(fill.order.id.into(), fill.fill_qty)];
 	position_local_knowledge.callback.send(ProtocolFills::new(position_local_knowledge.key, vec_fill)).await?;
+	debug!("Sent fills to position");
 	Ok(())
 }
 

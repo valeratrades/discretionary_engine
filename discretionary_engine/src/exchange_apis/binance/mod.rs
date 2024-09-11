@@ -480,7 +480,7 @@ async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFr
 	}
 }
 
-#[instrument(skip(hub_rx, full_key, full_secret))]
+#[instrument(skip(full_key, full_secret))]
 async fn handle_hub_orders_update(
 	hub_rx: &watch::Receiver<HubToExchange>,
 	last_reported_fill_key: &mut Uuid,
@@ -490,11 +490,11 @@ async fn handle_hub_orders_update(
 ) {
 	let target_orders: Vec<Order<PositionOrderId>>;
 	{
-		let hub_passforward = hub_rx.borrow();
-		target_orders = if hub_passforward.key == *last_reported_fill_key {
-			hub_passforward.orders.clone()
+		let from_hub = hub_rx.borrow();
+		target_orders = if from_hub.key == *last_reported_fill_key {
+			from_hub.orders.clone()
 		} else {
-			debug!("fill keys don't match.\nCorrect: {last_reported_fill_key}, Received: {}", hub_passforward.key);
+			debug!("fill keys don't match.");
 			return;
 		};
 	}

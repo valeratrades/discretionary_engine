@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-#[instrument(fields(position_args))]
+#[instrument(skip(config_arc, tx, exchanges_arc))]
 async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
 	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config_arc.clone()).await {

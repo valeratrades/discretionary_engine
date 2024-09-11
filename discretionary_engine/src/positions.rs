@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{select, sync::mpsc, task::JoinSet};
-use tracing::{debug, info, instrument};
+use tracing::{debug, field::Empty, info, instrument, Span};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
@@ -153,6 +153,7 @@ impl PositionFollowup {
 	}
 }
 
+#[instrument(skip(parent_js))]
 fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], asset: &str, protocols_side: Side) -> (mpsc::Receiver<ProtocolOrders>, PositionProtocolsDynamicInfo) {
 	let (tx_orders, rx_orders) = mpsc::channel::<ProtocolOrders>(256);
 	for protocol in protocols {
@@ -169,6 +170,7 @@ fn init_protocols(parent_js: &mut JoinSet<Result<()>>, protocols: &[Protocol], a
 	(rx_orders, PositionProtocolsDynamicInfo(protocol_type_mapped_order))
 }
 
+#[instrument(skip(hub_tx))]
 async fn send_orders_to_hub(
 	hub_tx: mpsc::Sender<PositionToHub>,
 	position_callback: HubToPosition,
@@ -185,8 +187,11 @@ async fn send_orders_to_hub(
 	Ok(())
 }
 
+//? is it worth it to change the insides of a function for better logging?
+#[instrument(skip(dyn_info), fields(accessed_info_fields = Empty))]
 async fn process_fills_update(protocol_fills: ProtocolFills, dyn_info: &mut PositionProtocolsDynamicInfo, closed_notional: &mut f64) -> Result<()> {
-	debug!("Received fills: {:?}", protocol_fills);
+	let mut accessed_info_fields = Vec::new();
+
 	for f in protocol_fills.fills {
 		let (protocol_order_id, filled_notional) = (f.id, f.qty);
 		*closed_notional += filled_notional;
@@ -197,9 +202,13 @@ async fn process_fills_update(protocol_fills: ProtocolFills, dyn_info: &mut Posi
 					.as_mut()
 					.expect("Can't receive fill if it hasn't posted orders. Thus guaranteed to be `Some` here.")
 					.update_fill_at(protocol_order_id.ordinal, filled_notional);
+
+				accessed_info_fields.push(found_protocol_info.clone());
+				Span::current().record("accessed_info_fields", format!("{:?}", accessed_info_fields));
 			}
 		}
 	}
+	debug!("Position processed fills");
 	Ok(())
 }
 
@@ -336,6 +345,7 @@ fn recalculate_protocol_orders(
 	new_target_orders
 }
 
+#[instrument(skip(protocol_orders_update))]
 async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, dyn_info: &mut PositionProtocolsDynamicInfo) -> Result<()> {
 	debug!(
 		"Position received protocol {:?} sending orders: {:?}",
