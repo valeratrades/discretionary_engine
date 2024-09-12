@@ -45,14 +45,14 @@ enum Commands {
 #[derive(Args, Debug, Clone)]
 struct PositionArgs {
 	/// Target change in exposure. So positive for buying, negative for selling.
-	#[arg(long)]
+	#[arg(short, long)]
 	size_usdt: f64,
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
-	#[arg(long)]
+	#[arg(short, long)]
 	tf: Option<Timeframe>,
 	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will error on the stage of making price requests for the coin.
-	#[arg(long)]
+	#[arg(short, long)]
 	coin: String,
 	/// acquisition protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long)]

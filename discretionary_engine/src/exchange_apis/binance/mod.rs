@@ -1,4 +1,5 @@
 #![allow(non_snake_case, dead_code)]
+use tracing::info;
 pub mod info;
 mod orders;
 use std::{
@@ -282,6 +283,7 @@ pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output 
 
 #[instrument(skip(key, secret))]
 pub async fn post_futures_order(key: String, secret: String, order: &Order<PositionOrderId>) -> Result<BinanceOrder> {
+	debug!("Posting order");
 	let url = FuturesPositionResponse::get_url();
 
 	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
@@ -405,6 +407,7 @@ pub async fn binance_runtime(
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
+			debug!("gonna request deployed orders. Could hang here.");
 			let mut orders: Vec<_> = {
 				let currently_deployed_read = currently_deployed_clone.read().unwrap();
 				currently_deployed_read.iter().cloned().collect()
@@ -461,6 +464,7 @@ pub async fn binance_runtime(
 
 	// Main loop
 	loop {
+		println!("Binance runtime loop");
 		select! {
 			Ok(_) = hub_rx.changed() => {
 				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone()).await;
@@ -475,6 +479,7 @@ async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFr
 	while let Ok(f) = temp_fills_stack_rx.try_recv() {
 		let new_fill_key = Uuid::now_v7();
 		let callback = ExchangeToHub::new(new_fill_key, Market::BinanceFutures, f.new_executed_qty, f.order);
+		debug!(?callback);
 		hub_callback.send(callback).await.unwrap();
 		*last_reported_fill_key = new_fill_key;
 	}
@@ -513,7 +518,7 @@ async fn handle_hub_orders_update(
 				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
 					if let Some(error_code) = error_value.get("code") {
 						if error_code == -2011 {
-							tracing::warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+							warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
 							continue;
 						}
 					}
@@ -536,6 +541,7 @@ async fn handle_hub_orders_update(
 		};
 		just_deployed.push(b);
 	}
+	info!(?just_deployed);
 
 	{
 		let mut current_lock = currently_deployed.write().unwrap();

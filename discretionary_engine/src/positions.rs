@@ -71,6 +71,7 @@ impl PositionAcquisition {
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
+					debug!(?protocol_fills);
 					last_fill_key = protocol_fills.key;
 					process_fills_update(protocol_fills, &mut position_protocols_dynamic_info, &mut executed_notional).await?;
 					if executed_notional > target_coin_quantity + min_qty_any_ordertype {
