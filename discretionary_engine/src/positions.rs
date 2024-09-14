@@ -73,16 +73,16 @@ impl PositionAcquisition {
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
-					debug!(?protocol_fills);
 					last_fill_key = protocol_fills.key;
 					process_fills_update(protocol_fills, &mut position_protocols_dynamic_info, &mut executed_notional).await?;
-					if executed_notional > target_coin_quantity + min_qty_any_ordertype {
+					debug!(executed_notional);
+					if executed_notional > target_coin_quantity - min_qty_any_ordertype {
 						break;
 					}
 					let new_target_orders = recalculate_protocol_orders(&spec.asset,min_qty_any_ordertype,  target_coin_quantity - executed_notional, spec.side, &position_protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
-				//Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
+				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
 			}
 		}
@@ -135,10 +135,10 @@ impl PositionFollowup {
 				Some(protocol_fills) = rx_fills.recv() => {
 					last_fill_key = protocol_fills.key;
 					process_fills_update(protocol_fills, &mut position_protocols_dynamic_info, &mut executed_notional).await?;
-					if executed_notional > acquired.acquired_notional + min_qty_any_ordertype {
+					debug!(executed_notional);
+					if executed_notional > acquired.acquired_notional - min_qty_any_ordertype {
 						break;
 					}
-					dbg!(&last_fill_key);
 					let new_target_orders = recalculate_protocol_orders(&acquired.__spec.asset, min_qty_any_ordertype, acquired.acquired_notional - executed_notional, acquired.__spec.side, &position_protocols_dynamic_info, exchanges_arc.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},

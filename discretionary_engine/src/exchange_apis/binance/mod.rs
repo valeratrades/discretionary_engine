@@ -39,7 +39,7 @@ use crate::{
 	config::AppConfig,
 	exchange_apis::{order_types::Order, Market},
 	utils::{deser_reqwest, report_connection_problem, unexpected_response_str},
-	PositionOrderId, MAX_FAILURES_TO_NOTIFY,
+	PositionOrderId, MAX_CONNECTION_FAILURES,
 };
 type HmacSha256 = Hmac<Sha256>;
 
@@ -418,20 +418,16 @@ pub async fn binance_runtime(
 	let binance_exchange_arc_clone = binance_exchange_arc.clone();
 	parent_js.spawn(async move {
 		loop {
-			//use report connection problem here
-			let mut tries_left = MAX_FAILURES_TO_NOTIFY;
 			tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
 			match BinanceExchangeFutures::init(config_arc.clone()).await {
 				Ok(binance_exchange_futures_updated) => {
-					tries_left = MAX_FAILURES_TO_NOTIFY;
 					let mut binance_exchange_lock = binance_exchange_arc_clone.write().unwrap();
 					binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
 				}
-				Err(e) => match report_connection_problem().await {
-					true => (),
-					false => warn!("Error updating exchange info: {:?}\nTries left: {:?}", e, tries_left),
-				},
+				Err(e) => {
+					report_connection_problem(e.wrap_err("Error updating exchange info")).await;
+				}
 			}
 		}
 	});
@@ -484,7 +480,10 @@ async fn handle_hub_orders_update(
 	debug!("fill keys match");
 
 	// Close currently deployed orders
-	loop {
+	//FUCK: will hang for 50s if re-requesting knowledge is only possible by continuing the execution of this exact function.
+	//
+	// Always will break naturally, this is only to prevent uncapped loops antipattern.
+	for _ in 0..MAX_CONNECTION_FAILURES {
 		let currently_deployed_clone;
 		{
 			currently_deployed_clone = currently_deployed.read().unwrap().clone();
@@ -496,14 +495,17 @@ async fn handle_hub_orders_update(
 				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
 					if let Some(error_code) = error_value.get("code") {
 						if error_code == -2011 {
-							warn!("Tried to close an order not existing on the remote: {:?}.\nWill wait 5s, try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+							let mut break_after = false;
+							if report_connection_problem(e.wrap_err("Tried to close an order not existing on the remote: {:?}.\nWill wait 5s, try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.")).await {
+								break_after = true;
+							}
 							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-							continue;
+							if break_after {
+								break;
+							};
 						}
 					}
 				}
-				tracing::error!("Error closing orders: {:?}.\nWill loop forever until this succeeds.", e);
-				tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 			}
 		}
 	}
@@ -655,32 +657,39 @@ struct MarginUserAsset {
 	netAsset: String,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FuturesSymbol {
 	symbol: String,
 	pair: String,
-	contractType: String,
-	deliveryDate: i64,
-	onboardDate: i64,
+	contract_type: String,
+	delivery_date: i64,
+	onboard_date: i64,
 	status: String,
-	maintMarginPercent: String,
-	requiredMarginPercent: String,
-	baseAsset: String,
-	quoteAsset: String,
-	marginAsset: String,
-	pricePrecision: u8,
-	quantityPrecision: u8,
-	baseAssetPrecision: u8,
-	quotePrecision: u8,
-	underlyingType: String,
-	underlyingSubType: Vec<String>,
-	settlePlan: u32,
-	triggerProtect: String,
+	#[serde_as(as = "DisplayFromStr")]
+	maint_margin_percent: f64,
+	#[serde_as(as = "DisplayFromStr")]
+	required_margin_percent: f64,
+	base_asset: String,
+	quote_asset: String,
+	margin_asset: String,
+	price_precision: u8,
+	quantity_precision: u8,
+	base_asset_precision: u8,
+	quote_precision: u8,
+	underlying_type: String,
+	underlying_sub_type: Vec<String>,
+	settle_plan: Option<u32>,
+	#[serde_as(as = "DisplayFromStr")]
+	trigger_protect: f64,
 	filters: Vec<Value>,
-	OrderType: Option<Vec<String>>,
-	timeInForce: Vec<String>,
-	liquidationFee: String,
-	marketTakeBound: String,
+	order_types: Vec<String>,
+	time_in_force: Vec<String>,
+	#[serde_as(as = "DisplayFromStr")]
+	liquidation_fee: f64,
+	#[serde_as(as = "DisplayFromStr")]
+	market_take_bound: f64,
 }
 
 #[derive(Deserialize, Debug)]

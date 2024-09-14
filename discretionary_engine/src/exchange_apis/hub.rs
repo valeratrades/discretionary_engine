@@ -107,7 +107,7 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 	Ok(())
 }
 
-#[instrument(skip(orders_tx, positions_local_knowledge, exchanges_local_knowledge), fields(position_local_knowledge = Empty, exchange_local_knowledge = Empty))]
+#[instrument(skip(orders_tx, positions_local_knowledge), fields(position_local_knowledge = Empty))]
 fn handle_update_from_position(
 	hub_rx: PositionToHub,
 	positions_local_knowledge: &mut HashMap<Uuid, PositionLocalKnowledge>,
@@ -137,6 +137,8 @@ fn handle_update_from_position(
 	}
 	let target_orders = hub_process_orders(requested_orders_all_positions);
 
+	debug!(?target_orders);
+
 	// // Binance Futures
 	let binance_futures_orders = target_orders
 		.iter()
@@ -145,7 +147,6 @@ fn handle_update_from_position(
 		.collect::<Vec<Order<PositionOrderId>>>();
 
 	let exchange_local_knowledge = exchanges_local_knowledge.entry(Market::BinanceFutures).or_default();
-	Span::current().record("exchange_local_knowledge", format!("{:?}", exchange_local_knowledge));
 	let passforward = HubToExchange::new(exchange_local_knowledge.key, binance_futures_orders);
 	orders_tx.send(passforward)?;
 	//

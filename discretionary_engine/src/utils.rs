@@ -1,11 +1,17 @@
 #![allow(dead_code, unused_imports)]
-use std::{fs::File, io::Write, path::Path, sync::{atomic::Ordering, Arc}, time::Duration};
+use std::{
+	fs::File,
+	io::Write,
+	path::Path,
+	sync::{atomic::Ordering, Arc},
+	time::Duration,
+};
 
-use color_eyre::eyre::{bail, eyre, Result, WrapErr};
+use color_eyre::eyre::{bail, eyre, Report, Result, WrapErr};
 use function_name::named;
 use serde::de::DeserializeOwned;
 use tokio::{runtime::Runtime, time::sleep};
-use tracing::{error, instrument, subscriber::set_global_default, Subscriber};
+use tracing::{error, instrument, subscriber::set_global_default, warn, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
@@ -97,8 +103,9 @@ fn deser_reqwest_core<T: DeserializeOwned>(text: String) -> Result<T> {
 /// # Dependencies
 /// [v_notify](<https://crates.io/crates/v_notify>) locally installed
 //TODO!: print the list of "contributors" to the failure
-pub async fn report_connection_problem() -> bool {
+pub async fn report_connection_problem(e: Report) -> bool {
 	let failures = MUT_CURRENT_CONNECTION_FAILURES.fetch_add(1, Ordering::Relaxed);
+	warn!("Likely connection problem: {:?}", e);
 
 	if failures + 1 >= MAX_CONNECTION_FAILURES {
 		error!("Reached max current connection failures ({MAX_CONNECTION_FAILURES})");
