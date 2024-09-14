@@ -5,6 +5,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
+use tracing::instrument;
 use url::Url;
 
 use super::unsigned_request;
@@ -26,6 +27,7 @@ pub struct BinanceExchangeFutures {
 	pub timezone: String,
 }
 impl BinanceExchangeFutures {
+	#[instrument]
 	pub async fn init(_config: Arc<AppConfig>) -> Result<Self> {
 		let url = Self::url().to_string();
 		let r = unsigned_request(Method::GET, &url, HashMap::new()).await?;
@@ -33,15 +35,23 @@ impl BinanceExchangeFutures {
 		Ok(binance_exchange_futures)
 	}
 
+	#[instrument]
 	pub fn url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
 		base_url.join("/fapi/v1/exchangeInfo").unwrap()
 	}
 
+	#[instrument(skip(self))]
 	pub fn min_notional(&self, symbol: Symbol) -> f64 {
 		let symbol_info = self.symbols.iter().find(|s| s.symbol == symbol.ticker()).unwrap();
 		let min_notional = symbol_info.filters.iter().find(|f| f["filterType"] == "MIN_NOTIONAL").unwrap();
 		min_notional["minNotional"].as_str().unwrap().parse().unwrap()
+	}
+
+	#[instrument(skip(self))]
+	pub fn pair(&self, base_asset: &str, quote_asset: &str) -> Option<&FuturesSymbol> {
+		//? Should I cast `to_uppercase()`?
+		self.symbols.iter().find(|s| s.base_asset == base_asset && s.quote_asset == quote_asset)
 	}
 }
 

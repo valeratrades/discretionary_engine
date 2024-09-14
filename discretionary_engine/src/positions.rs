@@ -37,10 +37,12 @@ impl PositionAcquisition {
 	// dbg
 	#[allow(clippy::unused_async)]
 	pub async fn dbg_new(spec: PositionSpec) -> Result<Self> {
+		let current_price = binance::futures_price(&spec.asset).await?;
+		let target_coin_quantity = spec.size_usdt / current_price;
 		Ok(Self {
 			__spec: spec,
-			target_notional: 20.0,
-			acquired_notional: 20.0,
+			target_notional: target_coin_quantity,
+			acquired_notional: target_coin_quantity,
 			protocols_spec: None,
 		})
 	}
@@ -80,7 +82,7 @@ impl PositionAcquisition {
 					let new_target_orders = recalculate_protocol_orders(&spec.asset,min_qty_any_ordertype,  target_coin_quantity - executed_notional, spec.side, &position_protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
-				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
+				//Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
 				else => unreachable!("hub outlives positions"),
 			}
 		}

@@ -10,7 +10,7 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU32, Arc};
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
@@ -23,6 +23,9 @@ use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
 };
+
+pub static MAX_CONNECTION_FAILURES: u32 = 10;
+pub static MUT_CURRENT_CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -90,7 +93,11 @@ async fn main() -> Result<()> {
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
-	let exchanges_arc = Arc::new(Exchanges::init(config_arc.clone()).await?);
+	let exchanges_arc = Arc::new(
+		Exchanges::init(config_arc.clone())
+			.await
+			.wrap_err_with(|| "Error initializing Exchanges, likely indicative of bad internet connection")?,
+	);
 	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {

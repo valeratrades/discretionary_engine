@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use tracing::info;
+use tracing::{error, info, trace};
 pub mod info;
 mod orders;
 use std::{
@@ -38,8 +38,8 @@ use super::{
 use crate::{
 	config::AppConfig,
 	exchange_apis::{order_types::Order, Market},
-	utils::{deser_reqwest, unexpected_response_str},
-	PositionOrderId,
+	utils::{deser_reqwest, report_connection_problem, unexpected_response_str},
+	PositionOrderId, MAX_FAILURES_TO_NOTIFY,
 };
 type HmacSha256 = Hmac<Sha256>;
 
@@ -48,6 +48,7 @@ pub struct BinanceExchange {
 	pub binance_futures_info: BinanceExchangeFutures,
 }
 impl BinanceExchange {
+	#[instrument(skip_all)]
 	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
 		let binance_futures_info = BinanceExchangeFutures::init(config_arc.clone()).await?;
 		Ok(Self { binance_futures_info })
@@ -85,6 +86,12 @@ impl BinanceExchange {
 			}
 		}
 		on_different_pairs.iter().sum()
+	}
+
+	#[instrument(skip(self))]
+	pub fn pair(&self, base_asset: &str, quote_asset: &str) -> Option<&info::FuturesSymbol> {
+		//? Should I cast `to_uppercase()`?
+		self.binance_futures_info.symbols.iter().find(|s| s.base_asset == base_asset && s.quote_asset == quote_asset)
 	}
 }
 
@@ -261,32 +268,12 @@ pub async fn get_futures_positions(key: String, secret: String) -> Result<HashMa
 	Ok(positions_map)
 }
 
-/// Returns (price_precision, quantity_precision)
-#[instrument]
-pub fn futures_precisions(coin: &str) -> Result<impl std::future::Future<Output = Result<(u8, u8)>> + Send + Sync + 'static> {
-	let base_url = Market::BinanceFutures.get_base_url();
-	let url = base_url.join("/fapi/v1/exchangeInfo")?;
-	let symbol_str = format!("{}USDT", coin.to_uppercase());
-
-	Ok(async move {
-		let r = reqwest::get(url).await?;
-
-		let info: info::BinanceExchangeFutures = deser_reqwest(r).await?;
-		let symbol_info = info.symbols.iter().find(|x| x.symbol == symbol_str).unwrap();
-
-		// let (tick_size, step_size) = (symbol_info.price_filter().unwrap().tick_size, symbol_info.lot_size_filter().unwrap().step_size);
-		//
-		// Ok((tick_size as u8, step_size as u8))
-		Ok((symbol_info.price_precision as u8, symbol_info.quantity_precision as u8))
-	})
-}
-
-#[instrument(skip(key, secret))]
-pub async fn post_futures_order(key: String, secret: String, order: &Order<PositionOrderId>) -> Result<BinanceOrder> {
+#[instrument(skip(key, secret, binance_exchange_arc))]
+pub async fn post_futures_order(key: String, secret: String, order: &Order<PositionOrderId>, binance_exchange_arc: Arc<RwLock<BinanceExchange>>) -> Result<BinanceOrder> {
 	debug!("Posting order");
 	let url = FuturesPositionResponse::get_url();
 
-	let mut binance_order = BinanceOrder::from_standard(order.clone()).await;
+	let mut binance_order = BinanceOrder::from_standard(order.clone(), binance_exchange_arc).await;
 	let mut params = binance_order.to_params();
 	params.insert("recvWindow", "60000".to_owned()); // dbg currently they/me are having some issues with response speed
 
@@ -311,24 +298,6 @@ pub async fn poll_futures_order<S: AsRef<str>>(key: S, secret: S, binance_order:
 	let r = signed_request(reqwest::Method::GET, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
 	Ok(response)
-}
-
-/// Binance wants both qty and price in orders to always respect the minimum step of the price
-// TODO!!!: Store all needed exchange info locally
-#[instrument]
-pub async fn apply_price_precision(coin: &str, price: f64) -> Result<f64> {
-	let (price_precision, _) = futures_precisions(coin)?.await?;
-	let factor = 10_f64.powi(price_precision as i32);
-	let adjusted = (price * factor).round() / factor;
-	Ok(adjusted)
-}
-
-#[instrument]
-pub async fn apply_quantity_precision(coin: &str, qty: f64) -> Result<f64> {
-	let (_, qty_precision) = futures_precisions(coin)?.await?;
-	let factor = 10_f64.powi(qty_precision as i32);
-	let adjusted = (qty * factor).round() / factor;
-	Ok(adjusted)
 }
 
 #[derive(Debug, Deserialize)]
@@ -384,18 +353,18 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 #[instrument(skip_all)]
 pub async fn binance_runtime(
-	config: Arc<AppConfig>,
+	config_arc: Arc<AppConfig>,
 	parent_js: &mut JoinSet<()>,
 	hub_callback: mpsc::Sender<ExchangeToHub>,
 	mut hub_rx: watch::Receiver<HubToExchange>,
-	binance_exchange: Arc<RwLock<BinanceExchange>>,
+	binance_exchange_arc: Arc<RwLock<BinanceExchange>>,
 ) {
 	debug!("Binance_runtime started");
 	let mut last_reported_fill_key = Uuid::default();
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
-	let full_key = config.binance.full_key.clone();
-	let full_secret = config.binance.full_secret.clone();
+	let full_key = config_arc.binance.full_key.clone();
+	let full_secret = config_arc.binance.full_secret.clone();
 
 	let (temp_fills_stack_tx, mut temp_fills_stack_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
@@ -446,28 +415,36 @@ pub async fn binance_runtime(
 
 	// Keeping Exchange info up-to-date
 	//TODO!: move to websockets, have them be right here.
+	let binance_exchange_arc_clone = binance_exchange_arc.clone();
 	parent_js.spawn(async move {
 		loop {
-			let base_url = Market::BinanceFutures.get_base_url();
-			let url = base_url.join("/fapi/v1/exchangeInfo").unwrap();
-			let r = unsigned_request(Method::GET, url.as_str(), HashMap::new()).await.unwrap();
-			let binance_exchange_futures_updated: BinanceExchangeFutures = deser_reqwest(r).await.unwrap();
-
-			{
-				let mut binance_exchange_lock = binance_exchange.write().unwrap();
-				binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
-			}
-
+			//use report connection problem here
+			let mut tries_left = MAX_FAILURES_TO_NOTIFY;
 			tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+
+			match BinanceExchangeFutures::init(config_arc.clone()).await {
+				Ok(binance_exchange_futures_updated) => {
+					tries_left = MAX_FAILURES_TO_NOTIFY;
+					let mut binance_exchange_lock = binance_exchange_arc_clone.write().unwrap();
+					binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;
+				}
+				Err(e) => match report_connection_problem().await {
+					true => (),
+					false => warn!("Error updating exchange info: {:?}\nTries left: {:?}", e, tries_left),
+				},
+			}
 		}
 	});
 
 	// Main loop
 	loop {
-		println!("Binance runtime loop");
+		//dbg
+		tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+		let now = chrono::Utc::now();
+		println!("Binance runtime is still going: {}", now.format("%Y-%m-%d %H:%M:%S"));
 		select! {
 			Ok(_) = hub_rx.changed() => {
-				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone()).await;
+				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
 			},
 			_ = handle_temp_fills_stack(&mut temp_fills_stack_rx, &hub_callback, &mut last_reported_fill_key) => {},
 		}
@@ -485,13 +462,14 @@ async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFr
 	}
 }
 
-#[instrument(skip(full_key, full_secret))]
+#[instrument(skip(full_key, full_secret, binance_exchange_arc))]
 async fn handle_hub_orders_update(
 	hub_rx: &watch::Receiver<HubToExchange>,
 	last_reported_fill_key: &mut Uuid,
 	full_key: &str,
 	full_secret: &str,
 	currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>,
+	binance_exchange_arc: Arc<RwLock<BinanceExchange>>,
 ) {
 	let target_orders: Vec<Order<PositionOrderId>>;
 	{
@@ -518,7 +496,8 @@ async fn handle_hub_orders_update(
 				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
 					if let Some(error_code) = error_value.get("code") {
 						if error_code == -2011 {
-							warn!("Tried to close an order not existing on the remote: {:?}.\nWill try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+							warn!("Tried to close an order not existing on the remote: {:?}.\nWill wait 5s, try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.", e);
+							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 							continue;
 						}
 					}
@@ -528,11 +507,11 @@ async fn handle_hub_orders_update(
 			}
 		}
 	}
-	debug!("closed orders");
+	trace!("closed orders");
 
 	let mut just_deployed = Vec::new();
 	for o in target_orders {
-		let b = match post_futures_order(full_key.to_string(), full_secret.to_string(), &o).await {
+		let b = match post_futures_order(full_key.to_string(), full_secret.to_string(), &o, binance_exchange_arc.clone()).await {
 			Ok(order) => order,
 			Err(e) => {
 				tracing::error!("Error posting order: {:?}", e);
@@ -689,10 +668,10 @@ struct FuturesSymbol {
 	baseAsset: String,
 	quoteAsset: String,
 	marginAsset: String,
-	pricePrecision: u32,
-	quantityPrecision: usize,
-	baseAssetPrecision: u32,
-	quotePrecision: u32,
+	pricePrecision: u8,
+	quantityPrecision: u8,
+	baseAssetPrecision: u8,
+	quotePrecision: u8,
 	underlyingType: String,
 	underlyingSubType: Vec<String>,
 	settlePlan: u32,

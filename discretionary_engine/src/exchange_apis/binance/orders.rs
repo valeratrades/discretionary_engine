@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::{
+	collections::HashMap,
+	sync::{Arc, RwLock},
+};
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
+use super::BinanceExchange;
 use crate::{
-	exchange_apis::{
-		binance,
-		order_types::{Order, OrderType, StopMarketOrder},
-	},
+	exchange_apis::order_types::{Order, OrderType, StopMarketOrder},
 	positions::PositionOrderId,
 };
 
@@ -45,14 +47,26 @@ impl BinanceOrder {
 		params
 	}
 
-	// HACK: should be referencing preloaded values
-	pub async fn from_standard(mut order: Order<PositionOrderId>) -> Self {
-		let coin_quantity_adjusted = binance::apply_quantity_precision(&order.symbol.base, order.qty_notional).await.unwrap();
+	#[instrument(skip(binance_exchange_arc))]
+	pub async fn from_standard(mut order: Order<PositionOrderId>, binance_exchange_arc: Arc<RwLock<BinanceExchange>>) -> Self {
+		let futures_symbol = {
+			let lock = binance_exchange_arc.read().unwrap();
+			let futures_symbol = lock
+				.binance_futures_info
+				.pair(&order.symbol.base, &order.symbol.quote)
+				.expect("coin should have been checked earlier");
+			futures_symbol.clone()
+		};
+		fn precision(qty: f64, precision: i32) -> f64 {
+			let factor = 10_f64.powi(precision);
+			(qty * factor).round() / factor
+		}
+		let coin_quantity_adjusted = precision(order.qty_notional, futures_symbol.quantity_precision as i32);
 		order.qty_notional = coin_quantity_adjusted;
 
 		let order_type = match &order.order_type {
 			OrderType::Market => OrderType::Market,
-			OrderType::StopMarket(sm) => OrderType::StopMarket(StopMarketOrder::new(binance::apply_price_precision(&order.symbol.base, sm.price).await.unwrap())),
+			OrderType::StopMarket(sm) => OrderType::StopMarket(StopMarketOrder::new(precision(sm.price, futures_symbol.price_precision as i32))),
 		};
 		order.order_type = order_type;
 

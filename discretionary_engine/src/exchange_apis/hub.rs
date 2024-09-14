@@ -79,7 +79,9 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
 		binance::binance_runtime(config_arc_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
-		exchange_runtimes_js.join_all().await;
+		eprintln!("please don't tell me the unreachable gets caught by catch_unwind of the runtime"); //dbg
+		unreachable!();
+		//exchange_runtimes_js.join_all().await;
 	});
 
 	let mut positions_local_knowledge: HashMap<Uuid, PositionLocalKnowledge> = HashMap::new();
@@ -135,7 +137,6 @@ fn handle_update_from_position(
 	}
 	let target_orders = hub_process_orders(requested_orders_all_positions);
 
-	
 	// // Binance Futures
 	let binance_futures_orders = target_orders
 		.iter()

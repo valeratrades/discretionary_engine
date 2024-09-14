@@ -35,9 +35,11 @@ chrono = "^0.4.38"
 clap = { version = "^4.5.16", features = ["derive"] }
 color-eyre = "0.6.3"
 config = "0.14.0"
+console-subscriber = "0.4.0"
 derive-new = "0.7.0"
 discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.0" }
 eyre = "0.6.12"
+function_name = "0.3.0"
 futures-util = "0.3.30"
 hex = "^0.4.3"
 hmac = "^0.12.1"
@@ -49,7 +51,7 @@ serde_json = "^1.0.127"
 serde_urlencoded = "^0.7.1"
 serde_with = "^3.9.0"
 sha2 = "^0.10.8"
-tokio = { version = "^1.40.0", features = ["full"] }
+tokio = { version = "^1.40.0", features = ["full", "tracing"] }
 tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
 tracing = { version = "^0.1.40", features = ["log", "std", "async-await"] }
 tracing-bunyan-formatter = "0.3.9"
