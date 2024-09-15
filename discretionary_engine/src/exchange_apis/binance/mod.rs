@@ -434,10 +434,6 @@ pub async fn binance_runtime(
 
 	// Main loop
 	loop {
-		//dbg
-		tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-		let now = chrono::Utc::now();
-		println!("Binance runtime is still going: {}", now.format("%Y-%m-%d %H:%M:%S"));
 		select! {
 			Ok(_) = hub_rx.changed() => {
 				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
