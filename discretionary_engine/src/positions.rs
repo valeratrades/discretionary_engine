@@ -65,6 +65,7 @@ impl PositionAcquisition {
 
 		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges.clone(), &spec.asset);
 
+		//LOOP: Main acquisition loop, break when executed_notional is sufficient
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
@@ -125,6 +126,7 @@ impl PositionFollowup {
 
 		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges_arc.clone(), &acquired.__spec.asset);
 
+		//LOOP: Main followup loop, break when executed_notional is sufficient
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
@@ -252,63 +254,60 @@ fn recalculate_protocol_orders(
 	let mut limit_orders = Vec::new();
 
 	//PERF: (n^3), but it's fine, as n is small.
+	debug!("Please don't get stuck");
 	for (_protocol_type, protocols_map) in dyn_info.iter() {
 		let mut in_play_protocols_map = protocols_map.clone();
 		let mut accumulated_leftovers = 0.0;
 
-		#[allow(clippy::never_loop)] // clippy being dumb
-		loop {
-			for (i, (signature, info)) in in_play_protocols_map.clone().iter().enumerate() {
-				// clone to avoid using unsafe on `remove`
-				let info = match info.as_ref() {
-					Some(info) => info,
-					None => continue, // Protocol is _yet to_ send orders. We assume it's always intentional.
-				};
-				let orders = &info.protocol_orders.__orders;
-				let size_multiplier = 1.0 / protocols_map.len() as f64; //NB: not in_play_protocols_map.len()
-				let protocol_controlled_notional = (left_to_target_notional + accumulated_leftovers) * size_multiplier;
+		for (i, (signature, info)) in in_play_protocols_map.clone().iter().enumerate() {
+			// clone to avoid using unsafe on `remove`
+			let info = match info.as_ref() {
+				Some(info) => info,
+				None => continue, // Protocol is _yet to_ send orders. We assume it's always intentional.
+			};
+			let orders = &info.protocol_orders.__orders;
+			let size_multiplier = 1.0 / protocols_map.len() as f64; //NB: not in_play_protocols_map.len()
+			let protocol_controlled_notional = (left_to_target_notional + accumulated_leftovers) * size_multiplier;
 
-				let qties_payload: Vec<ConceptualOrderPercents> = orders.iter().flatten().cloned().collect();
-				let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges_arc.clone(), parent_position_asset, &qties_payload);
+			let qties_payload: Vec<ConceptualOrderPercents> = orders.iter().flatten().cloned().collect();
+			let asset_min_trade_qties = Exchanges::compile_min_trade_qties(exchanges_arc.clone(), parent_position_asset, &qties_payload);
 
-				let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = info
-					.fills
-					.iter()
-					.enumerate()
-					.map(|(i, filled)| {
-						let min_possible_qty = asset_min_trade_qties[i];
-						RecalculateOrdersPerOrderInfo::new(*filled, min_possible_qty)
-					})
-					.collect();
+			let per_order_infos: Vec<RecalculateOrdersPerOrderInfo> = info
+				.fills
+				.iter()
+				.enumerate()
+				.map(|(i, filled)| {
+					let min_possible_qty = asset_min_trade_qties[i];
+					RecalculateOrdersPerOrderInfo::new(*filled, min_possible_qty)
+				})
+				.collect();
 
-				let recalculated_allocation = info
-					.protocol_orders
-					.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional, min_qty_any_ordertype);
+			let recalculated_allocation = info
+				.protocol_orders
+				.recalculate_protocol_orders_allocation(&per_order_infos, protocol_controlled_notional, min_qty_any_ordertype);
 
-				match recalculated_allocation.leftovers {
-					Some(offset) => {
-						match i {
-							x if x == in_play_protocols_map.len() - 1 => {
-								debug!("Discarding leftovers for {:?}", _protocol_type);
-							}
-							_ => {
-								#[allow(unused_assignments)] // clippy being dumb
-								accumulated_leftovers += offset;
-								in_play_protocols_map.remove(signature);
-								break;
-							}
+			match recalculated_allocation.leftovers {
+				Some(offset) => {
+					match i {
+						x if x == in_play_protocols_map.len() - 1 => {
+							debug!("Discarding leftovers for {:?}", _protocol_type);
+						}
+						_ => {
+							#[allow(unused_assignments)] // clippy being dumb
+							accumulated_leftovers += offset;
+							in_play_protocols_map.remove(signature);
+							break;
 						}
 					}
-					None => {
-						recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
-							ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
-							ConceptualOrderType::Limit(_) => limit_orders.push(o),
-							ConceptualOrderType::Market(_) => market_orders.push(o),
-						});
-					}
+				}
+				None => {
+					recalculated_allocation.orders.into_iter().for_each(|o| match o.order_type {
+						ConceptualOrderType::StopMarket(_) => stop_orders.push(o),
+						ConceptualOrderType::Limit(_) => limit_orders.push(o),
+						ConceptualOrderType::Market(_) => market_orders.push(o),
+					});
 				}
 			}
-			break;
 		}
 	}
 

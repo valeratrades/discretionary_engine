@@ -30,6 +30,7 @@ impl ProtocolTrait for DummyMarketWrapper {
 		let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
 		set.spawn(async move {
 			tx_orders.send(protocol_orders).await.unwrap();
+			//LOOP: it's a dummy protocol, relax
 			loop {
 				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 			}

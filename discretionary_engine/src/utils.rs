@@ -93,14 +93,15 @@ fn deser_reqwest_core<T: DeserializeOwned>(text: String) -> Result<T> {
 	match serde_json::from_str::<T>(&text) {
 		Ok(deserialized) => Ok(deserialized),
 		Err(e) => {
-			let mut error_msg = e.to_string(); 
-			if let Ok(v) = serde_json::from_str::<Value>(&text) { // serde_json's errors are bad, so if the response is valid JSON at all, can convert it to something else and get Context for the error too
+			let mut error_msg = e.to_string();
+			if let Ok(v) = serde_json::from_str::<Value>(&text) {
+				// serde_json's errors are bad, so if the response is valid JSON at all, can convert it to something else and get Context for the error too
 				if let Err(e) = serde_json::from_value::<T>(v) {
 					error_msg = e.to_string();
 				}
 			}
 			Err(unexpected_response_str(&text)).wrap_err_with(|| error_msg)
-		},
+		}
 	}
 }
 

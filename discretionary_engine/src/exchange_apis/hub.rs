@@ -87,6 +87,7 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 	let mut positions_local_knowledge: HashMap<Uuid, PositionLocalKnowledge> = HashMap::new();
 	let mut exchanges_local_knowledge: HashMap<Market, ExchangeLocalKnowledge> = HashMap::new();
 
+	//LOOP: Main hub loop, runs forever
 	loop {
 		select! {
 			Some(update_from_position) = rx.recv() => {

@@ -1,5 +1,5 @@
 #![allow(non_snake_case, dead_code)]
-use tracing::{error, info, trace};
+use tracing::{info, trace};
 pub mod info;
 mod orders;
 use std::{
@@ -373,6 +373,7 @@ pub async fn binance_runtime(
 	// Polling orders for fills
 	parent_js.spawn(async move {
 		// TODO!!!: make into a websocket
+		//LOOP: want to pull the orders for entire lifetime of the runtime. Later will be a websocket.
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -417,6 +418,7 @@ pub async fn binance_runtime(
 	//TODO!: move to websockets, have them be right here.
 	let binance_exchange_arc_clone = binance_exchange_arc.clone();
 	parent_js.spawn(async move {
+		//LOOP: auxiliary information; can't halt the main loop
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
@@ -432,8 +434,12 @@ pub async fn binance_runtime(
 		}
 	});
 
-	// Main loop
+	//LOOP: Main loop of Binance exchange
 	loop {
+		//dbg
+		tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+		let now = chrono::Utc::now();
+		println!("Binance runtime is still going: {}", now.format("%Y-%m-%d %H:%M:%S"));
 		select! {
 			Ok(_) = hub_rx.changed() => {
 				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
@@ -447,6 +453,9 @@ pub async fn binance_runtime(
 async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid) {
 	while let Ok(f) = temp_fills_stack_rx.try_recv() {
 		let new_fill_key = Uuid::now_v7();
+		
+		//TODO!!!!!!!!!: update local target_orders and knowledge if the fill closes the order.
+
 		let callback = ExchangeToHub::new(new_fill_key, Market::BinanceFutures, f.new_executed_qty, f.order);
 		debug!(?callback);
 		hub_callback.send(callback).await.unwrap();
