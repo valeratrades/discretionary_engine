@@ -279,7 +279,7 @@ pub async fn post_futures_order(key: String, secret: String, order: &Order<Posit
 
 	let r = signed_request(reqwest::Method::POST, url.as_str(), params, key, secret).await?;
 	let response: FuturesPositionResponse = deser_reqwest(r).await?;
-	binance_order.binance_id = Some(response.orderId);
+	binance_order.binance_id = Some(response.order_id);
 	Ok(binance_order)
 }
 
@@ -329,7 +329,7 @@ impl From<BinanceKline> for Ohlc {
 #[derive(Clone, Debug, Default, derive_new::new)]
 struct FillFromPolling {
 	order: Order<PositionOrderId>,
-	new_executed_qty: f64,
+	market_response: FuturesPositionResponse, //HACK: harcodes futures
 }
 
 #[instrument]
@@ -403,12 +403,11 @@ pub async fn binance_runtime(
 				//
 
 				// All other info except amount filled notional will only be relevant during trade's post-execution analysis.
-				let executed_qty = r.executedQty.parse::<f64>().unwrap();
-				if executed_qty != order.notional_filled {
+				if r.executed_qty != order.notional_filled {
 					{
-						currently_deployed_clone.write().unwrap()[i].notional_filled = executed_qty;
+						currently_deployed_clone.write().unwrap()[i].notional_filled = r.executed_qty;
 					}
-					temp_fills_stack_tx.send(FillFromPolling::new(order.base_info.clone(), executed_qty)).await.unwrap();
+					temp_fills_stack_tx.send(FillFromPolling::new(order.base_info.clone(), r)).await.unwrap();
 				}
 			}
 		}
@@ -444,19 +443,24 @@ pub async fn binance_runtime(
 			Ok(_) = hub_rx.changed() => {
 				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
 			},
-			_ = handle_temp_fills_stack(&mut temp_fills_stack_rx, &hub_callback, &mut last_reported_fill_key) => {},
+			_ = handle_temp_fills_stack(&mut temp_fills_stack_rx, &hub_callback, &mut last_reported_fill_key, currently_deployed.clone()) => {},
 		}
 	}
 }
 
 #[instrument(skip(hub_callback))]
-async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid) {
+async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid, currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>) {
 	while let Ok(f) = temp_fills_stack_rx.try_recv() {
 		let new_fill_key = Uuid::now_v7();
+		let r = f.market_response;
 		
-		//TODO!!!!!!!!!: update local target_orders and knowledge if the fill closes the order.
+		if r.status == OrderStatus::Filled {
+			let filled_id = &f.order.id;
+			let mut deployed_lock = currently_deployed.write().unwrap();
+			deployed_lock.retain(|o| o.base_info.id != *filled_id);
+		}
 
-		let callback = ExchangeToHub::new(new_fill_key, Market::BinanceFutures, f.new_executed_qty, f.order);
+		let callback = ExchangeToHub::new(new_fill_key, Market::BinanceFutures, r.executed_qty, f.order);
 		debug!(?callback);
 		hub_callback.send(callback).await.unwrap();
 		*last_reported_fill_key = new_fill_key;
@@ -539,8 +543,9 @@ async fn handle_hub_orders_update(
 // Response structs {{{
 //=============================================================================
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub enum OrderStatus {
+	#[default]
 	#[serde(rename = "NEW")]
 	New,
 	#[serde(rename = "PARTIALLY_FILLED")]
@@ -555,35 +560,39 @@ pub enum OrderStatus {
 	ExpiredInMatch,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FuturesPositionResponse {
-	pub clientOrderId: Option<String>,
-	pub cumQty: Option<String>, // weird field, included at random (json api things)
-	pub cumQuote: String,       // total filled quote asset
-	pub executedQty: String,    // total filled base asset
-	pub orderId: i64,
-	pub avgPrice: Option<String>,
-	pub origQty: String,
+	pub client_order_id: Option<String>,
+	pub cum_qty: Option<String>, // weird field, included at random (json api things)
+	pub cum_quote: String,       // total filled quote asset
+	#[serde_as(as = "DisplayFromStr")]
+	pub executed_qty: f64,    // total filled base asset
+	pub order_id: i64,
+	pub avg_price: Option<String>,
+	pub orig_qty: String,
 	pub price: String,
-	pub reduceOnly: Value,
+	pub reduce_only: Value,
 	pub side: String,
-	pub positionSide: Option<String>, // only sent when in hedge mode
+	pub position_side: Option<String>, // only sent when in hedge mode
 	pub status: OrderStatus,
-	pub stopPrice: String,
-	pub closePosition: Value,
+	pub stop_price: String,
+	pub close_position: Value,
 	pub symbol: String,
-	pub timeInForce: String,
+	pub time_in_force: String,
 	pub r#type: String,
-	pub origType: String,
-	pub activatePrice: Option<f64>, // only returned on TRAILING_STOP_MARKET order
-	pub priceRate: Option<f64>,     // only returned on TRAILING_STOP_MARKET order
-	pub updateTime: i64,
-	pub workingType: Option<String>, // no clue what this is
-	pub priceProtect: bool,
-	pub priceMatch: Option<String>, // huh
-	pub selfTradePreventionMode: Option<String>,
-	pub goodTillDate: Option<i64>,
+	pub orig_type: String,
+	pub activate_price: Option<f64>, // only returned on TRAILING_STOP_MARKET order
+	pub price_rate: Option<f64>,     // only returned on TRAILING_STOP_MARKET order
+	pub update_time: i64,
+	pub working_type: Option<String>, // no clue what this is
+	pub price_protect: bool,
+	pub price_match: Option<String>, // huh
+	pub self_trade_prevention_mode: Option<String>,
+	pub good_till_date: Option<i64>,
 }
+
 impl FuturesPositionResponse {
 	pub fn get_url() -> Url {
 		let base_url = Market::BinanceFutures.get_base_url();
