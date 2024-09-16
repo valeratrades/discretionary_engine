@@ -79,7 +79,6 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
 		binance::binance_runtime(config_arc_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
-		eprintln!("please don't tell me the unreachable gets caught by catch_unwind of the runtime"); //dbg
 		unreachable!();
 		//exchange_runtimes_js.join_all().await;
 	});
@@ -191,13 +190,11 @@ fn hub_process_orders(conceptual_orders: Vec<ConceptualOrder<PositionOrderId>>) 
 }
 
 mod tests {
-	#[allow(unused_imports)] // RA being dumb
+	#![allow(unused_imports)] // RA being dumb
 	use order_types::{ConceptualMarket, ConceptualStopMarket};
-	#[allow(unused_imports)] // RA being dumb
 	use v_utils::trades::Side;
 
 	use super::*;
-	#[allow(unused_imports)] // RA being dumb
 	use crate::exchange_apis::Symbol;
 
 	#[test]

@@ -18,11 +18,22 @@ use crate::{
 };
 
 /// What the Position *is*_
-#[derive(Clone, Debug, Default, derive_new::new)]
+#[derive(Clone, Debug, Default)]
 pub struct PositionSpec {
 	pub asset: String,
 	pub side: Side,
 	pub size_usdt: f64,
+	pub id: Uuid,
+}
+impl PositionSpec {
+	pub fn new(asset: String, side: Side, size_usdt: f64) -> Self {
+		Self {
+			asset,
+			side,
+			size_usdt,
+			id: Uuid::now_v7(),
+		}
+	}
 }
 
 #[allow(dead_code)]
@@ -56,9 +67,8 @@ impl PositionAcquisition {
 		let current_price = binance::futures_price(&spec.asset).await?;
 		let target_coin_quantity = spec.size_usdt / current_price;
 
-		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = HubToPosition::new(tx_fills, position_id);
+		let position_callback = HubToPosition::new(tx_fills, spec.id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
@@ -117,9 +127,8 @@ impl PositionFollowup {
 		let mut js = JoinSet::new();
 		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
 
-		let position_id = Uuid::now_v7();
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = HubToPosition::new(tx_fills, position_id);
+		let position_callback = HubToPosition::new(tx_fills, acquired.__spec.id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
