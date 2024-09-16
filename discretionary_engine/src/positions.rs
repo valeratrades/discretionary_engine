@@ -40,7 +40,6 @@ impl PositionSpec {
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionAcquisition {
 	__spec: PositionSpec,
-	target_notional: f64,
 	acquired_notional: f64,
 	protocols_spec: Option<String>,
 }
@@ -52,35 +51,34 @@ impl PositionAcquisition {
 		let target_coin_quantity = spec.size_usdt / current_price;
 		Ok(Self {
 			__spec: spec,
-			target_notional: target_coin_quantity,
 			acquired_notional: target_coin_quantity,
 			protocols_spec: None,
 		})
 	}
 
 	#[instrument(skip(hub_tx, exchanges))]
-	pub async fn do_acquisition(spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<Self> {
+	pub async fn do_acquisition(__spec: PositionSpec, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
-		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &spec.asset, spec.side);
+		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &__spec.asset, __spec.side);
 
 		// HACK
-		let current_price = binance::futures_price(&spec.asset).await?;
-		let target_coin_quantity = spec.size_usdt / current_price;
+		let current_price = binance::futures_price(&__spec.asset).await?;
+		let target_coin_quantity = __spec.size_usdt / current_price;
 
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = HubToPosition::new(tx_fills, spec.id);
+		let position_callback = HubToPosition::new(tx_fills, __spec.id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
 
-		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges.clone(), &spec.asset);
+		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges.clone(), &__spec.asset);
 
 		//LOOP: Main acquisition loop, break when executed_notional is sufficient
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut position_protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_protocol_orders(&spec.asset, min_qty_any_ordertype, target_coin_quantity - executed_notional, spec.side, &position_protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&__spec.asset, min_qty_any_ordertype, target_coin_quantity - executed_notional, __spec.side, &position_protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
@@ -90,7 +88,7 @@ impl PositionAcquisition {
 					if executed_notional > target_coin_quantity - min_qty_any_ordertype {
 						break;
 					}
-					let new_target_orders = recalculate_protocol_orders(&spec.asset,min_qty_any_ordertype,  target_coin_quantity - executed_notional, spec.side, &position_protocols_dynamic_info, exchanges.clone());
+					let new_target_orders = recalculate_protocol_orders(&__spec.asset,min_qty_any_ordertype,  target_coin_quantity - executed_notional, __spec.side, &position_protocols_dynamic_info, exchanges.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -100,8 +98,7 @@ impl PositionAcquisition {
 
 		info!("Acquisition completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, target_coin_quantity);
 		Ok(Self {
-			__spec: spec,
-			target_notional: target_coin_quantity,
+			__spec: __spec,
 			acquired_notional: executed_notional,
 			protocols_spec: None,
 		})
@@ -123,34 +120,34 @@ pub struct HubToPosition {
 
 impl PositionFollowup {
 	#[instrument(skip(hub_tx, exchanges_arc))]
-	pub async fn do_followup(acquired: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
+	pub async fn do_followup(__acquisition: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
 		let mut js = JoinSet::new();
-		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &acquired.__spec.asset, !acquired.__spec.side);
+		let (mut rx_orders, mut position_protocols_dynamic_info) = init_protocols(&mut js, &protocols, &__acquisition.__spec.asset, !__acquisition.__spec.side);
 
 		let (tx_fills, mut rx_fills) = mpsc::channel::<ProtocolFills>(256);
-		let position_callback = HubToPosition::new(tx_fills, acquired.__spec.id);
+		let position_callback = HubToPosition::new(tx_fills, __acquisition.__spec.id);
 
 		let mut executed_notional = 0.0;
 		let mut last_fill_key = Uuid::default();
 
-		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges_arc.clone(), &acquired.__spec.asset);
+		let min_qty_any_ordertype = Exchanges::min_qty_any_ordertype(exchanges_arc.clone(), &__acquisition.__spec.asset);
 
 		//LOOP: Main followup loop, break when executed_notional is sufficient
 		loop {
 			select! {
 				Some(protocol_orders) = rx_orders.recv() => {
 					process_protocol_orders_update(protocol_orders, &mut position_protocols_dynamic_info).await?;
-					let new_target_orders = recalculate_protocol_orders(&acquired.__spec.asset, min_qty_any_ordertype, acquired.acquired_notional - executed_notional, acquired.__spec.side, &position_protocols_dynamic_info, exchanges_arc.clone());
+					let new_target_orders = recalculate_protocol_orders(&__acquisition.__spec.asset, min_qty_any_ordertype, __acquisition.acquired_notional - executed_notional, __acquisition.__spec.side, &position_protocols_dynamic_info, exchanges_arc.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(protocol_fills) = rx_fills.recv() => {
 					last_fill_key = protocol_fills.key;
 					process_fills_update(protocol_fills, &mut position_protocols_dynamic_info, &mut executed_notional).await?;
 					debug!(executed_notional);
-					if executed_notional > acquired.acquired_notional - min_qty_any_ordertype {
+					if executed_notional > __acquisition.acquired_notional - min_qty_any_ordertype {
 						break;
 					}
-					let new_target_orders = recalculate_protocol_orders(&acquired.__spec.asset, min_qty_any_ordertype, acquired.acquired_notional - executed_notional, acquired.__spec.side, &position_protocols_dynamic_info, exchanges_arc.clone());
+					let new_target_orders = recalculate_protocol_orders(&__acquisition.__spec.asset, min_qty_any_ordertype, __acquisition.acquired_notional - executed_notional, __acquisition.__spec.side, &position_protocols_dynamic_info, exchanges_arc.clone());
 					send_orders_to_hub(hub_tx.clone(), position_callback.clone(), last_fill_key, new_target_orders).await?;
 				},
 				Some(_) = js.join_next() => { unreachable!("All protocols are endless, this is here only for structured concurrency, as all tasks should be actively awaited.")},
@@ -158,9 +155,9 @@ impl PositionFollowup {
 			}
 		}
 
-		info!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, acquired.target_notional);
+		info!("Followup completed:\nFilled: {:?}\nTarget: {:?}", executed_notional, __acquisition.acquired_notional);
 		Ok(Self {
-			_acquisition: acquired,
+			_acquisition: __acquisition,
 			protocols_spec: protocols,
 			closed_notional: executed_notional,
 		})
