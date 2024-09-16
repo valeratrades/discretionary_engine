@@ -10,6 +10,7 @@ use std::{
 use color_eyre::eyre::{bail, eyre, Report, Result, WrapErr};
 use function_name::named;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use tokio::{runtime::Runtime, time::sleep};
 use tracing::{error, instrument, subscriber::set_global_default, warn, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
@@ -91,11 +92,19 @@ pub fn format_eyre_chain_for_user(e: eyre::Report) -> String {
 fn deser_reqwest_core<T: DeserializeOwned>(text: String) -> Result<T> {
 	match serde_json::from_str::<T>(&text) {
 		Ok(deserialized) => Ok(deserialized),
-		Err(e) => Err(unexpected_response_str(&text)).wrap_err_with(|| e),
+		Err(e) => {
+			let mut error_msg = e.to_string(); 
+			if let Ok(v) = serde_json::from_str::<Value>(&text) { // serde_json's errors are bad, so if the response is valid JSON at all, can convert it to something else and get Context for the error too
+				if let Err(e) = serde_json::from_value::<T>(v) {
+					error_msg = e.to_string();
+				}
+			}
+			Err(unexpected_response_str(&text)).wrap_err_with(|| error_msg)
+		},
 	}
 }
 
-/// Tracks the caller; once the max number of failures is reached, formats with all the callers that contributed, then sends a notfycatin with `v_notify`
+/// Tracks the caller; once the max number of failures is reached, formats with all the callers that contributed, then sends a notification with `v_notify`
 ///
 /// # Returns
 /// `true` if the max number of failures is reached, `false` otherwise
