@@ -108,6 +108,7 @@ impl PositionAcquisition {
 	}
 }
 
+
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,

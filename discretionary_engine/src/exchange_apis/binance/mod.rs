@@ -232,6 +232,7 @@ pub async fn futures_price(asset: &str) -> Result<f64> {
 	Ok(price_response.price)
 }
 
+#[instrument]
 pub async fn close_orders(key: String, secret: String, orders: &[BinanceOrder]) -> Result<()> {
 	let base_url = Market::BinanceFutures.get_base_url();
 	let url = base_url.join("/fapi/v1/order").unwrap();

@@ -131,6 +131,7 @@ impl From<ApproachingLimit> for ProtocolParams {
 }
 //,}}}
 
+#[instrument]
 pub fn interpret_protocol_specs(protocol_specs: Vec<String>) -> Result<Vec<Protocol>> {
 	let protocol_specs: Vec<String> = protocol_specs.into_iter().filter(|s| s != "").collect();
 	if protocol_specs.len() == 0 {
