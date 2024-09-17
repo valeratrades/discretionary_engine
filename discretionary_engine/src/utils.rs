@@ -9,7 +9,7 @@ use std::{
 
 use color_eyre::eyre::{bail, eyre, Report, Result, WrapErr};
 use function_name::named;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserializer};
 use tokio::{runtime::Runtime, time::sleep};
 use tracing::{error, instrument, subscriber::set_global_default, warn, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
@@ -94,10 +94,15 @@ fn deser_reqwest_core<T: DeserializeOwned>(text: String) -> Result<T> {
 		Err(e) => {
 			let mut error_msg = e.to_string();
 			if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text) {
-				let toml_value: toml::Value = toml::Value::try_from(json_value).expect("As far as I know any valid JSON is valid TOML");
-				// serde_json's errors are bad, so if the response is valid JSON at all, can convert it to something else and get Context for the error too
-				if let Err(e) = toml_value.try_into::<T>() {
-					error_msg = e.to_string();
+				let _ = std::panic::catch_unwind(|| {
+					dbg!(&json_value["symbols"][0]);
+				});
+
+
+				let mut jd = serde_json::Deserializer::from_str(&text);
+				let r: Result<T, _> = serde_path_to_error::deserialize(&mut jd);
+				if let Err(e) = r {
+					error_msg = e.path().to_string();
 				}
 			}
 			Err(unexpected_response_str(&text)).wrap_err_with(|| error_msg)

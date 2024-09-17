@@ -436,6 +436,10 @@ pub async fn binance_runtime(
 
 	//LOOP: Main loop of Binance exchange
 	loop {
+		//dbg
+		tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+		let now = chrono::Utc::now();
+		println!("Binance runtime is still going: {}", now.format("%Y-%m-%d %H:%M:%S"));
 		select! {
 			Ok(_) = hub_rx.changed() => {
 				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
@@ -446,11 +450,16 @@ pub async fn binance_runtime(
 }
 
 #[instrument(skip(hub_callback))]
-async fn handle_temp_fills_stack(temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>, hub_callback: &mpsc::Sender<ExchangeToHub>, last_reported_fill_key: &mut Uuid, currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>) {
+async fn handle_temp_fills_stack(
+	temp_fills_stack_rx: &mut mpsc::Receiver<FillFromPolling>,
+	hub_callback: &mpsc::Sender<ExchangeToHub>,
+	last_reported_fill_key: &mut Uuid,
+	currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>,
+) {
 	while let Ok(f) = temp_fills_stack_rx.try_recv() {
 		let new_fill_key = Uuid::now_v7();
 		let r = f.market_response;
-		
+
 		if r.status == OrderStatus::Filled {
 			let filled_id = &f.order.id;
 			let mut deployed_lock = currently_deployed.write().unwrap();
@@ -565,7 +574,7 @@ pub struct FuturesPositionResponse {
 	pub cum_qty: Option<String>, // weird field, included at random (json api things)
 	pub cum_quote: String,       // total filled quote asset
 	#[serde_as(as = "DisplayFromStr")]
-	pub executed_qty: f64,    // total filled base asset
+	pub executed_qty: f64, // total filled base asset
 	pub order_id: i64,
 	pub avg_price: Option<String>,
 	pub orig_qty: String,

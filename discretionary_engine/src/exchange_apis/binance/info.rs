@@ -81,6 +81,7 @@ pub struct RateLimit {
 // 	multiplierDecimal: u32,
 //}
 
+#[serde_as]
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesSymbol {
@@ -90,13 +91,11 @@ pub struct FuturesSymbol {
 	pub delivery_date: i64,
 	pub onboard_date: i64,
 	pub status: String,
-	pub maint_margin_percent: String,
-	pub required_margin_percent: String,
 	pub base_asset: String,
 	pub quote_asset: String,
 	pub margin_asset: String,
 	pub price_precision: u32,
-	pub quantity_precision: usize,
+	pub quantity_precision: u32,
 	pub base_asset_precision: u32,
 	pub quote_precision: u32,
 	pub underlying_type: String,
@@ -106,9 +105,12 @@ pub struct FuturesSymbol {
 	pub filters: Vec<Value>,
 	pub order_type: Option<Vec<String>>,
 	pub time_in_force: Vec<String>,
-	pub liquidation_fee: String,
-	pub market_take_bound: String,
+	#[serde_as(as = "DisplayFromStr")]
+	pub liquidation_fee: f64,
+	#[serde_as(as = "DisplayFromStr")]
+	pub market_take_bound: f64,
 }
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "filterType")]
 pub enum Filter {

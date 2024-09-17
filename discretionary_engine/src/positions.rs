@@ -108,7 +108,6 @@ impl PositionAcquisition {
 	}
 }
 
-
 #[derive(Clone, Debug, Default, derive_new::new)]
 pub struct PositionFollowup {
 	_acquisition: PositionAcquisition,
@@ -263,8 +262,7 @@ fn recalculate_protocol_orders(
 	let mut stop_orders = Vec::new();
 	let mut limit_orders = Vec::new();
 
-	//PERF: (n^3), but it's fine, as n is small.
-	debug!("Please don't get stuck");
+	//PERF: (n^(n/2)), but it's fine, as n is small.
 	for (_protocol_type, protocols_map) in dyn_info.iter() {
 		let mut in_play_protocols_map = protocols_map.clone();
 		let mut accumulated_leftovers = 0.0;

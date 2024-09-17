@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_tungstenite::connect_async;
+use tracing::{debug, instrument};
 use v_utils::{
 	io::Percent,
 	macros::CompactFormat,
@@ -30,6 +31,7 @@ pub struct Sar {
 impl ProtocolTrait for SarWrapper {
 	type Params = Sar;
 
+	#[instrument(skip(position_js, tx_orders))]
 	fn attach(&self, position_js: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		let symbol = Symbol {
 			base: asset,
@@ -50,9 +52,9 @@ impl ProtocolTrait for SarWrapper {
 
 				while let Some(msg) = read.next().await {
 					let data = msg.unwrap().into_data();
+					debug!("SAR received websocket klines update: {:?}", data);
 					match serde_json::from_slice::<Value>(&data) {
-						Ok(json) =>
-							if let Some(open_str) = json.get("o") {
+						Ok(json) => if let Some(open_str) = json.get("o") {
 								let open: f64 = open_str.as_str().unwrap().parse().unwrap();
 								let high: f64 = json["h"].as_str().unwrap().parse().unwrap();
 								let low: f64 = json["l"].as_str().unwrap().parse().unwrap();
@@ -68,9 +70,11 @@ impl ProtocolTrait for SarWrapper {
 
 			js.spawn(async move {
 				// HACK: shouldn't be unwrapping
+				debug!("about to initialise klines");
 				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf.format_binance().unwrap(), 100)
 					.await
 					.unwrap();
+				debug!("initialized klines");
 				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
 				let mut sar = SarIndicator::init(&init_ohlcs, &params_arc.read().unwrap());
 
