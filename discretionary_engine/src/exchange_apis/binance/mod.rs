@@ -681,35 +681,36 @@ struct MarginUserAsset {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FuturesSymbol {
-	symbol: String,
-	pair: String,
+	base_asset: String,
+	base_asset_precision: u8,
 	contract_type: String,
 	delivery_date: i64,
-	onboard_date: i64,
-	status: String,
-	#[serde_as(as = "DisplayFromStr")]
-	maint_margin_percent: f64,
-	#[serde_as(as = "DisplayFromStr")]
-	required_margin_percent: f64,
-	base_asset: String,
-	quote_asset: String,
-	margin_asset: String,
-	price_precision: u8,
-	quantity_precision: u8,
-	base_asset_precision: u8,
-	quote_precision: u8,
-	underlying_type: String,
-	underlying_sub_type: Vec<String>,
-	settle_plan: Option<u32>,
-	#[serde_as(as = "DisplayFromStr")]
-	trigger_protect: f64,
 	filters: Vec<Value>,
-	order_types: Vec<String>,
-	time_in_force: Vec<String>,
 	#[serde_as(as = "DisplayFromStr")]
 	liquidation_fee: f64,
 	#[serde_as(as = "DisplayFromStr")]
+	maint_margin_percent: f64,
+	margin_asset: String,
+	#[serde_as(as = "DisplayFromStr")]
 	market_take_bound: f64,
+	max_move_order_limit: Option<i64>,
+	onboard_date: i64,
+	order_types: Vec<String>,
+	pair: String,
+	price_precision: u8,
+	quantity_precision: u8,
+	quote_asset: String,
+	quote_precision: u8,
+	#[serde_as(as = "DisplayFromStr")]
+	required_margin_percent: f64,
+	settle_plan: Option<u32>,
+	status: String,
+	symbol: String,
+	time_in_force: Vec<String>,
+	#[serde_as(as = "DisplayFromStr")]
+	trigger_protect: f64,
+	underlying_sub_type: Vec<String>,
+	underlying_type: String,
 }
 
 #[derive(Deserialize, Debug)]

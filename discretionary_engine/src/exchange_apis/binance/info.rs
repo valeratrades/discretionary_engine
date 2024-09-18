@@ -100,7 +100,7 @@ pub struct FuturesSymbol {
 	pub quote_precision: u32,
 	pub underlying_type: String,
 	pub underlying_sub_type: Vec<String>,
-	pub settle_plan: u32,
+	pub settle_plan: Option<u32>,
 	pub trigger_protect: String,
 	pub filters: Vec<Value>,
 	pub order_type: Option<Vec<String>>,
@@ -296,3 +296,145 @@ pub struct ResponseKline {
 	pub ignore: String,
 }
 //,}}}
+
+#[cfg(test)]
+mod tests {
+	use serde_json::json;
+
+	use super::*;
+
+	#[serde_as]
+	#[derive(Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "camelCase")]
+	struct MiniSymbol {
+		price_precision: u8,
+		quantity_precision: u8,
+		quote_asset: String,
+		quote_precision: u8,
+		#[serde_as(as = "DisplayFromStr")]
+		required_margin_percent: f64,
+		#[serde(default)]
+		settle_plan: Option<u32>,
+		status: String,
+		symbol: String,
+		time_in_force: Vec<String>,
+		#[serde_as(as = "DisplayFromStr")]
+		trigger_protect: f64,
+		underlying_sub_type: Vec<String>,
+		underlying_type: String,
+	}
+
+	#[test]
+	fn mini_symbol() {
+		let json = json!({
+			"pricePrecision": 2,
+			"quantityPrecision": 3,
+			"quoteAsset": "USDT",
+			"quotePrecision": 8,
+			"requiredMarginPercent": "5.0000",  // Needs to be a string
+			"settlePlan": null,
+			"status": "TRADING",
+			"symbol": "BTCUSDT",
+			"timeInForce": [
+				"GTC",
+				"IOC",
+				"FOK",
+				"GTX",
+				"GTD"
+			],
+			"triggerProtect": "0.0500",  // Needs to be a string
+			"underlyingSubType": [
+				"PoW"
+			],
+			"underlyingType": "COIN"
+		});
+
+		let mini_symbol: MiniSymbol = serde_json::from_value(json).unwrap();
+	}
+
+	#[test]
+	fn futures_symbol() {
+		let json = json!({
+    "baseAsset": "BTC",
+    "baseAssetPrecision": 8,
+    "contractType": "PERPETUAL",
+    "deliveryDate": 4133404800000_i64,
+    "filters": [
+        {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "4529764",
+            "minPrice": "556.80",
+            "tickSize": "0.10"
+        },
+        {
+            "filterType": "LOT_SIZE",
+            "maxQty": "1000",
+            "minQty": "0.001",
+            "stepSize": "0.001"
+        },
+        {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "120",
+            "minQty": "0.001",
+            "stepSize": "0.001"
+        },
+        {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+        },
+        {
+            "filterType": "MAX_NUM_ALGO_ORDERS",
+            "limit": 10
+        },
+        {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "100"
+        },
+        {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9500",
+            "multiplierUp": "1.0500"
+        }
+    ],
+    "liquidationFee": "0.012500",  // Needs to be a string
+    "maintMarginPercent": "2.5000", // Needs to be a string
+    "marginAsset": "USDT",
+    "marketTakeBound": "0.05",      // Needs to be a string
+    "maxMoveOrderLimit": 10000,
+    "onboardDate": 1569398400000_i64,
+    "orderTypes": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+    ],
+    "pair": "BTCUSDT",
+    "pricePrecision": 2,
+    "quantityPrecision": 3,
+    "quoteAsset": "USDT",
+    "quotePrecision": 8,
+    "requiredMarginPercent": "5.0000",  // Needs to be a string
+    "status": "TRADING",
+    "symbol": "BTCUSDT",
+    "timeInForce": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX",
+        "GTD"
+    ],
+    "triggerProtect": "0.0500",  // Needs to be a string
+    "underlyingSubType": [
+        "PoW"
+    ],
+    "underlyingType": "COIN"
+});
+
+let futures_symbol: FuturesSymbol = serde_json::from_value(json).unwrap();
+
+	}
+}

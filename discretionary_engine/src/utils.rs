@@ -94,10 +94,9 @@ fn deser_reqwest_core<T: DeserializeOwned>(text: String) -> Result<T> {
 		Err(e) => {
 			let mut error_msg = e.to_string();
 			if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text) {
-				let _ = std::panic::catch_unwind(|| {
-					dbg!(&json_value["symbols"][0]);
-				});
-
+				//let _ = std::panic::catch_unwind(|| {
+				//	dbg!(&json_value["symbols"][0]);
+				//});
 
 				let mut jd = serde_json::Deserializer::from_str(&text);
 				let r: Result<T, _> = serde_path_to_error::deserialize(&mut jd);
