@@ -29,7 +29,7 @@ codegen-backend = "cranelift" #ga: comment out
 [dependencies]
 chrono = "^0.4.38"
 clap = { version = "^4.5.17", features = ["derive"] }
-color-eyre = "0.6.3"
+color-eyre = "^0.6.3"
 config = "0.14.0"
 console-subscriber = "0.4.0"
 derive-new = "0.7.0"

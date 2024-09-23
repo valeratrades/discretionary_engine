@@ -25,7 +25,6 @@ use tracing_subscriber::{
 
 use crate::{MAX_CONNECTION_FAILURES, MUT_CURRENT_CONNECTION_FAILURES};
 
-//let console_layer = console_subscriber::spawn();
 /// # Panics
 pub fn init_subscriber(log_path: Option<Box<Path>>) {
 	let setup = |make_writer: Box<dyn Fn() -> Box<dyn Write> + Send + Sync>| {
@@ -47,6 +46,10 @@ pub fn init_subscriber(log_path: Option<Box<Path>>) {
 			.with(formatting_layer)
 			.with(error_layer)
 			.init();
+		//tracing_subscriber::registry()
+  //  .with(tracing_subscriber::layer::Layer::and_then(formatting_layer, error_layer).with_filter(env_filter))
+  //  .with(console_layer)
+  //  .init();
 	};
 
 	match log_path {
