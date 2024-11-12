@@ -1,4 +1,3 @@
-#![allow(dead_code, unused_imports)]
 use std::{
 	fs::File,
 	io::Write,
@@ -17,9 +16,9 @@ use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::{
 	fmt::{self, MakeWriter},
-	layer::SubscriberExt,
+	layer::SubscriberExt as _,
 	prelude::*,
-	util::SubscriberInitExt,
+	util::SubscriberInitExt as _,
 	EnvFilter, Registry,
 };
 
