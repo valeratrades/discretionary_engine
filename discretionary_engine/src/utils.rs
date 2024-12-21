@@ -46,9 +46,9 @@ pub fn init_subscriber(log_path: Option<Box<Path>>) {
 			.with(error_layer)
 			.init();
 		//tracing_subscriber::registry()
-  //  .with(tracing_subscriber::layer::Layer::and_then(formatting_layer, error_layer).with_filter(env_filter))
-  //  .with(console_layer)
-  //  .init();
+		//  .with(tracing_subscriber::layer::Layer::and_then(formatting_layer, error_layer).with_filter(env_filter))
+		//  .with(console_layer)
+		//  .init();
 	};
 
 	match log_path {
@@ -150,30 +150,7 @@ pub fn unexpected_response_str(s: &str) -> eyre::Report {
 		Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
 		Err(_) => s.to_owned(),
 	};
-	let report = report_msg(s);
+	let report = v_utils::utils::report_msg(s);
 	report.wrap_err("Unexpected API response")
 }
 //,}}}
-
-/// Constructs `eyre::Report` with capped size
-#[track_caller]
-#[named]
-pub fn report_msg(s: String) -> eyre::Report {
-	let lines: Vec<&str> = s.lines().collect();
-	let total_lines = lines.len();
-
-	let truncated_message = if total_lines > 50 {
-		let first_25 = &lines[..25];
-		let last_25 = &lines[total_lines - 25..];
-		let truncation_message = format!("------------------------- // truncated at {} by `{}`\n", std::panic::Location::caller(), function_name!());
-		let concat_message = format!("{}\n{truncation_message}{}", first_25.join("\n"), last_25.join("\n"));
-
-		tracing::trace!("Had to concat an error message\n:{s}");
-
-		concat_message
-	} else {
-		s
-	};
-
-	eyre::Report::msg(truncated_message)
-}
