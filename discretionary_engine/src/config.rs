@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
-use color_eyre::eyre::{Context, Result};
-use v_utils::{io::ExpandedPath, macros::MyConfigPrimitives};
+extern crate clap;
 
-#[derive(Clone, Debug, MyConfigPrimitives)]
+use color_eyre::eyre::{Context, Result};
+use v_utils::{io::ExpandedPath, macros::{MyConfigPrimitives, Settings, SettingsBadlyNested}};
+
+#[derive(Clone, Debug, MyConfigPrimitives, Settings)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
+	#[settings(flatten)]
 	pub binance: Binance,
 }
-#[derive(Clone, Debug, MyConfigPrimitives)]
+#[derive(Clone, Debug, MyConfigPrimitives, SettingsBadlyNested)]
 pub struct Binance {
 	pub full_key: String,
 	pub full_secret: String,
@@ -17,16 +20,9 @@ pub struct Binance {
 }
 
 impl AppConfig {
-	pub fn new(path: ExpandedPath) -> Result<Self> {
-		let builder = config::Config::builder()
-			.set_default("comparison_offset_h", 24)?
-			.add_source(config::File::with_name(&path.to_string()));
-
-		let settings: config::Config = builder.build()?;
-		let settings: Self = settings.try_deserialize()?;
-
+	pub fn try_build_with_flags(flags: SettingsFlags) -> Result<Self> {
+		let settings = Self::try_build(flags)?;
 		std::fs::create_dir_all(&settings.positions_dir).wrap_err_with(|| format!("Failed to create positions directory at {:?}", settings.positions_dir))?;
-
 		Ok(settings)
 	}
 }

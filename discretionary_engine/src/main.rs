@@ -14,7 +14,7 @@ use std::sync::{atomic::AtomicU32, Arc};
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
-use config::AppConfig;
+use config::{AppConfig, SettingsFlags};
 use exchange_apis::{exchanges::Exchanges, hub, hub::PositionToHub};
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
@@ -32,8 +32,8 @@ pub static MUT_CURRENT_CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
 struct Cli {
 	#[command(subcommand)]
 	command: Commands,
-	#[arg(long, default_value = "~/.config/discretionary_engine.toml")]
-	config: ExpandedPath,
+	#[command(flatten)]
+	settings: SettingsFlags,
 	#[arg(short, long, action = clap::ArgAction::SetTrue)]
 	noconfirm: bool,
 	/// Artifacts directory, where logs and other files are stored.
@@ -71,7 +71,7 @@ struct PositionArgs {
 async fn main() -> Result<()> {
 	color_eyre::install()?;
 	let cli = Cli::parse();
-	let config = match AppConfig::new(cli.config) {
+	let config = match AppConfig::try_build_with_flags(cli.settings) {
 		Ok(cfg) => cfg,
 		Err(e) => {
 			eprintln!("Loading config failed: {}", e);
