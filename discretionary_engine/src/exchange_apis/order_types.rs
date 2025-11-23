@@ -3,7 +3,7 @@ use std::hash::Hash;
 use color_eyre::eyre::{bail, Result};
 use derive_new::new;
 use serde::{Deserialize, Serialize};
-use v_utils::{io::Percent, trades::Side};
+use v_utils::{Percent, trades::Side};
 
 use crate::{exchange_apis::Symbol, PositionOrderId};
 

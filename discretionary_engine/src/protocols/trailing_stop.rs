@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_tungstenite::connect_async;
-use v_utils::{io::Percent, macros::CompactFormat, trades::Side};
+use v_utils::{Percent, macros::CompactFormat, trades::Side};
 
 use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
@@ -91,7 +91,7 @@ impl TrailingStopIndicator {
 		if price < self.bottom || self.bottom == 0.0 {
 			self.bottom = price;
 			if side == Side::Buy {
-				let target_price = price * ((1.0 + percent.abs()).ln() + 1.0);
+				let target_price = price * ((1.0_f64 + percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
 				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Buy, Percent::new(1.0)));
 				return order;
@@ -100,7 +100,7 @@ impl TrailingStopIndicator {
 		if price > self.top || self.top == 0.0 {
 			self.top = price;
 			if side == Side::Sell {
-				let target_price = price * ((1.0 - percent.abs()).ln() + 1.0);
+				let target_price = price * ((1.0_f64 - percent.abs()).ln() + 1.0);
 				let sm = ConceptualStopMarket::new(target_price);
 				let order = Some(ConceptualOrderPercents::new(ConceptualOrderType::StopMarket(sm), symbol.clone(), Side::Sell, Percent::new(1.0)));
 				return order;

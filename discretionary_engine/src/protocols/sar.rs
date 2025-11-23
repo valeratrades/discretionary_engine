@@ -9,7 +9,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 use tokio_tungstenite::connect_async;
 use tracing::{debug, instrument};
 use v_utils::{
-	io::Percent,
+	Percent,
 	macros::CompactFormat,
 	trades::{Ohlc, Side, Timeframe},
 };
@@ -18,6 +18,10 @@ use crate::{
 	exchange_apis::{order_types::*, Market, Symbol},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
+
+const BINANCE_TIMEFRAMES: [&str; 19] = [
+	"1s", "5s", "15s", "30s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M",
+];
 
 #[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
 pub struct Sar {
@@ -72,7 +76,8 @@ impl ProtocolTrait for SarWrapper {
 			js.spawn(async move {
 				// HACK: shouldn't be unwrapping
 				debug!("about to initialise klines");
-				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf.format_binance().unwrap(), 100)
+				let tf_str = tf.try_as_predefined(&BINANCE_TIMEFRAMES).unwrap().to_string();
+				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf_str, 100)
 					.await
 					.unwrap();
 				debug!("initialized klines");

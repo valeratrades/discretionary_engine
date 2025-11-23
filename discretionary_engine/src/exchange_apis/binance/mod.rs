@@ -29,7 +29,7 @@ use tokio::{
 use tracing::{debug, instrument, warn};
 use url::Url;
 use uuid::Uuid;
-use v_utils::{io::Percent, trades::Ohlc};
+use v_utils::{Percent, trades::Ohlc};
 
 use super::{
 	hub::{ExchangeToHub, HubToExchange},
@@ -388,7 +388,7 @@ pub async fn binance_runtime(
 			// Will update to websocket later, so requesting the actual deployed orders is free.
 
 			// shuffle orders so there is no positional bias when polling
-			let mut rng = SmallRng::from_entropy();
+			let mut rng = SmallRng::from_rng(&mut rand::rng());
 			orders.shuffle(&mut rng);
 
 			for (i, order) in orders.iter().enumerate() {

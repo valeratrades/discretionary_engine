@@ -1,25 +1,17 @@
 use std::{
-	fs::File,
 	io::Write,
 	path::Path,
-	sync::{atomic::Ordering, Arc},
-	time::Duration,
+	sync::atomic::Ordering,
 };
 
-use color_eyre::eyre::{bail, eyre, Report, Result, WrapErr};
-use function_name::named;
-use serde::{de::DeserializeOwned, Deserializer};
-use tokio::{runtime::Runtime, time::sleep};
-use tracing::{error, instrument, subscriber::set_global_default, warn, Subscriber};
-use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer, Type};
+use color_eyre::eyre::{Report, Result, WrapErr};
+use serde::de::DeserializeOwned;
+use tracing::{error, warn};
 use tracing_error::ErrorLayer;
-use tracing_log::LogTracer;
 use tracing_subscriber::{
-	fmt::{self, MakeWriter},
 	layer::SubscriberExt as _,
 	prelude::*,
-	util::SubscriberInitExt as _,
-	EnvFilter, Registry,
+	Registry,
 };
 
 use crate::{MAX_CONNECTION_FAILURES, MUT_CURRENT_CONNECTION_FAILURES};

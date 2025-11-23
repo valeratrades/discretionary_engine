@@ -12,7 +12,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 use tracing::instrument;
 use trailing_stop::{TrailingStop, TrailingStopWrapper};
 use uuid::Uuid;
-use v_utils::{io::Percent, trades::Side};
+use v_utils::{Percent, trades::Side};
 
 use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents, ProtocolOrderId};
 
@@ -268,7 +268,7 @@ impl ProtocolOrders {
 						left_controlled_notional -= desired_notional_i;
 						Some(order)
 					} else {
-						per_order_additional_percents_from_skipped += *order.qty_percent_of_controlled / (self.__orders.len() - (i + 1)) as f64;
+						per_order_additional_percents_from_skipped += Percent::new(*order.qty_percent_of_controlled / (self.__orders.len() - (i + 1)) as f64);
 						None
 					}
 				}
@@ -284,7 +284,7 @@ impl ProtocolOrders {
 mod tests {
 	use insta::assert_debug_snapshot;
 	use lazy_static::lazy_static;
-	use v_utils::{io::Percent, trades::Side};
+	use v_utils::{Percent, trades::Side};
 
 	use super::*;
 	use crate::exchange_apis::{

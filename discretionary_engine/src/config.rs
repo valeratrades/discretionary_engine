@@ -3,13 +3,19 @@ use std::path::PathBuf;
 extern crate clap;
 
 use color_eyre::eyre::{Context, Result};
-use v_utils::{io::ExpandedPath, macros::{MyConfigPrimitives, Settings, SettingsBadlyNested}};
+use v_utils::macros::{MyConfigPrimitives, Settings, SettingsBadlyNested};
+
+fn default_comparison_offset_h() -> u32 {
+	24
+}
 
 #[derive(Clone, Debug, MyConfigPrimitives, Settings)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	#[settings(flatten)]
 	pub binance: Binance,
+	#[serde(default = "default_comparison_offset_h")]
+	pub comparison_offset_h: u32,
 }
 #[derive(Clone, Debug, MyConfigPrimitives, SettingsBadlyNested)]
 pub struct Binance {

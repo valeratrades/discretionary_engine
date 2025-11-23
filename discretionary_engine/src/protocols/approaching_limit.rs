@@ -91,7 +91,6 @@ impl ApproachingLimitIndicator {
 
 	fn step(&mut self, price: f64, deadline: DateTime<Utc>, side: Side, symbol: &Symbol) -> Option<ConceptualOrderPercents> {
 		unimplemented!();
-		None
 	}
 }
 //
