@@ -18,7 +18,7 @@ pub struct AppConfig {
 	pub comparison_offset_h: u32,
 }
 
-#[derive(Clone, Debug, v_utils::macros::MyConfigPrimitives, v_utils::macros::SettingsBadlyNested)]
+#[derive(Clone, Debug, MyConfigPrimitives)]
 pub struct Binance {
 	pub full_key: String,
 	pub full_secret: String,
