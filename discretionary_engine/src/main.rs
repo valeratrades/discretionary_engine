@@ -5,6 +5,7 @@
 #![feature(type_changing_struct_update)]
 #![feature(stmt_expr_attributes)]
 
+mod adjust_pos;
 pub mod config;
 pub mod exchange_apis;
 pub mod positions;
@@ -42,8 +43,10 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
-	/// Start the program
-	New(PositionArgs),
+	/// Start the main program
+	Run(PositionArgs),
+	/// Adjust an existing position size smartly
+	AdjustPos(adjust_pos::AdjustPosArgs),
 }
 #[derive(Args, Clone, Debug)]
 struct PositionArgs {
@@ -101,7 +104,7 @@ async fn main() -> Result<()> {
 	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
 
 	match cli.command {
-		Commands::New(position_args) => match command_new(position_args, config_arc.clone(), tx, exchanges_arc).await {
+		Commands::Run(position_args) => match command_new(position_args, config_arc.clone(), tx, exchanges_arc).await {
 			Ok(_) => {}
 			Err(e) => {
 				eprintln!("{}", utils::format_eyre_chain_for_user(e));

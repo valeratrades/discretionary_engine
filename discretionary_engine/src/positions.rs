@@ -265,7 +265,7 @@ fn recalculate_protocol_orders(
 	//PERF: (n^(n/2)), but it's fine, as n is small.
 	for (_protocol_type, protocols_map) in dyn_info.iter() {
 		let mut in_play_protocols_map = protocols_map.clone();
-		let mut accumulated_leftovers = 0.0;
+		let accumulated_leftovers = 0.0;
 
 		for (i, (signature, info)) in in_play_protocols_map.clone().iter().enumerate() {
 			// clone to avoid using unsafe on `remove`
@@ -301,8 +301,7 @@ fn recalculate_protocol_orders(
 							debug!("Discarding leftovers for {:?}", _protocol_type);
 						}
 						_ => {
-							#[allow(unused_assignments)] // clippy being dumb
-							accumulated_leftovers += offset;
+							// Note: we break immediately so no need to update accumulated_leftovers
 							in_play_protocols_map.remove(signature);
 							break;
 						}

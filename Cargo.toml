@@ -1,5 +1,6 @@
 [workspace]
 members = ["discretionary_engine", "discretionary_engine_*"]
+resolver = "3"
 
 default-members = ["discretionary_engine"]
 
