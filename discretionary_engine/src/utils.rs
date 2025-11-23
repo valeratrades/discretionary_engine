@@ -1,18 +1,10 @@
-use std::{
-	io::Write,
-	path::Path,
-	sync::atomic::Ordering,
-};
+use std::{io::Write, path::Path, sync::atomic::Ordering};
 
 use color_eyre::eyre::{Report, Result, WrapErr};
 use serde::de::DeserializeOwned;
 use tracing::{error, warn};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{
-	layer::SubscriberExt as _,
-	prelude::*,
-	Registry,
-};
+use tracing_subscriber::{Registry, layer::SubscriberExt as _, prelude::*};
 
 use crate::{MAX_CONNECTION_FAILURES, MUT_CURRENT_CONNECTION_FAILURES};
 

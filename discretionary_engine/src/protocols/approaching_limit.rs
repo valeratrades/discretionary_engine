@@ -8,12 +8,12 @@ use tokio_tungstenite::connect_async;
 use v_utils::{macros::CompactFormat, trades::Side};
 
 use crate::{
-	exchange_apis::{order_types::*, Market, Symbol},
+	exchange_apis::{Market, Symbol, order_types::*},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
 /// Assumes laplace distribution, maximizes expected realized price difference by gradually moving limit order towards current price.
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
+#[derive(Clone, CompactFormat, Copy, Debug, Default, ProtocolWrapper, derive_new::new)]
 pub struct ApproachingLimit {
 	deadline: DateTime<Utc>,
 }
@@ -79,7 +79,7 @@ impl ProtocolTrait for ApproachingLimitWrapper {
 	}
 }
 
-#[derive(Clone, Debug, Default, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 struct ApproachingLimitIndicator {
 	top: f64,
 	bottom: f64,

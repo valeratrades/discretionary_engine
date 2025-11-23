@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{select, sync::mpsc, task::JoinSet};
-use tracing::{debug, field::Empty, info, instrument, Span};
+use tracing::{Span, debug, field::Empty, info, instrument};
 use uuid::Uuid;
 use v_utils::trades::Side;
 
@@ -115,7 +115,7 @@ pub struct PositionFollowup {
 	closed_notional: f64,
 }
 
-#[derive(Debug, Clone, derive_new::new)]
+#[derive(Clone, Debug, derive_new::new)]
 pub struct HubToPosition {
 	pub sender: mpsc::Sender<ProtocolFills>,
 	pub position_id: Uuid,
@@ -373,7 +373,7 @@ async fn process_protocol_orders_update(protocol_orders_update: ProtocolOrders, 
 	Ok(())
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Serialize, derive_new::new)]
 pub struct PositionOrderId {
 	pub position_id: Uuid,
 	pub protocol_id: String,

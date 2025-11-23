@@ -4,9 +4,9 @@ use color_eyre::eyre::Result;
 use tracing::instrument;
 
 use super::{
+	Market,
 	binance::BinanceExchange,
 	order_types::{ConceptualOrderPercents, ConceptualOrderType, IdRequirements},
-	Market,
 };
 use crate::{config::AppConfig, exchange_apis::binance};
 

@@ -5,7 +5,7 @@ mod trailing_stop;
 use std::{collections::HashSet, str::FromStr};
 
 use approaching_limit::{ApproachingLimit, ApproachingLimitWrapper};
-use color_eyre::eyre::{bail, Result};
+use color_eyre::eyre::{Result, bail};
 use dummy_market::DummyMarketWrapper;
 use sar::{Sar, SarWrapper};
 use tokio::{sync::mpsc, task::JoinSet};
@@ -20,7 +20,7 @@ use crate::exchange_apis::order_types::{ConceptualOrder, ConceptualOrderPercents
 ///
 /// Size is by default equally distributed amongst the protocols of the same `ProtocolType`, to total 101% for each type with at least one representative.
 /// Note that total size is is 101% for both the stop and normal orders (because they are on the different sides of the price).
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, derive_new::new)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, derive_new::new)]
 pub enum ProtocolType {
 	Momentum,
 	TP,
@@ -37,7 +37,7 @@ pub trait ProtocolTrait {
 }
 
 // HACK: Protocol enum. Seems suboptimal {\{{
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Protocol {
 	TrailingStop(TrailingStopWrapper),
 	Sar(SarWrapper),
@@ -108,7 +108,7 @@ impl Protocol {
 	}
 }
 
-#[derive(Debug, Clone, derive_new::new)]
+#[derive(Clone, Debug, derive_new::new)]
 pub enum ProtocolParams {
 	TrailingStop(TrailingStop),
 	Sar(Sar),
@@ -191,7 +191,7 @@ pub struct RecalculatedAllocation {
 	pub leftovers: Option<f64>,
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+#[derive(Clone, Copy, Debug, Default, derive_new::new)]
 pub struct RecalculateOrdersPerOrderInfo {
 	pub filled: f64,
 	pub min_possible_qty: f64,
@@ -200,7 +200,7 @@ pub struct RecalculateOrdersPerOrderInfo {
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
 ///
 /// NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ProtocolOrders {
 	pub protocol_id: String,
 	pub __orders: Vec<Option<ConceptualOrderPercents>>, // pub for testing purposes
@@ -288,8 +288,8 @@ mod tests {
 
 	use super::*;
 	use crate::exchange_apis::{
-		order_types::{ConceptualMarket, ConceptualOrderType},
 		Market, Symbol,
+		order_types::{ConceptualMarket, ConceptualOrderType},
 	};
 
 	mod recalculate_protocol_orders_allocation {

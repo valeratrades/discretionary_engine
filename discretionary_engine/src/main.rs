@@ -10,10 +10,10 @@ pub mod exchange_apis;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::{Arc, atomic::AtomicU32};
 
 use clap::{Args, Parser, Subcommand};
-use color_eyre::eyre::{bail, Context, Result};
+use color_eyre::eyre::{Context, Result, bail};
 use config::{AppConfig, SettingsFlags};
 use exchange_apis::{exchanges::Exchanges, hub, hub::PositionToHub};
 use positions::*;
@@ -45,7 +45,7 @@ enum Commands {
 	/// Start the program
 	New(PositionArgs),
 }
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Clone, Debug)]
 struct PositionArgs {
 	/// Target change in exposure. So positive for buying, negative for selling.
 	#[arg(short, long)]

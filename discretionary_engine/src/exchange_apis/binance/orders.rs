@@ -12,7 +12,7 @@ use crate::{
 	positions::PositionOrderId,
 };
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct BinanceOrder {
 	pub base_info: Order<PositionOrderId>,
 	pub binance_id: Option<i64>,

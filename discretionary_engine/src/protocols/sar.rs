@@ -15,7 +15,7 @@ use v_utils::{
 };
 
 use crate::{
-	exchange_apis::{order_types::*, Market, Symbol},
+	exchange_apis::{Market, Symbol, order_types::*},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
@@ -23,7 +23,7 @@ const BINANCE_TIMEFRAMES: [&str; 19] = [
 	"1s", "5s", "15s", "30s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M",
 ];
 
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
+#[derive(Clone, CompactFormat, Copy, Debug, Default, ProtocolWrapper, derive_new::new)]
 pub struct Sar {
 	start: Percent,
 	increment: Percent,
@@ -77,9 +77,7 @@ impl ProtocolTrait for SarWrapper {
 				// HACK: shouldn't be unwrapping
 				debug!("about to initialise klines");
 				let tf_str = tf.try_as_predefined(&BINANCE_TIMEFRAMES).unwrap().to_string();
-				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf_str, 100)
-					.await
-					.unwrap();
+				let init_klines = crate::exchange_apis::binance::get_historic_klines(symbol.to_string(), tf_str, 100).await.unwrap();
 				debug!("initialized klines");
 				let init_ohlcs = init_klines.into_iter().map(|k| k.into()).collect::<Vec<Ohlc>>();
 				let mut sar = SarIndicator::init(&init_ohlcs, &params_arc.read().unwrap());
@@ -110,7 +108,7 @@ impl ProtocolTrait for SarWrapper {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
+#[derive(Clone, Copy, Debug, Default, derive_new::new)]
 struct SarIndicator {
 	sar: f64,
 	acceleration_factor: f64,

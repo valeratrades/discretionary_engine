@@ -4,12 +4,12 @@ use tokio::{sync::mpsc, task::JoinSet};
 use v_utils::{Percent, macros::CompactFormat, trades::Side};
 
 use crate::{
-	exchange_apis::{order_types::*, Market, Symbol},
+	exchange_apis::{Market, Symbol, order_types::*},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
 /// Literally just sends one market order.
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, ProtocolWrapper)]
+#[derive(Clone, CompactFormat, Debug, Default, ProtocolWrapper, derive_new::new)]
 pub struct DummyMarket {
 	// dummy: String, //? Does CompactFormat correctly work with empty structs?
 }

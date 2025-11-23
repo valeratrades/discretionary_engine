@@ -6,20 +6,19 @@ use tokio::{
 	sync::{mpsc, watch},
 	task::JoinSet,
 };
-use tracing::{debug, field::Empty, instrument, Span};
+use tracing::{Span, debug, field::Empty, instrument};
 use uuid::Uuid;
 
 use super::exchanges::Exchanges;
 use crate::{
+	PositionOrderId,
 	config::AppConfig,
 	exchange_apis::{
-		binance, order_types,
+		Market, binance, order_types,
 		order_types::{ConceptualOrder, ConceptualOrderType, Order, ProtocolOrderId},
-		Market,
 	},
 	positions::HubToPosition,
 	protocols::{ProtocolFill, ProtocolFills},
-	PositionOrderId,
 };
 
 #[derive(Clone, Debug, Default, derive_new::new)]

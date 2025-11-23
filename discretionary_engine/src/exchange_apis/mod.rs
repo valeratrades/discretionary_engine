@@ -5,13 +5,13 @@ pub mod exchanges;
 pub mod hub;
 pub mod order_types;
 
-use color_eyre::eyre::{bail, Result};
+use color_eyre::eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use v_utils::macros::graphemics;
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Copy)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Market {
 	#[default]
 	BinanceFutures,
@@ -53,7 +53,7 @@ impl std::str::FromStr for Market {
 /// ```rust
 /// let symbol = "BTC-USDT-BinanceFutures".parse::<discretionary_engine::exchange_apis::Symbol>().unwrap();
 /// ```
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Symbol {
 	pub base: String,
 	pub quote: String,

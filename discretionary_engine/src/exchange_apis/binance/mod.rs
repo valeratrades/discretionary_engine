@@ -8,18 +8,18 @@ use std::{
 };
 
 use chrono::Utc;
-use color_eyre::eyre::{bail, Result};
+use color_eyre::eyre::{Result, bail};
 use hmac::{Hmac, Mac};
 use info::BinanceExchangeFutures;
 pub use orders::*;
-use rand::{rngs::SmallRng, seq::SliceRandom, SeedableRng};
+use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use reqwest::{
-	header::{HeaderMap, HeaderValue, CONTENT_TYPE},
 	Method,
+	header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{DisplayFromStr, serde_as};
 use sha2::Sha256;
 use tokio::{
 	select,
@@ -36,14 +36,14 @@ use super::{
 	order_types::{ConceptualMarket, ConceptualOrderType, IdRequirements},
 };
 use crate::{
+	MAX_CONNECTION_FAILURES, PositionOrderId,
 	config::AppConfig,
-	exchange_apis::{order_types::Order, Market},
+	exchange_apis::{Market, order_types::Order},
 	utils::{deser_reqwest, report_connection_problem, unexpected_response_str},
-	PositionOrderId, MAX_CONNECTION_FAILURES,
 };
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct BinanceExchange {
 	pub binance_futures_info: BinanceExchangeFutures,
 }
@@ -204,7 +204,7 @@ pub async fn get_balance(key: String, secret: String, market: Market) -> Result<
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, derive_new::new, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, derive_new::new)]
 struct PriceResponse {
 	#[serde_as(as = "DisplayFromStr")]
 	price: f64,
@@ -549,7 +549,7 @@ async fn handle_hub_orders_update(
 // Response structs {{{
 //=============================================================================
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub enum OrderStatus {
 	#[default]
 	#[serde(rename = "NEW")]
@@ -567,7 +567,7 @@ pub enum OrderStatus {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesPositionResponse {
 	pub client_order_id: Option<String>,
@@ -607,7 +607,7 @@ impl FuturesPositionResponse {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct FuturesBalance {
 	accountAlias: String,
 	asset: String,
@@ -620,7 +620,7 @@ struct FuturesBalance {
 	updateTime: Number,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SpotAccountDetails {
 	makerCommission: f64,
 	takerCommission: f64,
@@ -639,20 +639,20 @@ struct SpotAccountDetails {
 	permissions: Vec<String>,
 	uid: u64,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct CommissionRates {
 	maker: String,
 	taker: String,
 	buyer: String,
 	seller: String,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SpotBalance {
 	asset: String,
 	free: String,
 	locked: String,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct MarginAccountDetails {
 	borrowEnabled: bool,
 	marginLevel: String,
@@ -667,7 +667,7 @@ struct MarginAccountDetails {
 	userAssets: Vec<MarginUserAsset>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct MarginUserAsset {
 	asset: String,
 	borrowed: String,
@@ -713,7 +713,7 @@ struct FuturesSymbol {
 	underlying_type: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 struct FuturesAllPositionsResponse {
 	entryPrice: String,
 	breakEvenPrice: String,
@@ -739,7 +739,7 @@ impl FuturesAllPositionsResponse {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CancelOrdersResponse {
 	client_order_id: String,

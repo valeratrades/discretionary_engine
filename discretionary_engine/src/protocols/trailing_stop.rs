@@ -7,11 +7,11 @@ use tokio_tungstenite::connect_async;
 use v_utils::{Percent, macros::CompactFormat, trades::Side};
 
 use crate::{
-	exchange_apis::{order_types::*, Market, Symbol},
+	exchange_apis::{Market, Symbol, order_types::*},
 	protocols::{ProtocolOrders, ProtocolTrait, ProtocolType},
 };
 
-#[derive(Debug, Clone, CompactFormat, derive_new::new, Default, Copy, ProtocolWrapper)]
+#[derive(Clone, CompactFormat, Copy, Debug, Default, ProtocolWrapper, derive_new::new)]
 pub struct TrailingStop {
 	percent: Percent,
 }
@@ -77,7 +77,7 @@ impl ProtocolTrait for TrailingStopWrapper {
 	}
 }
 
-#[derive(Clone, Debug, Default, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 struct TrailingStopIndicator {
 	top: f64,
 	bottom: f64,

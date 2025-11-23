@@ -4,19 +4,19 @@ use color_eyre::eyre::Result;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{DisplayFromStr, serde_as};
 use tracing::instrument;
 use url::Url;
 
 use super::unsigned_request;
 use crate::{
 	config::AppConfig,
-	exchange_apis::{order_types::ConceptualOrderType, Market, Symbol},
+	exchange_apis::{Market, Symbol, order_types::ConceptualOrderType},
 	utils::deser_reqwest,
 };
 
 // FuturesExchangeInfo structs {{{
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceExchangeFutures {
 	pub exchange_filters: Vec<String>,
@@ -55,7 +55,7 @@ impl BinanceExchangeFutures {
 	}
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RateLimit {
 	pub interval: String,
 	pub intervalNum: u32,
@@ -82,7 +82,7 @@ pub struct RateLimit {
 //}
 
 #[serde_as]
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesSymbol {
 	pub symbol: String,
@@ -245,7 +245,7 @@ impl FuturesSymbol {
 	}
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesAllPositionsResponse {
 	pub entry_price: String,
@@ -273,14 +273,14 @@ impl FuturesAllPositionsResponse {
 	}
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FuturesOrder {
 	pub symbol: String,
 	pub price: f64,
 	pub quantity: f64,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ResponseKline {
 	pub open_time: i64,
 	pub open: String,
@@ -355,86 +355,85 @@ mod tests {
 	#[test]
 	fn futures_symbol() {
 		let json = json!({
-    "baseAsset": "BTC",
-    "baseAssetPrecision": 8,
-    "contractType": "PERPETUAL",
-    "deliveryDate": 4133404800000_i64,
-    "filters": [
-        {
-            "filterType": "PRICE_FILTER",
-            "maxPrice": "4529764",
-            "minPrice": "556.80",
-            "tickSize": "0.10"
-        },
-        {
-            "filterType": "LOT_SIZE",
-            "maxQty": "1000",
-            "minQty": "0.001",
-            "stepSize": "0.001"
-        },
-        {
-            "filterType": "MARKET_LOT_SIZE",
-            "maxQty": "120",
-            "minQty": "0.001",
-            "stepSize": "0.001"
-        },
-        {
-            "filterType": "MAX_NUM_ORDERS",
-            "limit": 200
-        },
-        {
-            "filterType": "MAX_NUM_ALGO_ORDERS",
-            "limit": 10
-        },
-        {
-            "filterType": "MIN_NOTIONAL",
-            "notional": "100"
-        },
-        {
-            "filterType": "PERCENT_PRICE",
-            "multiplierDecimal": "4",
-            "multiplierDown": "0.9500",
-            "multiplierUp": "1.0500"
-        }
-    ],
-    "liquidationFee": "0.012500",  // Needs to be a string
-    "maintMarginPercent": "2.5000", // Needs to be a string
-    "marginAsset": "USDT",
-    "marketTakeBound": "0.05",      // Needs to be a string
-    "maxMoveOrderLimit": 10000,
-    "onboardDate": 1569398400000_i64,
-    "orderTypes": [
-        "LIMIT",
-        "MARKET",
-        "STOP",
-        "STOP_MARKET",
-        "TAKE_PROFIT",
-        "TAKE_PROFIT_MARKET",
-        "TRAILING_STOP_MARKET"
-    ],
-    "pair": "BTCUSDT",
-    "pricePrecision": 2,
-    "quantityPrecision": 3,
-    "quoteAsset": "USDT",
-    "quotePrecision": 8,
-    "requiredMarginPercent": "5.0000",  // Needs to be a string
-    "status": "TRADING",
-    "symbol": "BTCUSDT",
-    "timeInForce": [
-        "GTC",
-        "IOC",
-        "FOK",
-        "GTX",
-        "GTD"
-    ],
-    "triggerProtect": "0.0500",  // Needs to be a string
-    "underlyingSubType": [
-        "PoW"
-    ],
-    "underlyingType": "COIN"
-});
+			"baseAsset": "BTC",
+			"baseAssetPrecision": 8,
+			"contractType": "PERPETUAL",
+			"deliveryDate": 4133404800000_i64,
+			"filters": [
+				{
+					"filterType": "PRICE_FILTER",
+					"maxPrice": "4529764",
+					"minPrice": "556.80",
+					"tickSize": "0.10"
+				},
+				{
+					"filterType": "LOT_SIZE",
+					"maxQty": "1000",
+					"minQty": "0.001",
+					"stepSize": "0.001"
+				},
+				{
+					"filterType": "MARKET_LOT_SIZE",
+					"maxQty": "120",
+					"minQty": "0.001",
+					"stepSize": "0.001"
+				},
+				{
+					"filterType": "MAX_NUM_ORDERS",
+					"limit": 200
+				},
+				{
+					"filterType": "MAX_NUM_ALGO_ORDERS",
+					"limit": 10
+				},
+				{
+					"filterType": "MIN_NOTIONAL",
+					"notional": "100"
+				},
+				{
+					"filterType": "PERCENT_PRICE",
+					"multiplierDecimal": "4",
+					"multiplierDown": "0.9500",
+					"multiplierUp": "1.0500"
+				}
+			],
+			"liquidationFee": "0.012500",  // Needs to be a string
+			"maintMarginPercent": "2.5000", // Needs to be a string
+			"marginAsset": "USDT",
+			"marketTakeBound": "0.05",      // Needs to be a string
+			"maxMoveOrderLimit": 10000,
+			"onboardDate": 1569398400000_i64,
+			"orderTypes": [
+				"LIMIT",
+				"MARKET",
+				"STOP",
+				"STOP_MARKET",
+				"TAKE_PROFIT",
+				"TAKE_PROFIT_MARKET",
+				"TRAILING_STOP_MARKET"
+			],
+			"pair": "BTCUSDT",
+			"pricePrecision": 2,
+			"quantityPrecision": 3,
+			"quoteAsset": "USDT",
+			"quotePrecision": 8,
+			"requiredMarginPercent": "5.0000",  // Needs to be a string
+			"status": "TRADING",
+			"symbol": "BTCUSDT",
+			"timeInForce": [
+				"GTC",
+				"IOC",
+				"FOK",
+				"GTX",
+				"GTD"
+			],
+			"triggerProtect": "0.0500",  // Needs to be a string
+			"underlyingSubType": [
+				"PoW"
+			],
+			"underlyingType": "COIN"
+		});
 
-let futures_symbol: FuturesSymbol = serde_json::from_value(json).unwrap();
-
+		let futures_symbol: FuturesSymbol = serde_json::from_value(json).unwrap();
 	}
 }
