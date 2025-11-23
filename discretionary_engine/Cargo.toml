@@ -10,7 +10,6 @@ documentation = "https://docs.rs/discretionary_engine"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/valeratrades/discretionary_engine"
-rust-version = "1.80.0"
 
 [package.metadata.docs.rs]
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
@@ -46,7 +45,7 @@ tracing-log = "0.2.0"
 tracing-subscriber = { version = "^0.3.20", features = ["fmt", "json", "registry", "env-filter"] }
 url = "^2.5.7"
 uuid = { version = "^1.18.1", features = ["serde", "v4", "v7", "v8"] }
-v_utils = { version = "2.9.5", features = ["full"] }
+v_utils = { version = "2.9.8", features = ["full"] }
 
 [dev-dependencies]
 lazy_static = "1.5.0"
