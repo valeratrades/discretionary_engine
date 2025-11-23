@@ -3,18 +3,26 @@
 **/target/
 **/debug/
 **/bin/
-**/logs/
 **/*.test
 **/*.out
+**/*.db
 
 ## Personal
 **/_*
 .local.sh
+[push]
+**/TODO.md
 commit-message.txt
 commit_message.txt
 commit-message
 commit_message
 commit
+functions.sh
+
+## Nix
+result
+.direnv/
+.devenv/
 
 ## Vim
 *.sw[po]
@@ -31,7 +39,8 @@ commit
 ## Virtual Environments
 .env/
 .venv/
-.env
+env/
+venv/
 
 ## VS Code
 .vscode/*
@@ -46,9 +55,10 @@ commit
 *.exe~
 *.dll
 
-
+## Web
+**/*.sass-cache/
 ## Rust
-**/Cargo.lock
-.cargo/config.toml
-.cargo/config
 **/**.pending-snap
+### could be used for initial debugging of apps using `config` crate
+/config.toml
+**/rustc-ice*
