@@ -3,22 +3,22 @@ use std::path::PathBuf;
 extern crate clap;
 
 use color_eyre::eyre::{Context, Result};
-use v_utils::macros::{MyConfigPrimitives, Settings};
+use v_utils::macros as v_macros;
 
 fn default_comparison_offset_h() -> u32 {
 	24
 }
 
-#[derive(Clone, Debug, MyConfigPrimitives, Settings)]
+#[derive(Clone, Debug, v_macros::MyConfigPrimitives, v_macros::Settings)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
-	#[serde(flatten)]
+	#[settings(flatten)]
 	pub binance: Binance,
 	#[serde(default = "default_comparison_offset_h")]
 	pub comparison_offset_h: u32,
 }
 
-#[derive(Clone, Debug, MyConfigPrimitives)]
+#[derive(Clone, Debug, v_macros::MyConfigPrimitives, v_macros::SettingsBadlyNested)]
 pub struct Binance {
 	pub full_key: String,
 	pub full_secret: String,
