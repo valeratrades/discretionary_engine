@@ -46,7 +46,7 @@ tracing-subscriber = { version = "^0.3.20", features = ["fmt", "json", "registry
 url = "^2.5.7"
 uuid = { version = "^1.18.1", features = ["serde", "v4", "v7", "v8"] }
 v_exchanges = { path = "../../v_exchanges/v_exchanges", features = ["full" ] }
-v_utils = { version = "2.9.8", features = ["full"] }
+v_utils = { version = "2.9.9", features = ["full"] }
 
 [dev-dependencies]
 lazy_static = "1.5.0"

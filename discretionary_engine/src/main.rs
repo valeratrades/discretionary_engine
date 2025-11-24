@@ -111,6 +111,13 @@ async fn main() -> Result<()> {
 				std::process::exit(1);
 			}
 		},
+		Commands::AdjustPos(adjust_pos_args) => match adjust_pos::main(adjust_pos_args) {
+			Ok(_) => {}
+			Err(e) => {
+				eprintln!("{}", utils::format_eyre_chain_for_user(e));
+				std::process::exit(1);
+			}
+		},
 	}
 
 	Ok(())

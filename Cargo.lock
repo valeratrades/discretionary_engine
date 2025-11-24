@@ -689,7 +689,7 @@ dependencies = [
  "url",
  "uuid",
  "v_exchanges",
- "v_utils 2.9.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "v_utils 2.9.9",
 ]
 
 [[package]]
@@ -3154,7 +3154,7 @@ dependencies = [
 
 [[package]]
 name = "v_exchanges"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -3172,12 +3172,12 @@ dependencies = [
  "tokio",
  "tracing",
  "v_exchanges_adapters",
- "v_utils 2.9.8",
+ "v_utils 2.9.10",
 ]
 
 [[package]]
 name = "v_exchanges_adapters"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "base64 0.22.1",
  "derive-new",
@@ -3196,12 +3196,12 @@ dependencies = [
  "tracing",
  "url",
  "v_exchanges_api_generics",
- "v_utils 2.9.8",
+ "v_utils 2.9.10",
 ]
 
 [[package]]
 name = "v_exchanges_api_generics"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "bytes",
  "derive-new",
@@ -3218,40 +3218,14 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "url",
- "v_utils 2.9.8",
+ "v_utils 2.9.10",
 ]
 
 [[package]]
 name = "v_utils"
-version = "2.9.8"
-dependencies = [
- "const_format",
- "derive-new",
- "derive_more",
- "dirs",
- "eyre",
- "function_name",
- "futures",
- "jiff",
- "macro-attr",
- "serde",
- "serde_json",
- "strum",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-error",
- "tracing-log 0.2.0",
- "tracing-subscriber",
- "v_utils_macros 2.5.8",
- "xdg",
-]
-
-[[package]]
-name = "v_utils"
-version = "2.9.8"
+version = "2.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c61f0d847e07370c1792a1ca56ac75396ad8459bf66f5498481632f1af92136"
+checksum = "4c86a18d5a3fa87fd68a790c0e449e24ab13416372ed4e5322804dc29a336040"
 dependencies = [
  "config",
  "console-subscriber",
@@ -3275,13 +3249,41 @@ dependencies = [
  "tracing-error",
  "tracing-log 0.2.0",
  "tracing-subscriber",
- "v_utils_macros 2.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "v_utils_macros 2.5.9",
+ "xdg",
+]
+
+[[package]]
+name = "v_utils"
+version = "2.9.10"
+dependencies = [
+ "const_format",
+ "derive-new",
+ "derive_more",
+ "dirs",
+ "eyre",
+ "function_name",
+ "futures",
+ "jiff",
+ "macro-attr",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-error",
+ "tracing-log 0.2.0",
+ "tracing-subscriber",
+ "v_utils_macros 2.5.10",
  "xdg",
 ]
 
 [[package]]
 name = "v_utils_macros"
-version = "2.5.8"
+version = "2.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9216ebd8955adcf024a389576c0e2c0b9de78d5a5835d82c1eb185d5ad26f2e8"
 dependencies = [
  "eyre",
  "heck",
@@ -3293,9 +3295,7 @@ dependencies = [
 
 [[package]]
 name = "v_utils_macros"
-version = "2.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "602915ec6de3932b69b37d4dcbe8517d9b2bf1400d45eafbfc218a1f3d641430"
+version = "2.5.10"
 dependencies = [
  "eyre",
  "heck",
