@@ -26,12 +26,14 @@ impl Exchanges {
 
 	#[instrument(skip(_s, config))]
 	pub async fn compile_total_balance(_s: Arc<Self>, config: Arc<AppConfig>) -> Result<f64> {
-		let read_key = config.binance.read_key.clone();
-		let read_secret = config.binance.read_secret.clone();
+		use secrecy::ExposeSecret;
+		use v_exchanges::ExchangeName;
+
+		let binance_config = config.get_exchange(ExchangeName::Binance)?;
 
 		let handlers = vec![
-			binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceFutures),
-			binance::get_balance(read_key.clone(), read_secret.clone(), Market::BinanceSpot),
+			binance::get_balance(binance_config.api_pubkey.clone(), binance_config.api_secret.expose_secret().to_string(), Market::BinanceFutures),
+			binance::get_balance(binance_config.api_pubkey.clone(), binance_config.api_secret.expose_secret().to_string(), Market::BinanceSpot),
 		];
 
 		let mut total_balance = 0.0;

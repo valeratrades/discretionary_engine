@@ -364,12 +364,17 @@ pub async fn binance_runtime(
 	let mut last_reported_fill_key = Uuid::default();
 	let currently_deployed: Arc<RwLock<Vec<BinanceOrder>>> = Arc::new(RwLock::new(Vec::new()));
 
-	let full_key = config_arc.binance.full_key.clone();
-	let full_secret = config_arc.binance.full_secret.clone();
+	use secrecy::ExposeSecret;
+	use v_exchanges::ExchangeName;
+
+	let binance_config = config_arc.get_exchange(ExchangeName::Binance).expect("Binance exchange config not found");
+
+	let pubkey = binance_config.api_pubkey.clone();
+	let secret = binance_config.api_secret.expose_secret().to_string();
 
 	let (temp_fills_stack_tx, mut temp_fills_stack_rx) = tokio::sync::mpsc::channel(100);
 	let currently_deployed_clone = currently_deployed.clone();
-	let (full_key_clone, full_secret_clone) = (full_key.clone(), full_secret.clone());
+	let (pubkey_clone, secret_clone) = (pubkey.clone(), secret.clone());
 
 	// Polling orders for fills
 	parent_js.spawn(async move {
@@ -393,7 +398,7 @@ pub async fn binance_runtime(
 
 			for (i, order) in orders.iter().enumerate() {
 				// // temp thing until I transfer to websocket
-				let r: FuturesPositionResponse = match poll_futures_order(&full_key_clone, &full_secret_clone, order).await {
+				let r: FuturesPositionResponse = match poll_futures_order(&pubkey_clone, &secret_clone, order).await {
 					Ok(r) => r,
 					Err(e) => {
 						warn!("Error polling order: {:?}, breaking to the outer order-pull task loop", e);
@@ -442,7 +447,7 @@ pub async fn binance_runtime(
 		println!("Binance runtime is still going: {}", now.format("%Y-%m-%d %H:%M:%S"));
 		select! {
 			Ok(_) = hub_rx.changed() => {
-				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &full_key, &full_secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
+				handle_hub_orders_update(&hub_rx, &mut last_reported_fill_key, &pubkey, &secret, currently_deployed.clone(), binance_exchange_arc.clone()).await;
 			},
 			_ = handle_temp_fills_stack(&mut temp_fills_stack_rx, &hub_callback, &mut last_reported_fill_key, currently_deployed.clone()) => {},
 		}
@@ -473,12 +478,12 @@ async fn handle_temp_fills_stack(
 	}
 }
 
-#[instrument(skip(full_key, full_secret, binance_exchange_arc))]
+#[instrument(skip(pubkey, secret, binance_exchange_arc))]
 async fn handle_hub_orders_update(
 	hub_rx: &watch::Receiver<HubToExchange>,
 	last_reported_fill_key: &mut Uuid,
-	full_key: &str,
-	full_secret: &str,
+	pubkey: &str,
+	secret: &str,
 	currently_deployed: Arc<RwLock<Vec<BinanceOrder>>>,
 	binance_exchange_arc: Arc<RwLock<BinanceExchange>>,
 ) {
@@ -503,7 +508,7 @@ async fn handle_hub_orders_update(
 		{
 			currently_deployed_clone = currently_deployed.read().unwrap().clone();
 		}
-		match close_orders(full_key.to_string(), full_secret.to_string(), &currently_deployed_clone).await {
+		match close_orders(pubkey.to_string(), secret.to_string(), &currently_deployed_clone).await {
 			Ok(_) => break,
 			Err(e) => {
 				let inner_unexpected_response_str = e.chain().last().unwrap();
@@ -528,7 +533,7 @@ async fn handle_hub_orders_update(
 
 	let mut just_deployed = Vec::new();
 	for o in target_orders {
-		let b = match post_futures_order(full_key.to_string(), full_secret.to_string(), &o, binance_exchange_arc.clone()).await {
+		let b = match post_futures_order(pubkey.to_string(), secret.to_string(), &o, binance_exchange_arc.clone()).await {
 			Ok(order) => order,
 			Err(e) => {
 				tracing::error!("Error posting order: {:?}", e);

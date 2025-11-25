@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
 				std::process::exit(1);
 			}
 		},
-		Commands::AdjustPos(adjust_pos_args) => match adjust_pos::main(adjust_pos_args) {
+		Commands::AdjustPos(adjust_pos_args) => match adjust_pos::main(adjust_pos_args, config_arc.clone()).await {
 			Ok(_) => {}
 			Err(e) => {
 				eprintln!("{}", utils::format_eyre_chain_for_user(e));
