@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tracing::info;
 use v_exchanges::Ticker;
-use v_utils::trades::Timeframe;
+use v_utils::{log, trades::Timeframe};
 
 use crate::config::AppConfig;
 
@@ -16,10 +16,9 @@ type HmacSha256 = Hmac<Sha256>;
 
 #[derive(clap::Args, Debug)]
 #[command(group(
-    clap::ArgGroup::new("size")
+    clap::ArgGroup::new("size_group")
         .required(true)
-        .multiple(true)
-        .args(["size_quote", "size_usd"]),
+        .args(["quote", "notional", "size"]),
 ))]
 pub(crate) struct AdjustPosArgs {
 	/// Ticker to adjust position for.
@@ -27,16 +26,24 @@ pub(crate) struct AdjustPosArgs {
 
 	/// Size in quote currency.
 	#[arg(short = 'q', long)]
-	size_quote: Option<f64>,
+	quote: Option<f64>,
 
-	/// Size in USD
+	/// Size in notional (USD)
+	#[arg(short = 'n', long)]
+	notional: Option<f64>,
+
+	/// Size with suffix inference: "$" for USD, asset name (e.g., "BTC") for that asset, or plain number for quote
 	#[arg(short = 's', long)]
-	size_usd: Option<f64>,
+	size: Option<String>,
 
 	/// timeframe, in the format of "1m", "1h", "3M", etc.
 	/// determines the target period for which we expect the edge to persist.
 	#[arg(short, long)]
 	tf: Option<Timeframe>,
+
+	/// Reduce-only mode: only reduce existing position, don't increase it
+	#[arg(long)]
+	reduce: bool,
 
 	/// Use testnet instead of mainnet
 	#[arg(long)]
@@ -55,6 +62,8 @@ struct BybitOrderRequest {
 	time_in_force: String,
 	#[serde(rename = "orderLinkId")]
 	order_link_id: String,
+	#[serde(rename = "reduceOnly")]
+	reduce_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,9 +88,9 @@ fn convert_symbol_to_bybit(symbol: &str) -> String {
 	without_suffix.replace('-', "").to_uppercase()
 }
 
-/// Round quantity to the appropriate step size, rounding up to ensure minimum notional
-fn round_to_step_ceil(value: f64, step: f64) -> f64 {
-	(value / step).ceil() * step
+/// Round quantity to the appropriate step size
+fn round_to_step(value: f64, step: f64) -> f64 {
+	(value / step).round() * step
 }
 
 /// Sign Bybit API request
@@ -95,18 +104,36 @@ fn sign_request(api_secret: &str, timestamp: &str, api_key: &str, recv_window: &
 pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>) -> Result<()> {
 	info!("Starting adjust-pos for ticker: {:?}", args.ticker);
 
-	// Determine the target size in USD
-	let target_usd = if let Some(usd) = args.size_usd {
-		usd
-	} else if let Some(quote) = args.size_quote {
-		// For now, assume quote == USD (works for USDT pairs)
-		// TODO: Handle conversion if quote currency != USD
-		quote
+	// Determine whether we have a quote amount (quantity) or notional amount (USD)
+	enum SizeType {
+		Quote(f64),    // Actual quantity of asset
+		Notional(f64), // USD value
+	}
+
+	let size_type = if let Some(notional) = args.notional {
+		SizeType::Notional(notional)
+	} else if let Some(quote) = args.quote {
+		SizeType::Quote(quote)
+	} else if let Some(size_str) = args.size {
+		// Parse size with suffix inference
+		if size_str.ends_with('$') {
+			// Strip $ and parse as USD
+			let usd = size_str.trim_end_matches('$').parse::<f64>().context("Failed to parse USD amount from --size")?;
+			SizeType::Notional(usd)
+		} else if let Some(pos) = size_str.chars().position(|c| c.is_alphabetic()) {
+			// Has a suffix like "BTC", "ETH", etc.
+			let (number_part, asset_part) = size_str.split_at(pos);
+			let amount = number_part.parse::<f64>().context("Failed to parse amount from --size")?;
+			// TODO: Handle conversion from other assets to USD
+			bail!("Asset conversion not yet implemented. Got {} {}, need to convert to USD", amount, asset_part);
+		} else {
+			// Plain number - treat as quote currency (actual quantity)
+			let qty = size_str.parse::<f64>().context("Failed to parse --size as number")?;
+			SizeType::Quote(qty)
+		}
 	} else {
 		bail!("No size specified");
 	};
-
-	info!("Target size: ${} USD", target_usd);
 
 	// Get exchange config based on ticker's exchange
 	let exchange_config = config.get_exchange(args.ticker.exchange_name)?;
@@ -168,28 +195,23 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>) -> Result<
 		.ok_or_else(|| color_eyre::eyre::eyre!("Failed to get maxOrderQty"))?
 		.parse()?;
 
-	// Get minimum notional value
-	let min_notional: f64 = instruments_response["result"]["list"][0]["lotSizeFilter"]["minNotionalValue"]
-		.as_str()
-		.ok_or_else(|| color_eyre::eyre::eyre!("Failed to get minNotionalValue"))?
-		.parse()?;
+	info!("Instrument info - qtyStep: {}, minOrderQty: {}, maxOrderQty: {}", qty_step, min_order_qty, max_order_qty);
 
-	info!(
-		"Instrument info - qtyStep: {}, minOrderQty: {}, maxOrderQty: {}, minNotional: ${}",
-		qty_step, min_order_qty, max_order_qty, min_notional
-	);
+	// Calculate quantity based on size type, extracting sign for order side
+	let (raw_quantity, side) = match size_type {
+		SizeType::Quote(qty) => (qty, if qty >= 0.0 { "Buy" } else { "Sell" }),
+		SizeType::Notional(usd) => {
+			let qty = usd / current_price;
+			(qty, if usd >= 0.0 { "Buy" } else { "Sell" })
+		}
+	};
 
-	// Calculate quantity and round UP to step size to ensure we meet minimum notional
-	let raw_quantity = target_usd / current_price;
-	let quantity = round_to_step_ceil(raw_quantity, qty_step).max(min_order_qty);
+	// Work with absolute value for rounding
+	let abs_raw_qty = raw_quantity.abs();
+	let quantity = round_to_step(abs_raw_qty, qty_step);
 
-	// Verify we meet minimum notional value
 	let actual_notional = quantity * current_price;
-	if actual_notional < min_notional {
-		bail!("Order value ${:.2} is below minimum notional ${:.2}. Need to increase size.", actual_notional, min_notional);
-	}
-
-	info!("Calculated quantity: {:.6} -> rounded to {:.6} (notional: ${:.2})", raw_quantity, quantity, actual_notional);
+	log!("{} order: {:.6} -> rounded to {:.6} (notional: ${:.2})", side, abs_raw_qty, quantity, actual_notional);
 
 	// Format quantity properly based on step size
 	let qty_str = if qty_step >= 1.0 {
@@ -206,11 +228,12 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>) -> Result<
 	let order_request = BybitOrderRequest {
 		category: "linear".to_string(),
 		symbol: symbol.clone(),
-		side: "Buy".to_string(),
+		side: side.to_string(),
 		order_type: "Market".to_string(),
 		qty: qty_str.clone(),
 		time_in_force: "IOC".to_string(),
 		order_link_id: format!("adjust-{}", uuid::Uuid::new_v4()),
+		reduce_only: args.reduce,
 	};
 
 	let params_json = serde_json::to_string(&order_request)?;
