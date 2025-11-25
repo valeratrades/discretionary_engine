@@ -6,8 +6,10 @@
 #![feature(stmt_expr_attributes)]
 
 mod adjust_pos;
+mod bybit_common;
 pub mod config;
 pub mod exchange_apis;
+mod nuke;
 pub mod positions;
 pub mod protocols;
 pub mod utils;
@@ -23,6 +25,7 @@ use tracing::{info, instrument};
 use v_utils::{
 	io::ExpandedPath,
 	trades::{Side, Timeframe},
+	utils::exit_on_error,
 };
 
 pub static MAX_CONNECTION_FAILURES: u32 = 10;
@@ -40,6 +43,9 @@ struct Cli {
 	/// Artifacts directory, where logs and other files are stored.
 	#[arg(long, default_value = "~/.discretionary_engine")]
 	artifacts: ExpandedPath,
+	/// Use testnet instead of mainnet
+	#[arg(long, global = true)]
+	testnet: bool,
 }
 #[derive(Subcommand)]
 enum Commands {
@@ -47,6 +53,8 @@ enum Commands {
 	Run(PositionArgs),
 	/// Adjust an existing position size smartly
 	AdjustPos(adjust_pos::AdjustPosArgs),
+	/// Close position completely
+	Nuke(nuke::NukeArgs),
 }
 #[derive(Args, Clone, Debug)]
 struct PositionArgs {
@@ -103,22 +111,11 @@ async fn main() -> Result<()> {
 	);
 	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
 
-	match cli.command {
-		Commands::Run(position_args) => match command_new(position_args, config_arc.clone(), tx, exchanges_arc).await {
-			Ok(_) => {}
-			Err(e) => {
-				eprintln!("{}", utils::format_eyre_chain_for_user(e));
-				std::process::exit(1);
-			}
-		},
-		Commands::AdjustPos(adjust_pos_args) => match adjust_pos::main(adjust_pos_args, config_arc.clone()).await {
-			Ok(_) => {}
-			Err(e) => {
-				eprintln!("{}", utils::format_eyre_chain_for_user(e));
-				std::process::exit(1);
-			}
-		},
-	}
+	exit_on_error(match cli.command {
+		Commands::Run(args) => command_new(args, config_arc.clone(), tx, exchanges_arc).await,
+		Commands::AdjustPos(adjust_pos_args) => adjust_pos::main(adjust_pos_args, config_arc.clone(), cli.testnet).await,
+		Commands::Nuke(nuke_args) => nuke::main(nuke_args, config_arc.clone(), cli.testnet).await,
+	});
 
 	Ok(())
 }
