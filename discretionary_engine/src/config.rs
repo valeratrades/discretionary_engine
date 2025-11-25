@@ -4,7 +4,7 @@ extern crate clap;
 
 use color_eyre::eyre::{Context, Result};
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use v_exchanges::ExchangeName;
 use v_utils::macros as v_macros;
 

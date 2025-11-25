@@ -512,19 +512,18 @@ async fn handle_hub_orders_update(
 			Ok(_) => break,
 			Err(e) => {
 				let inner_unexpected_response_str = e.chain().last().unwrap();
-				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string()) {
-					if let Some(error_code) = error_value.get("code") {
-						if error_code == -2011 {
-							let mut break_after = false;
-							if report_connection_problem(e.wrap_err("Tried to close an order not existing on the remote: {:?}.\nWill wait 5s, try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.")).await {
+				if let Ok(error_value) = serde_json::from_str::<serde_json::Value>(&inner_unexpected_response_str.to_string())
+					&& let Some(error_code) = error_value.get("code")
+					&& error_code == -2011
+				{
+					let mut break_after = false;
+					if report_connection_problem(e.wrap_err("Tried to close an order not existing on the remote: {:?}.\nWill wait 5s, try to lock_read the new value and try again. NB: Could loop forever if local knowledge is wrong and not just out of sync.")).await {
 								break_after = true;
 							}
-							tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-							if break_after {
-								break;
-							};
-						}
-					}
+					tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+					if break_after {
+						break;
+					};
 				}
 			}
 		}

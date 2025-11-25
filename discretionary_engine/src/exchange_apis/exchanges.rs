@@ -78,13 +78,11 @@ impl Exchanges {
 	/// We find max of the min_qty values for all order_types here, while for limits and stop markets we take the maximum distance from the price exchange allows for.
 	#[instrument(skip(_s))]
 	pub fn min_qty_any_ordertype(_s: Arc<Self>, base_asset: &str) -> f64 {
-		let binance_min_qty_any_ordertype = {
-			let binance_lock = _s.binance.read().unwrap();
-			binance_lock.min_qty_any_ordertype(base_asset)
-		};
-
 		//- same for other exchanges
 
-		binance_min_qty_any_ordertype
+		{
+			let binance_lock = _s.binance.read().unwrap();
+			binance_lock.min_qty_any_ordertype(base_asset)
+		}
 	}
 }
