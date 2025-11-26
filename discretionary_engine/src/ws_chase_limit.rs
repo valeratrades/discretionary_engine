@@ -106,7 +106,7 @@ pub async fn execute_ws_chase_limit(
 
 	// Connect both clients
 	log!("Connecting to WebSocket...");
-	trade_client.connect().await.context("Failed to connect trade WebSocket")?;
+	trade_client.connect().await.context("Failed to connect trade WebSocket - check API credentials")?;
 	log!("Trade WebSocket connected successfully");
 
 	market_client.connect().await.context("Failed to connect market data WebSocket")?;
@@ -114,16 +114,27 @@ pub async fn execute_ws_chase_limit(
 
 	// Subscribe to order events
 	log!("Subscribing to order events...");
-	trade_client.subscribe_orders().await.context("Failed to subscribe to orders")?;
-	log!("Successfully subscribed to order events");
+	match trade_client.subscribe_orders().await {
+		Ok(()) => log!("Successfully subscribed to order events"),
+		Err(e) => {
+			log!("Failed to subscribe to orders: {:?}", e);
+			bail!("Failed to subscribe to order events - this usually means invalid API credentials: {}", e);
+		}
+	}
 
 	// Subscribe to ticker for bid/ask updates
 	log!("Subscribing to ticker for {}...", instrument_id);
-	market_client.subscribe_ticker(instrument_id).await.context("Failed to subscribe to ticker")?;
-	log!("Successfully subscribed to ticker");
+	match market_client.subscribe_ticker(instrument_id).await {
+		Ok(()) => log!("Successfully subscribed to ticker"),
+		Err(e) => {
+			log!("Failed to subscribe to ticker: {:?}", e);
+			bail!("Failed to subscribe to ticker: {}", e);
+		}
+	}
 
 	// Give subscriptions a moment to establish
-	sleep(Duration::from_millis(500)).await;
+	log!("Waiting for subscriptions to establish...");
+	sleep(Duration::from_millis(1000)).await;
 
 	// Get message streams
 	log!("Creating message streams...");
@@ -185,8 +196,13 @@ pub async fn execute_ws_chase_limit(
 	};
 
 	log!("Placing initial order: {} {} @ {}", side, target_qty, initial_limit_price);
-	trade_client.place_order(initial_order).await.context("Failed to place initial order")?;
-	log!("Initial order placed successfully");
+	match trade_client.place_order(initial_order).await {
+		Ok(()) => log!("Initial order request sent successfully"),
+		Err(e) => {
+			log!("Failed to place initial order: {:?}", e);
+			bail!("Failed to place initial order: {}", e);
+		}
+	}
 
 	let mut current_order_price = Some(initial_limit_price);
 	let mut order_placed = true;
@@ -269,7 +285,7 @@ pub async fn execute_ws_chase_limit(
 		tokio::select! {
 			// Market data updates (ticker)
 			Some(market_msg) = market_stream.next() => {
-				log!("[{}] Received market message: {:?}", iteration, std::mem::discriminant(&market_msg));
+				log!("[{}] Received market message type: {:?}", iteration, std::mem::discriminant(&market_msg));
 				match market_msg {
 					NautilusWsMessage::Data(data_vec) => {
 						log!("[{}] Received {} data items", iteration, data_vec.len());
@@ -440,7 +456,9 @@ pub async fn execute_ws_chase_limit(
 
 			// Timeout to prevent blocking forever
 			_ = sleep(update_interval) => {
-				// Just continue loop
+				if iteration % 10 == 0 {
+					log!("[{}] Timeout - no messages received in {}ms", iteration, update_interval.as_millis());
+				}
 			}
 		}
 
