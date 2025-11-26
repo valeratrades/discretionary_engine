@@ -2,9 +2,14 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{Context, Result, bail};
 use nautilus_bybit::{
-	common::enums::BybitProductType,
+	common::{
+		credential::Credential,
+		enums::{BybitEnvironment, BybitProductType},
+	},
 	http::query::{BybitInstrumentsInfoParamsBuilder, BybitTickersParamsBuilder},
 };
+use nautilus_model::identifiers::InstrumentId;
+use secrecy::ExposeSecret;
 use tracing::info;
 use v_exchanges::Ticker;
 use v_utils::{log, trades::Timeframe};
@@ -104,7 +109,8 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 	};
 
 	// Create Bybit HTTP clients
-	let (raw_client, client) = create_bybit_clients(&config, args.ticker.exchange_name, testnet)?;
+	let exchange_name = args.ticker.exchange_name;
+	let (raw_client, client) = create_bybit_clients(&config, exchange_name.clone(), testnet)?;
 
 	// Get current ticker price first
 	let symbol_raw = args.ticker.symbol.to_string();
@@ -180,11 +186,22 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 
 	// Check if we should use chase-limit execution
 	if args.duration.is_some() {
-		log!("Using chase-limit execution with duration: {:?}", args.duration);
+		log!("Using WebSocket chase-limit execution with duration: {:?}", args.duration);
 
-		let filled_qty = crate::chase_limit::execute_chase_limit(&raw_client, &client, &symbol, side, quantity, qty_step, tick_size, args.duration)
+		// Create credential for WebSocket (clone exchange_name since it was moved)
+		let exchange_config = config.get_exchange(exchange_name)?;
+		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
+
+		// Determine environment
+		let environment = if testnet { BybitEnvironment::Testnet } else { BybitEnvironment::Mainnet };
+
+		// Create InstrumentId for ticker subscription
+		// Format: "SYMBOL.VENUE" e.g., "BTCUSDT.BYBIT"
+		let instrument_id = InstrumentId::from(format!("{}.BYBIT", symbol).as_str());
+
+		let filled_qty = crate::ws_chase_limit::execute_ws_chase_limit(&raw_client, credential, environment, &symbol, instrument_id, side, quantity, qty_step, tick_size, args.duration)
 			.await
-			.context("Chase-limit execution failed")?;
+			.context("WebSocket chase-limit execution failed")?;
 
 		let filled_notional = filled_qty * current_price;
 		println!("✅ Chase-limit execution completed!");

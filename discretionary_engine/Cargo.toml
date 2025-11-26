@@ -29,6 +29,7 @@ hex = "^0.4.3"
 hmac = "^0.12.1"
 insta = { version = "1.44.1", features = ["json"] }
 nautilus-bybit = { path = "/home/v/g/nautilus_trader/crates/adapters/bybit", default-features = false }
+nautilus-model = { path = "/home/v/g/nautilus_trader/crates/model" }
 rand = { version = "0.9.2", features = ["small_rng"] }
 reqwest = { version = "0.12.24", features = ["json", "blocking"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
@@ -46,6 +47,7 @@ tracing-error = "0.2.1"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "^0.3.20", features = ["fmt", "json", "registry", "env-filter"] }
 url = "^2.5.7"
+ustr = "1.1.0"
 uuid = { version = "^1.18.1", features = ["serde", "v4", "v7", "v8"] }
 v_exchanges = { path = "../../v_exchanges/v_exchanges", features = ["full" ] }
 v_utils = { version = "2.9.9", features = ["full"] }

@@ -2,9 +2,14 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{Context, Result, bail};
 use nautilus_bybit::{
-	common::enums::{BybitPositionSide, BybitProductType},
+	common::{
+		credential::Credential,
+		enums::{BybitEnvironment, BybitPositionSide, BybitProductType},
+	},
 	http::query::BybitPositionListParamsBuilder,
 };
+use nautilus_model::identifiers::InstrumentId;
+use secrecy::ExposeSecret;
 use tracing::info;
 use v_exchanges::Ticker;
 use v_utils::{log, trades::Timeframe};
@@ -25,7 +30,8 @@ pub(crate) async fn main(args: NukeArgs, config: Arc<AppConfig>, testnet: bool) 
 	log!("Nuke command for ticker: {:?}", args.ticker);
 
 	// Create Bybit HTTP client
-	let (_raw_client, client) = create_bybit_clients(&config, args.ticker.exchange_name, testnet)?;
+	let exchange_name = args.ticker.exchange_name;
+	let (_raw_client, client) = create_bybit_clients(&config, exchange_name.clone(), testnet)?;
 
 	// Convert symbol format (twt-usdt.p -> TWTUSDT)
 	let symbol_raw = args.ticker.symbol.to_string();
@@ -84,10 +90,22 @@ pub(crate) async fn main(args: NukeArgs, config: Arc<AppConfig>, testnet: bool) 
 		let qty_step: f64 = instrument.lot_size_filter.qty_step.parse().context("Failed to parse qtyStep")?;
 		let tick_size: f64 = instrument.price_filter.tick_size.parse().context("Failed to parse tickSize")?;
 
-		// Execute using chase-limit
-		let filled_qty = crate::chase_limit::execute_chase_limit(&_raw_client, &client, &symbol, order_side, position_size, qty_step, tick_size, args.duration)
-			.await
-			.context("Chase-limit execution failed")?;
+		// Create credential for WebSocket
+		let exchange_config = config.get_exchange(exchange_name)?;
+		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
+
+		// Determine environment
+		let environment = if testnet { BybitEnvironment::Testnet } else { BybitEnvironment::Mainnet };
+
+		// Create InstrumentId for ticker subscription
+		let instrument_id = InstrumentId::from(format!("{}.BYBIT", symbol).as_str());
+
+		// Execute using WebSocket chase-limit
+		let filled_qty = crate::ws_chase_limit::execute_ws_chase_limit(
+			&_raw_client, credential, environment, &symbol, instrument_id, order_side, position_size, qty_step, tick_size, args.duration,
+		)
+		.await
+		.context("WebSocket chase-limit execution failed")?;
 
 		println!("✅ Position closed using chase-limit!");
 		println!("   Closed: {:.6} {}", filled_qty, symbol);
