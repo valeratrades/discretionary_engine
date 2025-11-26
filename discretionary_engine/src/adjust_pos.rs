@@ -41,6 +41,10 @@ pub(crate) struct AdjustPosArgs {
 	/// Reduce-only mode: only reduce existing position, don't increase it
 	#[arg(long)]
 	reduce: bool,
+
+	/// Optional duration over which to execute the order (using chase-limit strategy)
+	#[arg(short, long)]
+	duration: Option<Timeframe>,
 }
 
 /// Round quantity to the appropriate step size
@@ -55,6 +59,7 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 	enum SizeType {
 		Quote(f64),    // Actual quantity of asset
 		Notional(f64), // USD value
+		MinOrder(f64), // Multiple of minimum order size
 	}
 
 	let size_type = if let Some(notional) = args.notional {
@@ -62,17 +67,33 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 	} else if let Some(quote) = args.quote {
 		SizeType::Quote(quote)
 	} else if let Some(size_str) = args.size {
-		// Parse size with suffix inference
+		// Parse size with magnitude+unit framework:
+		// - magnitude defaults to 1 if omitted
+		// - unit defaults to quote if omitted
+		// Examples: "min" -> 1min, "BTC" -> 1BTC, "5$" -> 5 USD, "10" -> 10 quote
+
 		if size_str.ends_with('$') {
 			// Strip $ and parse as USD
-			let usd = size_str.trim_end_matches('$').parse::<f64>().context("Failed to parse USD amount from --size")?;
-			SizeType::Notional(usd)
+			let magnitude = size_str.trim_end_matches('$').parse::<f64>().context("Failed to parse USD amount from --size")?;
+			SizeType::Notional(magnitude)
 		} else if let Some(pos) = size_str.chars().position(|c| c.is_alphabetic()) {
-			// Has a suffix like "BTC", "ETH", etc.
-			let (number_part, asset_part) = size_str.split_at(pos);
-			let amount = number_part.parse::<f64>().context("Failed to parse amount from --size")?;
-			// TODO: Handle conversion from other assets to USD
-			bail!("Asset conversion not yet implemented. Got {} {}, need to convert to USD", amount, asset_part);
+			// Has a unit suffix like "BTC", "ETH", "min", etc.
+			let (number_part, unit_part) = size_str.split_at(pos);
+
+			// Parse magnitude, default to 1.0 if empty
+			let magnitude = if number_part.is_empty() {
+				1.0
+			} else {
+				number_part.parse::<f64>().context("Failed to parse magnitude from --size")?
+			};
+
+			// Handle different units
+			if unit_part == "min" {
+				SizeType::MinOrder(magnitude)
+			} else {
+				// TODO: Handle conversion from other assets to USD
+				bail!("Asset conversion not yet implemented. Got {} {}, need to convert to USD", magnitude, unit_part);
+			}
 		} else {
 			// Plain number - treat as quote currency (actual quantity)
 			let qty = size_str.parse::<f64>().context("Failed to parse --size as number")?;
@@ -129,7 +150,13 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 	let min_order_qty: f64 = lot_size_filter.min_order_qty.parse().context("Failed to parse minOrderQty")?;
 	let max_order_qty: f64 = lot_size_filter.max_order_qty.parse().context("Failed to parse maxOrderQty")?;
 
-	info!("Instrument info - qtyStep: {}, minOrderQty: {}, maxOrderQty: {}", qty_step, min_order_qty, max_order_qty);
+	let price_filter = &instrument.price_filter;
+	let tick_size: f64 = price_filter.tick_size.parse().context("Failed to parse tickSize")?;
+
+	info!(
+		"Instrument info - qtyStep: {}, tickSize: {}, minOrderQty: {}, maxOrderQty: {}",
+		qty_step, tick_size, min_order_qty, max_order_qty
+	);
 
 	// Calculate quantity based on size type, extracting sign for order side
 	let (raw_quantity, side) = match size_type {
@@ -137,6 +164,10 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 		SizeType::Notional(usd) => {
 			let qty = usd / current_price;
 			(qty, if usd >= 0.0 { "Buy" } else { "Sell" })
+		}
+		SizeType::MinOrder(multiplier) => {
+			let qty = multiplier * min_order_qty;
+			(qty, if multiplier >= 0.0 { "Buy" } else { "Sell" })
 		}
 	};
 
@@ -147,43 +178,57 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 	let actual_notional = quantity * current_price;
 	log!("{} order: {:.6} -> rounded to {:.6} (notional: ${:.2})", side, abs_raw_qty, quantity, actual_notional);
 
-	// Format quantity properly based on step size
-	let qty_str = if qty_step >= 1.0 {
-		format!("{:.0}", quantity)
-	} else if qty_step >= 0.1 {
-		format!("{:.1}", quantity)
-	} else if qty_step >= 0.01 {
-		format!("{:.2}", quantity)
-	} else {
-		format!("{}", quantity)
-	};
+	// Check if we should use chase-limit execution
+	if args.duration.is_some() {
+		log!("Using chase-limit execution with duration: {:?}", args.duration);
 
-	// Prepare order request
-	let order_request = serde_json::json!({
-		"category": "linear",
-		"symbol": symbol,
-		"side": side,
-		"orderType": "Market",
-		"qty": qty_str,
-		"timeInForce": "IOC",
-		"orderLinkId": format!("adjust-{}", uuid::Uuid::new_v4()),
-		"reduceOnly": args.reduce,
-	});
+		let filled_qty = crate::chase_limit::execute_chase_limit(&raw_client, &client, &symbol, side, quantity, qty_step, tick_size, args.duration)
+			.await
+			.context("Chase-limit execution failed")?;
 
-	info!("Submitting market {} order for {} {}", side, quantity, symbol);
-
-	// Submit order
-	let order_response = client.place_order(&order_request).await.context("Failed to place order")?;
-
-	if order_response.ret_code == 0 {
-		println!("✅ Order submitted successfully!");
-		info!("Order submitted successfully!");
-		if let Some(order_id) = order_response.result.order_id {
-			println!("   Order ID: {}", order_id);
-		}
-		println!("   Quantity: {} {} (notional: ${:.2})", qty_str, symbol, actual_notional);
+		let filled_notional = filled_qty * current_price;
+		println!("✅ Chase-limit execution completed!");
+		println!("   Filled: {:.6} {} (notional: ${:.2})", filled_qty, symbol, filled_notional);
 		Ok(())
 	} else {
-		bail!("Order failed: {} (code: {})", order_response.ret_msg, order_response.ret_code);
+		// Format quantity properly based on step size
+		let qty_str = if qty_step >= 1.0 {
+			format!("{:.0}", quantity)
+		} else if qty_step >= 0.1 {
+			format!("{:.1}", quantity)
+		} else if qty_step >= 0.01 {
+			format!("{:.2}", quantity)
+		} else {
+			format!("{}", quantity)
+		};
+
+		// Prepare order request
+		let order_request = serde_json::json!({
+			"category": "linear",
+			"symbol": symbol,
+			"side": side,
+			"orderType": "Market",
+			"qty": qty_str,
+			"timeInForce": "IOC",
+			"orderLinkId": format!("adjust-{}", uuid::Uuid::new_v4()),
+			"reduceOnly": args.reduce,
+		});
+
+		info!("Submitting market {} order for {} {}", side, quantity, symbol);
+
+		// Submit order
+		let order_response = client.place_order(&order_request).await.context("Failed to place order")?;
+
+		if order_response.ret_code == 0 {
+			println!("✅ Order submitted successfully!");
+			info!("Order submitted successfully!");
+			if let Some(order_id) = order_response.result.order_id {
+				println!("   Order ID: {}", order_id);
+			}
+			println!("   Quantity: {} {} (notional: ${:.2})", qty_str, symbol, actual_notional);
+			Ok(())
+		} else {
+			bail!("Order failed: {} (code: {})", order_response.ret_msg, order_response.ret_code);
+		}
 	}
 }

@@ -7,6 +7,7 @@
 
 mod adjust_pos;
 mod bybit_common;
+mod chase_limit;
 pub mod config;
 pub mod exchange_apis;
 mod nuke;
