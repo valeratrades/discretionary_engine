@@ -296,7 +296,7 @@ pub async fn execute_ws_chase_limit(
 								let ask_price = quote.ask_price.as_f64();
 
 								// Calculate our limit price
-								let limit_price = match side {
+								let new_limit_price = match side {
 									"Buy" => {
 										let improved_price = bid_price + price_tick;
 										// Don't cross the spread
@@ -310,10 +310,11 @@ pub async fn execute_ws_chase_limit(
 									_ => continue,
 								};
 
-								info!("[{}] Market: bid={}, ask={}, target {} limit @ {}", iteration, bid_price, ask_price, side, limit_price);
+								info!("[{}] Market: bid={}, ask={}, new target {} limit @ {}", iteration, bid_price, ask_price, side, new_limit_price);
 
 								// Place initial order if not yet placed
 								if !order_placed {
+									let limit_price = new_limit_price;
 									let place_params = BybitWsPlaceOrderParams {
 										category: BybitProductType::Linear,
 										symbol: Ustr::from(symbol),
@@ -354,10 +355,23 @@ pub async fn execute_ws_chase_limit(
 										}
 									}
 								} else {
-									// Amend existing order if price changed significantly
-									let should_amend = match last_amend_price {
-										Some(last_price) => (limit_price - last_price).abs() > price_tick * 0.5,
-										None => true,
+									// Only amend if the new price is BETTER (more aggressive)
+									// For buys: better = higher price (closer to ask)
+									// For sells: better = lower price (closer to bid)
+									let should_amend = if let Some(current_price) = last_amend_price {
+										match side {
+											"Buy" => {
+												// Only amend if new price is higher (more aggressive buy)
+												new_limit_price > current_price && (new_limit_price - current_price).abs() > price_tick * 0.5
+											}
+											"Sell" => {
+												// Only amend if new price is lower (more aggressive sell)
+												new_limit_price < current_price && (current_price - new_limit_price).abs() > price_tick * 0.5
+											}
+											_ => false,
+										}
+									} else {
+										true // First amend
 									};
 
 									if should_amend && filled_qty < target_qty {
@@ -368,7 +382,7 @@ pub async fn execute_ws_chase_limit(
 											order_id: None,
 											order_link_id: Some(format!("{}", order_link_id)),
 											qty: Some(remaining_qty.to_string()),
-											price: Some(limit_price.to_string()),
+											price: Some(new_limit_price.to_string()),
 											trigger_price: None,
 											take_profit: None,
 											stop_loss: None,
@@ -378,13 +392,24 @@ pub async fn execute_ws_chase_limit(
 
 										match trade_client.amend_order(amend_params).await {
 											Ok(()) => {
-												info!("[{}] Order amended: price {} -> {}, qty {}", iteration, last_amend_price.unwrap_or(0.0), limit_price, remaining_qty);
-												last_amend_price = Some(limit_price);
-												current_order_price = Some(limit_price);
+												info!("[{}] Order amended: price {} -> {} (market moved favorably), qty {}", iteration, last_amend_price.unwrap_or(0.0), new_limit_price, remaining_qty);
+												last_amend_price = Some(new_limit_price);
+												current_order_price = Some(new_limit_price);
 											}
 											Err(e) => {
 												log!("Failed to amend order: {}, will retry", e);
 											}
+										}
+									} else if let Some(current_price) = last_amend_price {
+										// Log when we're NOT amending because market moved unfavorably
+										match side {
+											"Buy" if new_limit_price < current_price => {
+												info!("[{}] Market moved down (new={}, current={}), keeping order at {}", iteration, new_limit_price, current_price, current_price);
+											}
+											"Sell" if new_limit_price > current_price => {
+												info!("[{}] Market moved up (new={}, current={}), keeping order at {}", iteration, new_limit_price, current_price, current_price);
+											}
+											_ => {}
 										}
 									}
 								}
