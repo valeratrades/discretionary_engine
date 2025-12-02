@@ -26,7 +26,7 @@ pub struct ExchangeConfig {
 	pub api_pubkey: String,
 	pub api_secret: SecretString,
 	#[serde(default)]
-	pub api_passphrase: Option<SecretString>,
+	pub passphrase: Option<SecretString>,
 }
 
 impl AppConfig {
@@ -53,7 +53,7 @@ mod tests {
 		let config = ExchangeConfig {
 			api_pubkey: "test_key".to_string(),
 			api_secret: SecretString::from("test_secret".to_string()),
-			api_passphrase: None,
+			passphrase: None,
 		};
 
 		assert_eq!(config.api_pubkey, "test_key");
@@ -64,11 +64,11 @@ mod tests {
 		let config = ExchangeConfig {
 			api_pubkey: "test_key".to_string(),
 			api_secret: SecretString::from("test_secret".to_string()),
-			api_passphrase: Some(SecretString::from("test_passphrase".to_string())),
+			passphrase: Some(SecretString::from("test_passphrase".to_string())),
 		};
 
 		assert_eq!(config.api_pubkey, "test_key");
-		assert!(config.api_passphrase.is_some());
+		assert!(config.passphrase.is_some());
 	}
 
 	#[test]
@@ -79,7 +79,7 @@ mod tests {
 			ExchangeConfig {
 				api_pubkey: "key".to_string(),
 				api_secret: SecretString::from("secret_value".to_string()),
-				api_passphrase: None,
+				passphrase: None,
 			},
 		);
 

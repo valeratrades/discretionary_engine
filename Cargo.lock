@@ -6367,7 +6367,7 @@ dependencies = [
  "tokio",
  "tracing",
  "v_exchanges_adapters",
- "v_utils 2.9.10",
+ "v_utils 2.11.1",
 ]
 
 [[package]]
@@ -6391,7 +6391,7 @@ dependencies = [
  "tracing",
  "url",
  "v_exchanges_api_generics",
- "v_utils 2.9.10",
+ "v_utils 2.11.1",
 ]
 
 [[package]]
@@ -6413,7 +6413,7 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "url",
- "v_utils 2.9.10",
+ "v_utils 2.11.1",
 ]
 
 [[package]]
@@ -6450,7 +6450,7 @@ dependencies = [
 
 [[package]]
 name = "v_utils"
-version = "2.9.10"
+version = "2.11.1"
 dependencies = [
  "const_format",
  "derive-new",
@@ -6470,7 +6470,7 @@ dependencies = [
  "tracing-error",
  "tracing-log 0.2.0",
  "tracing-subscriber",
- "v_utils_macros 2.5.10",
+ "v_utils_macros 2.7.1",
  "xdg",
 ]
 
@@ -6490,7 +6490,7 @@ dependencies = [
 
 [[package]]
 name = "v_utils_macros"
-version = "2.5.10"
+version = "2.7.1"
 dependencies = [
  "eyre",
  "heck",
