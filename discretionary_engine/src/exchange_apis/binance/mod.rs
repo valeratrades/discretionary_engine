@@ -37,7 +37,7 @@ use super::{
 };
 use crate::{
 	MAX_CONNECTION_FAILURES, PositionOrderId,
-	config::AppConfig,
+	config::LiveSettings,
 	exchange_apis::{Market, order_types::Order},
 	utils::{deser_reqwest, report_connection_problem, unexpected_response_str},
 };
@@ -49,8 +49,8 @@ pub struct BinanceExchange {
 }
 impl BinanceExchange {
 	#[instrument(skip_all)]
-	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
-		let binance_futures_info = BinanceExchangeFutures::init(config_arc.clone()).await?;
+	pub async fn init(live_settings: Arc<LiveSettings>) -> Result<Self> {
+		let binance_futures_info = BinanceExchangeFutures::init(live_settings.clone()).await?;
 		Ok(Self { binance_futures_info })
 	}
 
@@ -354,7 +354,7 @@ pub async fn get_historic_klines(symbol: String, interval: String, limit: usize)
 /// NB: must be communicating back to the hub, can't shortcut and talk back directly to positions.
 #[instrument(skip_all)]
 pub async fn binance_runtime(
-	config_arc: Arc<AppConfig>,
+	live_settings: Arc<LiveSettings>,
 	parent_js: &mut JoinSet<()>,
 	hub_callback: mpsc::Sender<ExchangeToHub>,
 	mut hub_rx: watch::Receiver<HubToExchange>,
@@ -367,7 +367,8 @@ pub async fn binance_runtime(
 	use secrecy::ExposeSecret;
 	use v_exchanges::ExchangeName;
 
-	let binance_config = config_arc.get_exchange(ExchangeName::Binance).expect("Binance exchange config not found");
+	let config = live_settings.config();
+	let binance_config = config.get_exchange(ExchangeName::Binance).expect("Binance exchange config not found");
 
 	let pubkey = binance_config.api_pubkey.clone();
 	let secret = binance_config.api_secret.expose_secret().to_string();
@@ -422,12 +423,13 @@ pub async fn binance_runtime(
 	// Keeping Exchange info up-to-date
 	//TODO!: move to websockets, have them be right here.
 	let binance_exchange_arc_clone = binance_exchange_arc.clone();
+	let live_settings_clone = live_settings.clone();
 	parent_js.spawn(async move {
 		//LOOP: auxiliary information; can't halt the main loop
 		loop {
 			tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
-			match BinanceExchangeFutures::init(config_arc.clone()).await {
+			match BinanceExchangeFutures::init(live_settings_clone.clone()).await {
 				Ok(binance_exchange_futures_updated) => {
 					let mut binance_exchange_lock = binance_exchange_arc_clone.write().unwrap();
 					binance_exchange_lock.binance_futures_info = binance_exchange_futures_updated;

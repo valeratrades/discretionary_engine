@@ -15,11 +15,14 @@ pub mod positions;
 pub mod protocols;
 pub mod utils;
 mod ws_chase_limit;
-use std::sync::{Arc, atomic::AtomicU32};
+use std::{
+	sync::{Arc, atomic::AtomicU32},
+	time::Duration,
+};
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::{Context, Result, bail};
-use config::{AppConfig, SettingsFlags};
+use config::{LiveSettings, SettingsFlags};
 use exchange_apis::{exchanges::Exchanges, hub, hub::PositionToHub};
 use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
@@ -84,14 +87,16 @@ struct PositionArgs {
 async fn main() -> Result<()> {
 	color_eyre::install()?;
 	let cli = Cli::parse();
-	let config = match AppConfig::try_build_with_flags(cli.settings) {
-		Ok(cfg) => cfg,
+	let live_settings = match LiveSettings::new(cli.settings, Duration::from_secs(5)) {
+		Ok(ls) => Arc::new(ls),
 		Err(e) => {
 			eprintln!("Loading config failed: {}", e);
 			std::process::exit(1);
 		}
 	};
-	let config_arc = Arc::new(config);
+	// Validate positions_dir exists
+	let initial_config = live_settings.initial();
+	std::fs::create_dir_all(&initial_config.positions_dir).wrap_err_with(|| format!("Failed to create positions directory at {:?}", initial_config.positions_dir))?;
 	// ensure the artifacts directory exists, if it doesn't, create it.
 	match std::fs::create_dir_all(&cli.artifacts) {
 		Ok(_) => {}
@@ -107,25 +112,25 @@ async fn main() -> Result<()> {
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
 	let exchanges_arc = Arc::new(
-		Exchanges::init(config_arc.clone())
+		Exchanges::init(live_settings.clone())
 			.await
 			.wrap_err_with(|| "Error initializing Exchanges, likely indicative of bad internet connection")?,
 	);
-	let tx = hub::init_hub(config_arc.clone(), &mut js, exchanges_arc.clone());
+	let tx = hub::init_hub(live_settings.clone(), &mut js, exchanges_arc.clone());
 
 	exit_on_error(match cli.command {
-		Commands::Run(args) => command_new(args, config_arc.clone(), tx, exchanges_arc).await,
-		Commands::AdjustPos(adjust_pos_args) => adjust_pos::main(adjust_pos_args, config_arc.clone(), cli.testnet).await,
-		Commands::Nuke(nuke_args) => nuke::main(nuke_args, config_arc.clone(), cli.testnet).await,
+		Commands::Run(args) => command_new(args, live_settings.clone(), tx, exchanges_arc).await,
+		Commands::AdjustPos(adjust_pos_args) => adjust_pos::main(adjust_pos_args, live_settings.clone(), cli.testnet).await,
+		Commands::Nuke(nuke_args) => nuke::main(nuke_args, live_settings.clone(), cli.testnet).await,
 	});
 
 	Ok(())
 }
 
-#[instrument(skip(config_arc, tx, exchanges_arc))]
-async fn command_new(position_args: PositionArgs, config_arc: Arc<AppConfig>, tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
+#[instrument(skip(live_settings, tx, exchanges_arc))]
+async fn command_new(position_args: PositionArgs, live_settings: Arc<LiveSettings>, tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<()> {
 	// Currently here mostly for purposes of checking server connectivity.
-	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), config_arc.clone()).await {
+	let balance = match Exchanges::compile_total_balance(exchanges_arc.clone(), live_settings.clone()).await {
 		Ok(b) => b,
 		Err(e) => {
 			eprintln!("Failed to get balance: {}", e);

@@ -10,11 +10,10 @@ use nautilus_bybit::{
 };
 use nautilus_model::identifiers::InstrumentId;
 use secrecy::ExposeSecret;
-use tracing::info;
 use v_exchanges::Ticker;
 use v_utils::{log, trades::Timeframe};
 
-use crate::{bybit_common::*, config::AppConfig};
+use crate::{bybit_common::*, config::LiveSettings};
 
 #[derive(clap::Args, Debug)]
 pub(crate) struct NukeArgs {
@@ -26,12 +25,12 @@ pub(crate) struct NukeArgs {
 	duration: Option<Timeframe>,
 }
 
-pub(crate) async fn main(args: NukeArgs, config: Arc<AppConfig>, testnet: bool) -> Result<()> {
+pub(crate) async fn main(args: NukeArgs, live_settings: Arc<LiveSettings>, testnet: bool) -> Result<()> {
 	log!("Nuke command for ticker: {:?}", args.ticker);
 
 	// Create Bybit HTTP client
 	let exchange_name = args.ticker.exchange_name;
-	let (_raw_client, client) = create_bybit_clients(&config, exchange_name.clone(), testnet)?;
+	let (_raw_client, client) = create_bybit_clients(live_settings.clone(), exchange_name.clone(), testnet)?;
 
 	// Convert symbol format (twt-usdt.p -> TWTUSDT)
 	let symbol_raw = args.ticker.symbol.to_string();
@@ -91,6 +90,7 @@ pub(crate) async fn main(args: NukeArgs, config: Arc<AppConfig>, testnet: bool) 
 		let tick_size: f64 = instrument.price_filter.tick_size.parse().context("Failed to parse tickSize")?;
 
 		// Create credential for WebSocket
+		let config = live_settings.config();
 		let exchange_config = config.get_exchange(exchange_name)?;
 		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
 

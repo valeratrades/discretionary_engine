@@ -14,7 +14,7 @@ use tracing::info;
 use v_exchanges::Ticker;
 use v_utils::{log, trades::Timeframe};
 
-use crate::{bybit_common::*, config::AppConfig};
+use crate::{bybit_common::*, config::LiveSettings};
 
 #[derive(clap::Args, Debug)]
 #[command(group(
@@ -57,7 +57,7 @@ fn round_to_step(value: f64, step: f64) -> f64 {
 	(value / step).round() * step
 }
 
-pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: bool) -> Result<()> {
+pub(crate) async fn main(args: AdjustPosArgs, live_settings: Arc<LiveSettings>, testnet: bool) -> Result<()> {
 	info!("Starting adjust-pos for ticker: {:?}", args.ticker);
 
 	// Determine whether we have a quote amount (quantity) or notional amount (USD)
@@ -110,7 +110,7 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 
 	// Create Bybit HTTP clients
 	let exchange_name = args.ticker.exchange_name;
-	let (raw_client, client) = create_bybit_clients(&config, exchange_name.clone(), testnet)?;
+	let (raw_client, client) = create_bybit_clients(live_settings.clone(), exchange_name.clone(), testnet)?;
 
 	// Get current ticker price first
 	let symbol_raw = args.ticker.symbol.to_string();
@@ -189,6 +189,7 @@ pub(crate) async fn main(args: AdjustPosArgs, config: Arc<AppConfig>, testnet: b
 		log!("Using WebSocket chase-limit execution with duration: {:?}", args.duration);
 
 		// Create credential for WebSocket (clone exchange_name since it was moved)
+		let config = live_settings.config();
 		let exchange_config = config.get_exchange(exchange_name)?;
 		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
 

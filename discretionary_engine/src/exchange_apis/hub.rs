@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::exchanges::Exchanges;
 use crate::{
 	PositionOrderId,
-	config::AppConfig,
+	config::LiveSettings,
 	exchange_apis::{
 		Market, binance, order_types,
 		order_types::{ConceptualOrder, ConceptualOrderType, Order, ProtocolOrderId},
@@ -37,9 +37,9 @@ pub struct HubToExchange {
 }
 
 #[instrument(skip_all)]
-pub fn init_hub(config_arc: Arc<AppConfig>, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<PositionToHub> {
+pub fn init_hub(live_settings: Arc<LiveSettings>, parent_js: &mut JoinSet<Result<()>>, exchanges: Arc<Exchanges>) -> mpsc::Sender<PositionToHub> {
 	let (tx, rx) = mpsc::channel(32);
-	parent_js.spawn(hub(config_arc.clone(), rx, exchanges));
+	parent_js.spawn(hub(live_settings.clone(), rx, exchanges));
 	tx
 }
 
@@ -64,7 +64,7 @@ struct ExchangeLocalKnowledge {
 }
 
 #[instrument(skip_all)]
-pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<()> {
+pub async fn hub(live_settings: Arc<LiveSettings>, mut rx: mpsc::Receiver<PositionToHub>, exchanges: Arc<Exchanges>) -> Result<()> {
 	// TODO!!: assert all protocol orders here with trigger prices have them above/below current price in accordance to order's side.
 	//- init the runtime of exchanges
 
@@ -74,10 +74,10 @@ pub async fn hub(config_arc: Arc<AppConfig>, mut rx: mpsc::Receiver<PositionToHu
 
 	// Spawn Binance
 	let exchanges_clone = exchanges.clone();
-	let config_arc_clone = config_arc.clone();
+	let live_settings_clone = live_settings.clone();
 	js.spawn(async move {
 		let mut exchange_runtimes_js = JoinSet::new();
-		binance::binance_runtime(config_arc_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
+		binance::binance_runtime(live_settings_clone, &mut exchange_runtimes_js, fills_tx, orders_rx, exchanges_clone.binance.clone()).await;
 		unreachable!();
 		//exchange_runtimes_js.join_all().await;
 	});

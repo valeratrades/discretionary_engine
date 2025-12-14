@@ -8,14 +8,15 @@ use sha2::Sha256;
 use tracing::info;
 use v_exchanges::ExchangeName;
 
-use crate::config::AppConfig;
+use crate::config::LiveSettings;
 
 pub fn convert_symbol_to_bybit(symbol: &str) -> String {
 	let without_suffix = symbol.split('.').next().unwrap_or(symbol);
 	without_suffix.replace('-', "").to_uppercase()
 }
 
-pub fn create_bybit_clients(config: &Arc<AppConfig>, exchange_name: ExchangeName, testnet: bool) -> Result<(BybitRawHttpClient, BybitHttpClient)> {
+pub fn create_bybit_clients(live_settings: Arc<LiveSettings>, exchange_name: ExchangeName, testnet: bool) -> Result<(BybitRawHttpClient, BybitHttpClient)> {
+	let config = live_settings.config();
 	let exchange_config = config.get_exchange(exchange_name)?;
 
 	let base_url = if testnet {
@@ -63,7 +64,8 @@ pub struct BybitAmendClient {
 }
 
 impl BybitAmendClient {
-	pub fn new(config: &Arc<AppConfig>, exchange_name: ExchangeName, testnet: bool) -> Result<Self> {
+	pub fn new(live_settings: Arc<LiveSettings>, exchange_name: ExchangeName, testnet: bool) -> Result<Self> {
+		let config = live_settings.config();
 		let exchange_config = config.get_exchange(exchange_name)?;
 
 		let base_url = if testnet {

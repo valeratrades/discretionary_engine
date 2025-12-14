@@ -7,8 +7,6 @@
 /// 4. When duration expires, cancels and market-fills remaining quantity
 ///
 /// All operations use WebSocket for low latency and reliability.
-use std::sync::Arc;
-
 use color_eyre::eyre::{Context, Result, bail};
 use futures_util::{StreamExt, pin_mut};
 use nautilus_bybit::{
@@ -26,6 +24,40 @@ use tokio::time::{Duration, sleep};
 use tracing::info;
 use ustr::Ustr;
 use v_utils::{log, trades::Timeframe};
+
+/// Format quantity string based on step size to avoid "Qty invalid" errors
+fn format_qty(qty: f64, qty_step: f64) -> String {
+	if qty_step >= 1.0 {
+		format!("{:.0}", qty)
+	} else if qty_step >= 0.1 {
+		format!("{:.1}", qty)
+	} else if qty_step >= 0.01 {
+		format!("{:.2}", qty)
+	} else if qty_step >= 0.001 {
+		format!("{:.3}", qty)
+	} else if qty_step >= 0.0001 {
+		format!("{:.4}", qty)
+	} else {
+		format!("{:.6}", qty)
+	}
+}
+
+/// Format price string based on tick size
+fn format_price(price: f64, tick_size: f64) -> String {
+	if tick_size >= 1.0 {
+		format!("{:.0}", price)
+	} else if tick_size >= 0.1 {
+		format!("{:.1}", price)
+	} else if tick_size >= 0.01 {
+		format!("{:.2}", price)
+	} else if tick_size >= 0.001 {
+		format!("{:.3}", price)
+	} else if tick_size >= 0.0001 {
+		format!("{:.4}", price)
+	} else {
+		format!("{:.6}", price)
+	}
+}
 
 /// Executes an order using WebSocket-based chase-limit strategy
 ///
@@ -48,7 +80,7 @@ pub async fn execute_ws_chase_limit(
 	instrument_id: InstrumentId,
 	side: &str,
 	target_qty: f64,
-	_qty_step: f64,
+	qty_step: f64,
 	price_tick: f64,
 	duration: Option<Timeframe>,
 ) -> Result<f64> {
@@ -136,13 +168,16 @@ pub async fn execute_ws_chase_limit(
 	log!("Waiting for subscriptions to establish...");
 	sleep(Duration::from_millis(1000)).await;
 
-	// Get message streams
+	// Get message streams BEFORE placing the order so we don't miss events
 	log!("Creating message streams...");
 	let trade_stream = trade_client.stream();
 	let market_stream = market_client.stream();
 	pin_mut!(trade_stream);
 	pin_mut!(market_stream);
 	log!("Message streams created and pinned");
+
+	// Small delay to ensure streams are ready to receive
+	sleep(Duration::from_millis(100)).await;
 
 	// Calculate initial limit price
 	let initial_limit_price = match side {
@@ -160,7 +195,9 @@ pub async fn execute_ws_chase_limit(
 	log!("Calculated initial limit price: {} (bid={}, ask={})", initial_limit_price, initial_bid, initial_ask);
 
 	// Place initial order immediately
-	let order_link_id = format!("chase-{}", uuid::Uuid::new_v4());
+	// Note: order_link_id must be <= 45 chars. UUID is 32 hex chars (without hyphens), so "c-{}" = 34 chars
+	let short_uuid = uuid::Uuid::new_v4().simple().to_string();
+	let order_link_id = format!("c-{}", short_uuid);
 	let bybit_side = match side {
 		"Buy" => BybitOrderSide::Buy,
 		"Sell" => BybitOrderSide::Sell,
@@ -172,11 +209,11 @@ pub async fn execute_ws_chase_limit(
 		symbol: Ustr::from(symbol),
 		side: bybit_side,
 		order_type: BybitOrderType::Limit,
-		qty: target_qty.to_string(),
+		qty: format_qty(target_qty, qty_step),
 		market_unit: None,
-		price: Some(initial_limit_price.to_string()),
+		price: Some(format_price(initial_limit_price, price_tick)),
 		time_in_force: Some(BybitTimeInForce::PostOnly),
-		order_link_id: Some(format!("{}", order_link_id)),
+		order_link_id: Some(order_link_id.clone()),
 		reduce_only: None,
 		close_on_trigger: None,
 		trigger_price: None,
@@ -211,12 +248,15 @@ pub async fn execute_ws_chase_limit(
 	let mut iteration = 0;
 
 	log!("Entering event loop...");
+	log!("trade_client subscription_count: {}", trade_client.subscription_count());
+	log!("market_client subscription_count: {}", market_client.subscription_count());
 
 	loop {
 		iteration += 1;
 
-		if iteration % 10 == 0 {
-			log!("[{}] Still waiting for events... order_placed={}", iteration, order_placed);
+		// Log every iteration for debugging
+		if iteration <= 5 || iteration % 10 == 0 {
+			log!("[{}] Polling streams... order_placed={}", iteration, order_placed);
 		}
 
 		// Check if duration has expired
@@ -231,7 +271,7 @@ pub async fn execute_ws_chase_limit(
 						category: BybitProductType::Linear,
 						symbol: Ustr::from(symbol),
 						order_id: None,
-						order_link_id: Some(format!("{}", order_link_id)),
+						order_link_id: Some(order_link_id.clone()),
 					};
 
 					match trade_client.cancel_order(cancel_params).await {
@@ -243,16 +283,17 @@ pub async fn execute_ws_chase_limit(
 				// Place market order for remaining quantity
 				let remaining_qty = target_qty - filled_qty;
 				if remaining_qty > 0.0 {
+					let final_order_link_id = format!("{}-final", order_link_id);
 					let market_params = BybitWsPlaceOrderParams {
 						category: BybitProductType::Linear,
 						symbol: Ustr::from(symbol),
 						side: bybit_side,
 						order_type: BybitOrderType::Market,
-						qty: remaining_qty.to_string(),
+						qty: format_qty(remaining_qty, qty_step),
 						market_unit: None,
 						price: None,
 						time_in_force: Some(BybitTimeInForce::Ioc),
-						order_link_id: Some(format!("{}-final", order_link_id)),
+						order_link_id: Some(final_order_link_id.clone()),
 						reduce_only: None,
 						close_on_trigger: None,
 						trigger_price: None,
@@ -274,6 +315,51 @@ pub async fn execute_ws_chase_limit(
 					match trade_client.place_order(market_params).await {
 						Ok(()) => log!("Final market order placed for {}", remaining_qty),
 						Err(e) => log!("Failed to place final market order: {}", e),
+					}
+
+					// Wait for final market order fill before exiting
+					log!("Waiting for final market order fill...");
+					let wait_start = std::time::Instant::now();
+					let max_wait = Duration::from_secs(5);
+					while wait_start.elapsed() < max_wait {
+						tokio::select! {
+							Some(trade_msg) = trade_stream.next() => {
+								match trade_msg {
+									NautilusWsMessage::OrderStatusReports(reports) => {
+										log!("Got {} order status reports", reports.len());
+										for report in reports {
+											let coid_str = report.client_order_id.as_ref().map(|c| c.to_string()).unwrap_or_default();
+											log!("  Order: coid={}, status={:?}, filled={}", coid_str, report.order_status, report.filled_qty.as_f64());
+											if coid_str.starts_with("c-") {
+												filled_qty = report.filled_qty.as_f64();
+												if filled_qty >= target_qty - 0.0001 {
+													log!("Final order fully filled");
+													break;
+												}
+											}
+										}
+									}
+									NautilusWsMessage::FillReports(fills) => {
+										log!("Got {} fill reports", fills.len());
+										for fill in fills {
+											let coid_str = fill.client_order_id.as_ref().map(|c| c.to_string()).unwrap_or_default();
+											log!("  Fill: coid={}, qty={} @ price={}", coid_str, fill.last_qty.as_f64(), fill.last_px.as_f64());
+											if coid_str.starts_with("c-") {
+												filled_qty += fill.last_qty.as_f64();
+											}
+										}
+									}
+									NautilusWsMessage::Error(e) => {
+										log!("Trade event error during final wait: {:?}", e);
+									}
+									_ => {}
+								}
+								if filled_qty >= target_qty - 0.0001 {
+									break;
+								}
+							}
+							_ = sleep(Duration::from_millis(100)) => {}
+						}
 					}
 				}
 
@@ -320,11 +406,11 @@ pub async fn execute_ws_chase_limit(
 										symbol: Ustr::from(symbol),
 										side: bybit_side,
 										order_type: BybitOrderType::Limit,
-										qty: target_qty.to_string(),
+										qty: format_qty(target_qty, qty_step),
 										market_unit: None,
-										price: Some(limit_price.to_string()),
+										price: Some(format_price(limit_price, price_tick)),
 										time_in_force: Some(BybitTimeInForce::PostOnly),
-										order_link_id: Some(format!("{}", order_link_id)),
+										order_link_id: Some(order_link_id.clone()),
 										reduce_only: None,
 										close_on_trigger: None,
 										trigger_price: None,
@@ -380,9 +466,9 @@ pub async fn execute_ws_chase_limit(
 											category: BybitProductType::Linear,
 											symbol: Ustr::from(symbol),
 											order_id: None,
-											order_link_id: Some(format!("{}", order_link_id)),
-											qty: Some(remaining_qty.to_string()),
-											price: Some(new_limit_price.to_string()),
+											order_link_id: Some(order_link_id.clone()),
+											qty: Some(format_qty(remaining_qty, qty_step)),
+											price: Some(format_price(new_limit_price, price_tick)),
 											trigger_price: None,
 											take_profit: None,
 											stop_loss: None,
@@ -431,7 +517,7 @@ pub async fn execute_ws_chase_limit(
 						for report in reports {
 							// Check if this is our order
 							if let Some(ref coid) = report.client_order_id {
-								if coid.to_string().starts_with("chase-") {
+								if coid.to_string().starts_with("c-") {
 									log!("[{}] Order update: {:?} filled_qty={}", iteration, report.order_status, report.filled_qty.as_f64());
 
 									// Update filled quantity
@@ -449,14 +535,14 @@ pub async fn execute_ws_chase_limit(
 					NautilusWsMessage::FillReports(fills) => {
 						for fill in fills {
 							if let Some(ref coid) = fill.client_order_id {
-								if coid.to_string().starts_with("chase-") {
+								if coid.to_string().starts_with("c-") {
 									log!("[{}] Fill: qty={} @ price={}", iteration, fill.last_qty.as_f64(), fill.last_px.as_f64());
 								}
 							}
 						}
 					}
 					NautilusWsMessage::OrderRejected(rejected) => {
-						if rejected.client_order_id.to_string().starts_with("chase-") {
+						if rejected.client_order_id.to_string().starts_with("c-") {
 							log!("[{}] Order rejected: {}", iteration, rejected.reason);
 							// If PostOnly rejected, we'll retry on next ticker update
 							order_placed = false;
@@ -468,6 +554,11 @@ pub async fn execute_ws_chase_limit(
 					}
 					NautilusWsMessage::Error(e) => {
 						log!("Trade event error: {:?}", e);
+						// If we get an error and thought order was placed, reset so we can retry
+						if order_placed {
+							log!("Resetting order_placed to false due to error");
+							order_placed = false;
+						}
 					}
 					_ => {}
 				}

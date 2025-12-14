@@ -8,7 +8,7 @@ use super::{
 	binance::BinanceExchange,
 	order_types::{ConceptualOrderPercents, ConceptualOrderType, IdRequirements},
 };
-use crate::{config::AppConfig, exchange_apis::binance};
+use crate::{config::LiveSettings, exchange_apis::binance};
 
 /// [Exchange] itself is passed around as Arc<Self>, RwLock is only present at the level of individual exchanges, as to not lock it all at once when writing.
 #[derive(Clone, Debug, Default)]
@@ -17,18 +17,19 @@ pub struct Exchanges {
 }
 impl Exchanges {
 	#[instrument]
-	pub async fn init(config_arc: Arc<AppConfig>) -> Result<Self> {
-		let binance = BinanceExchange::init(config_arc.clone()).await?;
+	pub async fn init(live_settings: Arc<LiveSettings>) -> Result<Self> {
+		let binance = BinanceExchange::init(live_settings.clone()).await?;
 		Ok(Self {
 			binance: Arc::new(RwLock::new(binance)),
 		})
 	}
 
-	#[instrument(skip(_s, config))]
-	pub async fn compile_total_balance(_s: Arc<Self>, config: Arc<AppConfig>) -> Result<f64> {
+	#[instrument(skip(_s, live_settings))]
+	pub async fn compile_total_balance(_s: Arc<Self>, live_settings: Arc<LiveSettings>) -> Result<f64> {
 		use secrecy::ExposeSecret;
 		use v_exchanges::ExchangeName;
 
+		let config = live_settings.config();
 		let binance_config = config.get_exchange(ExchangeName::Binance)?;
 
 		let handlers = vec![

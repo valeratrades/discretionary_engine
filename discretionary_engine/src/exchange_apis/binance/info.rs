@@ -10,7 +10,7 @@ use url::Url;
 
 use super::unsigned_request;
 use crate::{
-	config::AppConfig,
+	config::LiveSettings,
 	exchange_apis::{Market, Symbol, order_types::ConceptualOrderType},
 	utils::deser_reqwest,
 };
@@ -28,7 +28,7 @@ pub struct BinanceExchangeFutures {
 }
 impl BinanceExchangeFutures {
 	#[instrument]
-	pub async fn init(_config: Arc<AppConfig>) -> Result<Self> {
+	pub async fn init(_live_settings: Arc<LiveSettings>) -> Result<Self> {
 		let url = Self::url().to_string();
 		let r = unsigned_request(Method::GET, &url, HashMap::new()).await?;
 		let binance_exchange_futures: Self = deser_reqwest(r).await?;
