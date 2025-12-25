@@ -31,13 +31,15 @@ futures-util = "0.3.31"
 hex = "^0.4.3"
 hmac = "^0.12.1"
 jiff = { workspace = true }
-nautilus-bybit = { path = "/home/v/g/nautilus_trader/crates/adapters/bybit", default-features = false }
-nautilus-model = { path = "/home/v/g/nautilus_trader/crates/model" }
+#nautilus-bybit = { path = "/home/v/g/nautilus_trader/crates/adapters/bybit", default-features = false } #DEPRECATE
+#nautilus-model = { path = "/home/v/g/nautilus_trader/crates/model" } #DEPRECATE
+nautilus-bybit = { git = "https://github.com/nautechsystems/nautilus_trader", default-features = false }
+nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader" }
 rand = { version = "0.9.2", features = ["small_rng"] }
 reqwest = { version = "0.12.24", features = ["json", "blocking"] }
 secrecy = { workspace = true }
 serde = { version = "^1.0.228", features = ["derive"] }
-serde_json = "^1.0.145"
+serde_json = "^1.0.147"
 serde_path_to_error = "0.1.20"
 serde_urlencoded = "^0.7.1"
 serde_with = "^3.16.0"
