@@ -2379,7 +2379,6 @@ dependencies = [
 [[package]]
 name = "nautilus-bybit"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2417,7 +2416,6 @@ dependencies = [
 [[package]]
 name = "nautilus-common"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2448,7 +2446,6 @@ dependencies = [
 [[package]]
 name = "nautilus-core"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2470,7 +2467,6 @@ dependencies = [
 [[package]]
 name = "nautilus-cryptography"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -2487,7 +2483,6 @@ dependencies = [
 [[package]]
 name = "nautilus-data"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2505,7 +2500,6 @@ dependencies = [
 [[package]]
 name = "nautilus-execution"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2529,7 +2523,6 @@ dependencies = [
 [[package]]
 name = "nautilus-indicators"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -2541,7 +2534,6 @@ dependencies = [
 [[package]]
 name = "nautilus-model"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2570,7 +2562,6 @@ dependencies = [
 [[package]]
 name = "nautilus-network"
 version = "0.52.0"
-source = "git+https://github.com/nautechsystems/nautilus_trader#37f24335c88099117a5df553a3f39f3d4edbe850"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",

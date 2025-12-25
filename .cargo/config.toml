@@ -1,7 +1,5 @@
-[profile.rust]
-codegen-backend = "cranelift"
-
 [target.x86_64-unknown-linux-gnu]
+# Re-enabled mold after disabling cranelift (cranelift was the issue, not mold)
 rustflags = [
     "-C",
     "link-arg=-fuse-ld=mold",

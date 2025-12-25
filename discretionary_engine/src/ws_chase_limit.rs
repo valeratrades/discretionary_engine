@@ -10,16 +10,13 @@
 use color_eyre::eyre::{Context, Result, bail};
 use futures_util::{StreamExt, pin_mut};
 use nautilus_bybit::{
-	common::{
-		credential::Credential,
-		enums::{BybitEnvironment, BybitOrderSide, BybitOrderType, BybitTimeInForce},
-	},
+	common::enums::{BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce},
 	websocket::{
 		client::BybitWebSocketClient,
-		messages::{BybitWsAmendOrderParams, BybitWsPlaceOrderParams, NautilusWsMessage},
+		messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams, NautilusWsMessage},
 	},
 };
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId};
 use tokio::time::{Duration, sleep};
 use tracing::info;
 use ustr::Ustr;
@@ -63,7 +60,8 @@ fn format_price(price: f64, tick_size: f64) -> String {
 ///
 /// # Arguments
 /// * `raw_client` - Raw HTTP client for initial price fetch
-/// * `credential` - API credentials for WebSocket authentication
+/// * `api_key` - API key for WebSocket authentication
+/// * `api_secret` - API secret for WebSocket authentication
 /// * `environment` - Bybit environment (mainnet/testnet)
 /// * `symbol` - Trading symbol (Bybit format, e.g., "BTCUSDT")
 /// * `instrument_id` - Nautilus instrument ID for ticker subscription
@@ -74,7 +72,8 @@ fn format_price(price: f64, tick_size: f64) -> String {
 /// * `duration` - Optional duration for patient execution
 pub async fn execute_ws_chase_limit(
 	raw_client: &nautilus_bybit::http::client::BybitRawHttpClient,
-	credential: Credential,
+	api_key: String,
+	api_secret: String,
 	environment: BybitEnvironment,
 	symbol: &str,
 	instrument_id: InstrumentId,
@@ -86,8 +85,12 @@ pub async fn execute_ws_chase_limit(
 ) -> Result<f64> {
 	log!("Starting WebSocket chase-limit execution for {} {} {}", side, target_qty, symbol);
 
+	// Create identifiers for nautilus order management
+	let trader_id = TraderId::from("DISC_ENGINE-001");
+	let strategy_id = StrategyId::from("CHASE_LIMIT");
+
 	// Get initial price via HTTP to start immediately
-	use nautilus_bybit::{common::enums::BybitProductType, http::query::BybitTickersParamsBuilder};
+	use nautilus_bybit::http::query::BybitTickersParamsBuilder;
 
 	let ticker_params = BybitTickersParamsBuilder::default()
 		.category(BybitProductType::Linear)
@@ -123,7 +126,8 @@ pub async fn execute_ws_chase_limit(
 	// Create trade WebSocket client for order operations
 	let mut trade_client = BybitWebSocketClient::new_trade(
 		environment,
-		credential.clone(),
+		Some(api_key),
+		Some(api_secret),
 		None, // url
 		None, // heartbeat
 	);
@@ -198,6 +202,7 @@ pub async fn execute_ws_chase_limit(
 	// Note: order_link_id must be <= 45 chars. UUID is 32 hex chars (without hyphens), so "c-{}" = 34 chars
 	let short_uuid = uuid::Uuid::new_v4().simple().to_string();
 	let order_link_id = format!("c-{}", short_uuid);
+	let client_order_id = ClientOrderId::from(order_link_id.as_str());
 	let bybit_side = match side {
 		"Buy" => BybitOrderSide::Buy,
 		"Sell" => BybitOrderSide::Sell,
@@ -214,6 +219,7 @@ pub async fn execute_ws_chase_limit(
 		price: Some(format_price(initial_limit_price, price_tick)),
 		time_in_force: Some(BybitTimeInForce::PostOnly),
 		order_link_id: Some(order_link_id.clone()),
+		is_leverage: None,
 		reduce_only: None,
 		close_on_trigger: None,
 		trigger_price: None,
@@ -233,7 +239,7 @@ pub async fn execute_ws_chase_limit(
 	};
 
 	log!("Placing initial order: {} {} @ {}", side, target_qty, initial_limit_price);
-	match trade_client.place_order(initial_order).await {
+	match trade_client.place_order(initial_order, client_order_id, trader_id, strategy_id, instrument_id).await {
 		Ok(()) => log!("Initial order request sent successfully"),
 		Err(e) => {
 			log!("Failed to place initial order: {:?}", e);
@@ -246,6 +252,7 @@ pub async fn execute_ws_chase_limit(
 	let mut last_amend_price = Some(initial_limit_price);
 	let mut filled_qty = 0.0;
 	let mut iteration = 0;
+	let mut venue_order_id: Option<VenueOrderId> = None;
 
 	log!("Entering event loop...");
 	log!("trade_client subscription_count: {}", trade_client.subscription_count());
@@ -266,7 +273,6 @@ pub async fn execute_ws_chase_limit(
 
 				// Cancel existing limit order
 				if order_placed {
-					use nautilus_bybit::websocket::messages::BybitWsCancelOrderParams;
 					let cancel_params = BybitWsCancelOrderParams {
 						category: BybitProductType::Linear,
 						symbol: Ustr::from(symbol),
@@ -274,7 +280,10 @@ pub async fn execute_ws_chase_limit(
 						order_link_id: Some(order_link_id.clone()),
 					};
 
-					match trade_client.cancel_order(cancel_params).await {
+					match trade_client
+						.cancel_order(cancel_params, client_order_id, trader_id, strategy_id, instrument_id, venue_order_id)
+						.await
+					{
 						Ok(()) => log!("Cancelled existing order"),
 						Err(e) => log!("Failed to cancel order (may already be filled): {}", e),
 					}
@@ -284,6 +293,7 @@ pub async fn execute_ws_chase_limit(
 				let remaining_qty = target_qty - filled_qty;
 				if remaining_qty > 0.0 {
 					let final_order_link_id = format!("{}-final", order_link_id);
+					let final_client_order_id = ClientOrderId::from(final_order_link_id.as_str());
 					let market_params = BybitWsPlaceOrderParams {
 						category: BybitProductType::Linear,
 						symbol: Ustr::from(symbol),
@@ -294,6 +304,7 @@ pub async fn execute_ws_chase_limit(
 						price: None,
 						time_in_force: Some(BybitTimeInForce::Ioc),
 						order_link_id: Some(final_order_link_id.clone()),
+						is_leverage: None,
 						reduce_only: None,
 						close_on_trigger: None,
 						trigger_price: None,
@@ -312,7 +323,7 @@ pub async fn execute_ws_chase_limit(
 						tp_limit_price: None,
 					};
 
-					match trade_client.place_order(market_params).await {
+					match trade_client.place_order(market_params, final_client_order_id, trader_id, strategy_id, instrument_id).await {
 						Ok(()) => log!("Final market order placed for {}", remaining_qty),
 						Err(e) => log!("Failed to place final market order: {}", e),
 					}
@@ -411,6 +422,7 @@ pub async fn execute_ws_chase_limit(
 										price: Some(format_price(limit_price, price_tick)),
 										time_in_force: Some(BybitTimeInForce::PostOnly),
 										order_link_id: Some(order_link_id.clone()),
+										is_leverage: None,
 										reduce_only: None,
 										close_on_trigger: None,
 										trigger_price: None,
@@ -429,7 +441,7 @@ pub async fn execute_ws_chase_limit(
 										tp_limit_price: None,
 									};
 
-									match trade_client.place_order(place_params).await {
+									match trade_client.place_order(place_params, client_order_id, trader_id, strategy_id, instrument_id).await {
 										Ok(()) => {
 											log!("[{}] Initial order placed: {} {} @ {}", iteration, side, target_qty, limit_price);
 											order_placed = true;
@@ -476,7 +488,7 @@ pub async fn execute_ws_chase_limit(
 											sl_trigger_by: None,
 										};
 
-										match trade_client.amend_order(amend_params).await {
+										match trade_client.amend_order(amend_params, client_order_id, trader_id, strategy_id, instrument_id, venue_order_id).await {
 											Ok(()) => {
 												info!("[{}] Order amended: price {} -> {} (market moved favorably), qty {}", iteration, last_amend_price.unwrap_or(0.0), new_limit_price, remaining_qty);
 												last_amend_price = Some(new_limit_price);
@@ -519,6 +531,9 @@ pub async fn execute_ws_chase_limit(
 							if let Some(ref coid) = report.client_order_id {
 								if coid.to_string().starts_with("c-") {
 									log!("[{}] Order update: {:?} filled_qty={}", iteration, report.order_status, report.filled_qty.as_f64());
+
+									// Capture venue order ID for amend/cancel
+									venue_order_id = Some(report.venue_order_id);
 
 									// Update filled quantity
 									filled_qty = report.filled_qty.as_f64();
@@ -588,6 +603,9 @@ pub async fn execute_ws_chase_limit(
 	// Close connections
 	trade_client.close().await.context("Failed to close trade WebSocket")?;
 	market_client.close().await.context("Failed to close market WebSocket")?;
+
+	// Suppress unused variable warning
+	let _ = current_order_price;
 
 	log!("Chase-limit execution completed: filled {} out of {}", filled_qty, target_qty);
 	Ok(filled_qty)

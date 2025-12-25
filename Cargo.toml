@@ -1,5 +1,8 @@
+# cargo-features = ["codegen-backend"]  # disabled due to aws-lc-rs incompatibility
+
 [workspace]
 members = ["discretionary_engine", "discretionary_engine_*"]
+exclude = ["libs"]
 resolver = "3"
 
 default-members = ["discretionary_engine"]
@@ -29,3 +32,6 @@ v_utils = { version = "2.15.9", features = ["full"] }
 [patch.crates-io]
 v_utils = { path = "../v_utils/v_utils" }
 v_utils_macros = { path = "../v_utils/v_utils_macros" }
+
+[profile.dev]
+# codegen-backend = "cranelift"  # disabled due to aws-lc-rs incompatibility

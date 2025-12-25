@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{Context, Result, bail};
 use nautilus_bybit::{
-	common::{
-		credential::Credential,
-		enums::{BybitEnvironment, BybitPositionSide, BybitProductType},
-	},
+	common::enums::{BybitEnvironment, BybitPositionSide, BybitProductType},
 	http::query::BybitPositionListParamsBuilder,
 };
 use nautilus_model::identifiers::InstrumentId;
@@ -89,10 +86,11 @@ pub(crate) async fn main(args: NukeArgs, live_settings: Arc<LiveSettings>, testn
 		let qty_step: f64 = instrument.lot_size_filter.qty_step.parse().context("Failed to parse qtyStep")?;
 		let tick_size: f64 = instrument.price_filter.tick_size.parse().context("Failed to parse tickSize")?;
 
-		// Create credential for WebSocket
+		// Get API credentials for WebSocket
 		let config = live_settings.config()?;
 		let exchange_config = config.get_exchange(exchange_name)?;
-		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
+		let api_key = exchange_config.api_pubkey.clone();
+		let api_secret = exchange_config.api_secret.expose_secret().to_string();
 
 		// Determine environment
 		let environment = if testnet { BybitEnvironment::Testnet } else { BybitEnvironment::Mainnet };
@@ -102,7 +100,7 @@ pub(crate) async fn main(args: NukeArgs, live_settings: Arc<LiveSettings>, testn
 
 		// Execute using WebSocket chase-limit
 		let filled_qty = crate::ws_chase_limit::execute_ws_chase_limit(
-			&_raw_client, credential, environment, &symbol, instrument_id, order_side, position_size, qty_step, tick_size, args.duration,
+			&_raw_client, api_key, api_secret, environment, &symbol, instrument_id, order_side, position_size, qty_step, tick_size, args.duration,
 		)
 		.await
 		.context("WebSocket chase-limit execution failed")?;

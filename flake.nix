@@ -69,7 +69,8 @@
 
               							mkdir -p ./.cargo
               							cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
-              							cp -f ${(v-utils.files.rust.config {inherit pkgs;})} ./.cargo/config.toml
+              							# v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
+              							# cp -f ${(v-utils.files.rust.config {inherit pkgs;})} ./.cargo/config.toml
               							cp -f ${(v-utils.files.gitignore { inherit pkgs; langs = ["rs"];})} ./.gitignore
 
               							cp -f ${readme} ./README.md

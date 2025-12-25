@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{Context, Result, bail};
 use nautilus_bybit::{
-	common::{
-		credential::Credential,
-		enums::{BybitEnvironment, BybitProductType},
-	},
+	common::enums::{BybitEnvironment, BybitProductType},
 	http::query::{BybitInstrumentsInfoParamsBuilder, BybitTickersParamsBuilder},
 };
 use nautilus_model::identifiers::InstrumentId;
@@ -188,10 +185,11 @@ pub(crate) async fn main(args: AdjustPosArgs, live_settings: Arc<LiveSettings>, 
 	if args.duration.is_some() {
 		log!("Using WebSocket chase-limit execution with duration: {:?}", args.duration);
 
-		// Create credential for WebSocket (clone exchange_name since it was moved)
+		// Get API credentials for WebSocket
 		let config = live_settings.config()?;
 		let exchange_config = config.get_exchange(exchange_name)?;
-		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
+		let api_key = exchange_config.api_pubkey.clone();
+		let api_secret = exchange_config.api_secret.expose_secret().to_string();
 
 		// Determine environment
 		let environment = if testnet { BybitEnvironment::Testnet } else { BybitEnvironment::Mainnet };
@@ -200,9 +198,11 @@ pub(crate) async fn main(args: AdjustPosArgs, live_settings: Arc<LiveSettings>, 
 		// Format: "SYMBOL.VENUE" e.g., "BTCUSDT.BYBIT"
 		let instrument_id = InstrumentId::from(format!("{}.BYBIT", symbol).as_str());
 
-		let filled_qty = crate::ws_chase_limit::execute_ws_chase_limit(&raw_client, credential, environment, &symbol, instrument_id, side, quantity, qty_step, tick_size, args.duration)
-			.await
-			.context("WebSocket chase-limit execution failed")?;
+		let filled_qty = crate::ws_chase_limit::execute_ws_chase_limit(
+			&raw_client, api_key, api_secret, environment, &symbol, instrument_id, side, quantity, qty_step, tick_size, args.duration,
+		)
+		.await
+		.context("WebSocket chase-limit execution failed")?;
 
 		let filled_notional = filled_qty * current_price;
 		println!("✅ Chase-limit execution completed!");
