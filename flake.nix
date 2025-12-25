@@ -65,7 +65,7 @@
 
               							cargo -Zscript -q ${v-utils.hooks.appendCustom} ./.git/hooks/pre-commit
               							cp -f ${(v-utils.hooks.treefmt) {inherit pkgs;}} ./.treefmt.toml
-              							cp -f ${(v-utils.hooks.preCommit) { inherit pkgs pname; }} ./.git/hooks/custom.sh
+                            cp -f ${(v-utils.hooks.preCommit) { inherit pkgs pname; }} ./.git/hooks/custom.sh
 
               							mkdir -p ./.cargo
               							cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
