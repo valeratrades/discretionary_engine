@@ -199,7 +199,7 @@ mod tests {
 			orders.push((i, maybe_order.map(|o| o.unsafe_stop_market().price)));
 		}
 
-		let snapshot = v_utils::utils::snapshot_plot_orders(&recorded_indicator_values, &orders);
+		let snapshot = snapshot_fonts::snapshot_plot_orders(&recorded_indicator_values, &orders);
 
 		insta::assert_snapshot!(snapshot, @r###"
                                                                             ▆▄▃▁            107.00

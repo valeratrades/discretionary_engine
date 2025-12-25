@@ -15,20 +15,17 @@ readme = "README.md"
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
-clap = { version = "^4.5.53", features = ["derive"] }
-color-eyre = "^0.6.5"
-jiff = "^0.2.16"
-secrecy = { version = "0.10.3", features = ["serde"] }
-strum = { version = "0.27", features = ["derive"] }
-tracing = "0.1"
-v_exchanges = { version = "^0.16.3", features = ["binance", "bybit", "kucoin", "mexc"] }
-v_utils = { path = "../../v_utils/v_utils", features = ["trades"] }
+clap = { workspace = true }
+color-eyre = { workspace = true }
+jiff = { workspace = true }
+secrecy = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }
+v_exchanges = { workspace = true, features = ["binance", "bybit", "kucoin", "mexc"] }
+v_utils = { workspace = true, features = ["trades"] }
 
 [dev-dependencies]
-insta = "1.44.3"
+insta = { workspace = true }
 
-[lints.clippy]
-float_cmp = "allow"
-len_zero = "allow"
-undocumented_unsafe_blocks = "warn"
-tabs_in_doc_comments = "allow"
+[lints]
+workspace = true

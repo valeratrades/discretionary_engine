@@ -129,7 +129,7 @@ mod tests {
 				}
 			}
 		}
-		let plot = v_utils::utils::snapshot_plot_orders(&prices, &orders);
+		let plot = snapshot_fonts::snapshot_plot_orders(&prices, &orders);
 		insta::assert_snapshot!(plot, @r###"
                                                                       ▂▃▄▃                  103.50
                                                                    ▃  █████▆▁▆▇▄                  
