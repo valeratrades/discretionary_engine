@@ -2061,6 +2061,7 @@ dependencies = [
  "serde_urlencoded",
  "serde_with",
  "sha2",
+ "snapshot_fonts",
  "strum 0.27.2",
  "tokio",
  "tokio-tungstenite",
@@ -5586,6 +5587,18 @@ name = "snap"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
+name = "snapshot_fonts"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70d102a9e9dcaf59272bc6def1567a42b57f517989b5773cb4da26cbe1be92ae"
+dependencies = [
+ "clap",
+ "color-eyre",
+ "derive-new",
+ "v_utils",
+]
 
 [[package]]
 name = "socket2"

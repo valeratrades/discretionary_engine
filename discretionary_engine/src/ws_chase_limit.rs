@@ -12,7 +12,7 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_bybit::{
 	common::{
 		credential::Credential,
-		enums::{BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce},
+		enums::{BybitEnvironment, BybitOrderSide, BybitOrderType, BybitTimeInForce},
 	},
 	websocket::{
 		client::BybitWebSocketClient,
