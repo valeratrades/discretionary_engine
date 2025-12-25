@@ -29,9 +29,9 @@ tracing = { version = "^0.1.41", features = ["log", "std", "async-await"] }
 v_exchanges = { version = "^0.16.3", features = ["full"] }
 v_utils = { version = "2.15.9", features = ["full"] }
 
-[patch.crates-io]
-v_utils = { path = "../v_utils/v_utils" }
-v_utils_macros = { path = "../v_utils/v_utils_macros" }
+#[patch.crates-io]
+#v_utils = { path = "../v_utils/v_utils" }
+#v_utils_macros = { path = "../v_utils/v_utils_macros" }
 
 [profile.dev]
 # codegen-backend = "cranelift"  # disabled due to aws-lc-rs incompatibility
