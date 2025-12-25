@@ -1,3 +1,4 @@
 [submodule "libs/nautilus_trader"]
 	path = libs/nautilus_trader
 	url = https://github.com/nautechsystems/nautilus_trader.git
+	ignore = dirty
