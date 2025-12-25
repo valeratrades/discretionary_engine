@@ -51,7 +51,8 @@
               nativeBuildInputs = with pkgs; [ pkg-config ];
 
               cargoLock.lockFile = ./Cargo.lock;
-              src = pkgs.lib.cleanSource ./.;
+              # Don't use cleanSource - it strips git submodules
+              src = ./.;
             };
           };
 
