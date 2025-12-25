@@ -6,3 +6,7 @@ default-members = ["discretionary_engine"]
 
 [workspace.lints.rust]
 unused_crate_dependencies = "warn"
+
+[patch.crates-io]
+v_utils = { path = "../v_utils/v_utils" }
+v_utils_macros = { path = "../v_utils/v_utils_macros" }

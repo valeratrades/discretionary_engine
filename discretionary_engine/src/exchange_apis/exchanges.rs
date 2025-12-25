@@ -29,7 +29,7 @@ impl Exchanges {
 		use secrecy::ExposeSecret;
 		use v_exchanges::ExchangeName;
 
-		let config = live_settings.config();
+		let config = live_settings.config()?;
 		let binance_config = config.get_exchange(ExchangeName::Binance)?;
 
 		let handlers = vec![

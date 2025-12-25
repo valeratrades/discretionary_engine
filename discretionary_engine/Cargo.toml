@@ -17,17 +17,21 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [dependencies]
 chrono = "^0.4.42"
 clap = { version = "^4.5.53", features = ["derive"] }
+clap_complete = "4.5.60"
 color-eyre = "^0.6.5"
 config = "0.15.19"
 console-subscriber = "0.5.0"
 derive-new = "0.7.0"
+derive_more = { version = "2.0.1", features = ["from_str", "display"] }
 discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.1" }
+discretionary_engine_risk = { path = "../discretionary_engine_risk", version = "1.0.0" }
 eyre = "0.6.12"
 function_name = "0.3.0"
 futures-util = "0.3.31"
 hex = "^0.4.3"
 hmac = "^0.12.1"
 insta = { version = "1.44.1", features = ["json"] }
+jiff = "^0.2.16"
 nautilus-bybit = { path = "/home/v/g/nautilus_trader/crates/adapters/bybit", default-features = false }
 nautilus-model = { path = "/home/v/g/nautilus_trader/crates/model" }
 rand = { version = "0.9.2", features = ["small_rng"] }
@@ -39,6 +43,7 @@ serde_path_to_error = "0.1.20"
 serde_urlencoded = "^0.7.1"
 serde_with = "^3.16.0"
 sha2 = "^0.10.9"
+strum = { version = "0.27", features = ["derive"] }
 tokio = { version = "^1.48.0", features = ["full", "tracing"] }
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 tracing = { version = "^0.1.41", features = ["log", "std", "async-await"] }

@@ -1,0 +1,34 @@
+[package]
+name = "discretionary_engine_risk"
+version = "1.0.0"
+edition = "2024"
+
+license = "MIT"
+documentation = "https://docs.rs/discretionary_engine_risk"
+repository = "https://github.com/valeratrades/discretionary_engine/tree/master/discretionary_engine_risk"
+homepage = "https://github.com/valeratrades/discretionary_engine"
+authors = ["valeratrades"]
+description = "Risk-management library for discretionary_engine"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+
+[dependencies]
+clap = { version = "^4.5.53", features = ["derive"] }
+color-eyre = "^0.6.5"
+jiff = "^0.2.16"
+secrecy = { version = "0.10.3", features = ["serde"] }
+strum = { version = "0.27", features = ["derive"] }
+tracing = "0.1"
+v_exchanges = { version = "^0.16.3", features = ["binance", "bybit", "kucoin", "mexc"] }
+v_utils = { path = "../../v_utils/v_utils", features = ["trades"] }
+
+[dev-dependencies]
+insta = "1.44.3"
+
+[lints.clippy]
+float_cmp = "allow"
+len_zero = "allow"
+undocumented_unsafe_blocks = "warn"
+tabs_in_doc_comments = "allow"

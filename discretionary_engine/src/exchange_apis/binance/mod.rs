@@ -367,7 +367,7 @@ pub async fn binance_runtime(
 	use secrecy::ExposeSecret;
 	use v_exchanges::ExchangeName;
 
-	let config = live_settings.config();
+	let config = live_settings.config().expect("Failed to load config");
 	let binance_config = config.get_exchange(ExchangeName::Binance).expect("Binance exchange config not found");
 
 	let pubkey = binance_config.api_pubkey.clone();

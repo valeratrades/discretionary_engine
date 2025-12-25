@@ -13,6 +13,8 @@ pub mod exchange_apis;
 mod nuke;
 pub mod positions;
 pub mod protocols;
+mod risk;
+mod shell_init;
 pub mod utils;
 mod ws_chase_limit;
 use std::{
@@ -60,6 +62,13 @@ enum Commands {
 	AdjustPos(adjust_pos::AdjustPosArgs),
 	/// Close position completely
 	Nuke(nuke::NukeArgs),
+	/// Risk management commands
+	Risk {
+		#[command(subcommand)]
+		command: risk::RiskCommands,
+	},
+	/// Shell aliases and completions. Usage: `discretionary_engine init <shell> | source`
+	Init(shell_init::ShellInitArgs),
 }
 #[derive(Args, Clone, Debug)]
 struct PositionArgs {
@@ -87,6 +96,13 @@ struct PositionArgs {
 async fn main() -> Result<()> {
 	color_eyre::install()?;
 	let cli = Cli::parse();
+
+	// Init doesn't require config
+	if let Commands::Init(args) = cli.command {
+		shell_init::output(args);
+		return Ok(());
+	}
+
 	let live_settings = match LiveSettings::new(cli.settings, Duration::from_secs(5)) {
 		Ok(ls) => Arc::new(ls),
 		Err(e) => {
@@ -94,6 +110,17 @@ async fn main() -> Result<()> {
 			std::process::exit(1);
 		}
 	};
+
+	// Handle risk commands early - they don't need the full exchange infrastructure
+	if let Commands::Risk { command } = cli.command {
+		utils::init_subscriber(None);
+		exit_on_error(match command {
+			risk::RiskCommands::Size(args) => risk::size_main(live_settings, args).await,
+			risk::RiskCommands::Balance => risk::balance_main(live_settings).await,
+		});
+		return Ok(());
+	}
+
 	// Validate positions_dir exists
 	let initial_config = live_settings.initial();
 	std::fs::create_dir_all(&initial_config.positions_dir).wrap_err_with(|| format!("Failed to create positions directory at {:?}", initial_config.positions_dir))?;
@@ -122,6 +149,7 @@ async fn main() -> Result<()> {
 		Commands::Run(args) => command_new(args, live_settings.clone(), tx, exchanges_arc).await,
 		Commands::AdjustPos(adjust_pos_args) => adjust_pos::main(adjust_pos_args, live_settings.clone(), cli.testnet).await,
 		Commands::Nuke(nuke_args) => nuke::main(nuke_args, live_settings.clone(), cli.testnet).await,
+		Commands::Risk { .. } | Commands::Init(_) => unreachable!(),
 	});
 
 	Ok(())

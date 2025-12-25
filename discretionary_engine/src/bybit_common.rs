@@ -16,7 +16,7 @@ pub fn convert_symbol_to_bybit(symbol: &str) -> String {
 }
 
 pub fn create_bybit_clients(live_settings: Arc<LiveSettings>, exchange_name: ExchangeName, testnet: bool) -> Result<(BybitRawHttpClient, BybitHttpClient)> {
-	let config = live_settings.config();
+	let config = live_settings.config()?;
 	let exchange_config = config.get_exchange(exchange_name)?;
 
 	let base_url = if testnet {
@@ -65,7 +65,7 @@ pub struct BybitAmendClient {
 
 impl BybitAmendClient {
 	pub fn new(live_settings: Arc<LiveSettings>, exchange_name: ExchangeName, testnet: bool) -> Result<Self> {
-		let config = live_settings.config();
+		let config = live_settings.config()?;
 		let exchange_config = config.get_exchange(exchange_name)?;
 
 		let base_url = if testnet {

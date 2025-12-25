@@ -189,7 +189,7 @@ pub(crate) async fn main(args: AdjustPosArgs, live_settings: Arc<LiveSettings>, 
 		log!("Using WebSocket chase-limit execution with duration: {:?}", args.duration);
 
 		// Create credential for WebSocket (clone exchange_name since it was moved)
-		let config = live_settings.config();
+		let config = live_settings.config()?;
 		let exchange_config = config.get_exchange(exchange_name)?;
 		let credential = Credential::new(exchange_config.api_pubkey.clone(), exchange_config.api_secret.expose_secret().to_string());
 

@@ -724,7 +724,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.111",
  "tempfile",
- "toml",
+ "toml 0.9.8",
 ]
 
 [[package]]
@@ -825,6 +825,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.5.62"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "004eef6b14ce34759aa7de4aea3217e368f463f46a3ed3764ca4b5a4404003b4"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.5.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,7 +925,7 @@ dependencies = [
  "serde-untagged",
  "serde_core",
  "serde_json",
- "toml",
+ "toml 0.9.8",
  "winnow",
  "yaml-rust2",
 ]
@@ -2025,17 +2034,21 @@ version = "1.0.0"
 dependencies = [
  "chrono",
  "clap",
+ "clap_complete",
  "color-eyre",
  "config",
  "console-subscriber",
  "derive-new",
+ "derive_more",
  "discretionary_engine_macros",
+ "discretionary_engine_risk",
  "eyre",
  "function_name",
  "futures-util",
  "hex",
  "hmac",
  "insta",
+ "jiff",
  "lazy_static",
  "nautilus-bybit",
  "nautilus-model",
@@ -2048,6 +2061,7 @@ dependencies = [
  "serde_urlencoded",
  "serde_with",
  "sha2",
+ "strum 0.27.2",
  "tokio",
  "tokio-tungstenite",
  "tracing",
@@ -2059,7 +2073,7 @@ dependencies = [
  "ustr",
  "uuid",
  "v_exchanges",
- "v_utils 2.15.3",
+ "v_utils",
 ]
 
 [[package]]
@@ -2069,6 +2083,21 @@ dependencies = [
  "quote",
  "syn 2.0.111",
  "trybuild",
+]
+
+[[package]]
+name = "discretionary_engine_risk"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "color-eyre",
+ "insta",
+ "jiff",
+ "secrecy",
+ "strum 0.27.2",
+ "tracing",
+ "v_exchanges",
+ "v_utils",
 ]
 
 [[package]]
@@ -3047,14 +3076,15 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.44.1"
+version = "1.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8732d3774162a0851e3f2b150eb98f31a9885dd75985099421d393385a01dfd"
+checksum = "b76866be74d68b1595eb8060cb9191dca9c021db2316558e52ddc5d55d41b66c"
 dependencies = [
  "console",
  "once_cell",
  "serde",
  "similar",
+ "tempfile",
 ]
 
 [[package]]
@@ -3577,7 +3607,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "toml",
+ "toml 0.9.8",
  "ustr",
  "uuid",
 ]
@@ -4400,7 +4430,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
 dependencies = [
- "toml_edit",
+ "toml_edit 0.23.7",
 ]
 
 [[package]]
@@ -4567,7 +4597,7 @@ dependencies = [
  "pyo3",
  "pyo3-stub-gen-derive",
  "serde",
- "toml",
+ "toml 0.9.8",
 ]
 
 [[package]]
@@ -5401,6 +5431,15 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "serde_spanned"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e24345aa0fe688594e73770a5f6d1b216508b4f93484c0026d521acd30134392"
@@ -6017,17 +6056,38 @@ dependencies = [
 
 [[package]]
 name = "toml"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
+dependencies = [
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_edit 0.22.27",
+]
+
+[[package]]
+name = "toml"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0dc8b1fb61449e27716ec0e1bdf0f6b8f3e8f6b05391e8497b8b6d7804ea6d8"
 dependencies = [
  "indexmap 2.12.1",
  "serde_core",
- "serde_spanned",
- "toml_datetime",
+ "serde_spanned 1.0.3",
+ "toml_datetime 0.7.3",
  "toml_parser",
  "toml_writer",
  "winnow",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -6041,12 +6101,26 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
+version = "0.22.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
+dependencies = [
+ "indexmap 2.12.1",
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_write",
+ "winnow",
+]
+
+[[package]]
+name = "toml_edit"
 version = "0.23.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
 dependencies = [
  "indexmap 2.12.1",
- "toml_datetime",
+ "toml_datetime 0.7.3",
  "toml_parser",
  "winnow",
 ]
@@ -6059,6 +6133,12 @@ checksum = "c0cbe268d35bdb4bb5a56a2de88d0ad0eb70af5384a99d648cd4b3d04039800e"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -6288,7 +6368,7 @@ dependencies = [
  "serde_json",
  "target-triple",
  "termcolor",
- "toml",
+ "toml 0.9.8",
 ]
 
 [[package]]
@@ -6528,9 +6608,9 @@ dependencies = [
 
 [[package]]
 name = "v_exchanges"
-version = "0.16.1"
+version = "0.16.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "566052d704430307f0d749ec92a268721a2c2e187d40c368036596441723169e"
+checksum = "ecacb865380b188f8b184ba032f3c057e615ed7291b253da2b3d18c76017f160"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -6548,14 +6628,14 @@ dependencies = [
  "tokio",
  "tracing",
  "v_exchanges_adapters",
- "v_utils 2.14.0",
+ "v_utils",
 ]
 
 [[package]]
 name = "v_exchanges_adapters"
-version = "0.16.1"
+version = "0.16.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59d6d172e4bdeeb8793bcf44b1191ef934bd97db148a6d3659e52dd538c88730"
+checksum = "a0712391a503ff4598fb0d5f4a505d56fbfd475d765943248503f7ed38570496"
 dependencies = [
  "base64 0.22.1",
  "derive-new",
@@ -6575,14 +6655,14 @@ dependencies = [
  "tracing",
  "url",
  "v_exchanges_api_generics",
- "v_utils 2.14.0",
+ "v_utils",
 ]
 
 [[package]]
 name = "v_exchanges_api_generics"
-version = "0.18.1"
+version = "0.18.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97fa637c54e9a210058f7fea9fe7690d16772cda6d4b93447a96a92b55ffbe6c"
+checksum = "24041a5acde4bd909b48e45bf1e8d2efff087d56e5745850e59b14abb50a442b"
 dependencies = [
  "bytes",
  "derive-new",
@@ -6599,40 +6679,12 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "url",
- "v_utils 2.14.0",
+ "v_utils",
 ]
 
 [[package]]
 name = "v_utils"
-version = "2.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33a786ab0d9fac0d296580cc7091d4e36915b0f090a7c65a0e2890a7cef4f1e1"
-dependencies = [
- "const_format",
- "derive-new",
- "derive_more",
- "dirs",
- "eyre",
- "function_name",
- "futures",
- "jiff",
- "macro-attr",
- "serde",
- "serde_json",
- "strum 0.27.2",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-error",
- "tracing-log 0.2.0",
- "tracing-subscriber",
- "v_utils_macros 2.10.0",
- "xdg",
-]
-
-[[package]]
-name = "v_utils"
-version = "2.15.3"
+version = "2.15.9"
 dependencies = [
  "config",
  "console-subscriber",
@@ -6655,31 +6707,18 @@ dependencies = [
  "strum 0.27.2",
  "thiserror",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-error",
  "tracing-log 0.2.0",
  "tracing-subscriber",
- "v_utils_macros 2.11.3",
+ "v_utils_macros",
  "xdg",
 ]
 
 [[package]]
 name = "v_utils_macros"
-version = "2.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3628684a30557dce7bfbdc678d302df511764ecb8f4ed27eb27938f8648072d4"
-dependencies = [
- "eyre",
- "heck",
- "proc-macro2",
- "quote",
- "serde",
- "syn 2.0.111",
-]
-
-[[package]]
-name = "v_utils_macros"
-version = "2.11.3"
+version = "2.11.9"
 dependencies = [
  "eyre",
  "heck",
