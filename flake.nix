@@ -7,7 +7,7 @@
     v-utils.url = "github:valeratrades/.github";
   };
 
-  outputs = { nixpkgs, rust-overlay, flake-utils, pre-commit-hooks, v-utils, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, pre-commit-hooks, v-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = builtins.trace "flake.nix sourced" [ (import rust-overlay) ];
@@ -51,8 +51,7 @@
               nativeBuildInputs = with pkgs; [ pkg-config ];
 
               cargoLock.lockFile = ./Cargo.lock;
-              # Don't use cleanSource - it strips git submodules
-              src = ./.;
+              src = self;
             };
           };
 
