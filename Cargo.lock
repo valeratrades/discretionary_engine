@@ -1080,6 +1080,7 @@ dependencies = [
  "console-subscriber",
  "derive-new",
  "derive_more",
+ "dirs",
  "discretionary_engine_macros",
  "discretionary_engine_risk",
  "eyre",

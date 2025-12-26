@@ -30,7 +30,6 @@ use positions::*;
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::{info, instrument};
 use v_utils::{
-	io::ExpandedPath,
 	trades::{Side, Timeframe},
 	utils::exit_on_error,
 };
@@ -47,9 +46,6 @@ struct Cli {
 	settings: SettingsFlags,
 	#[arg(short, long, action = clap::ArgAction::SetTrue)]
 	noconfirm: bool,
-	/// Artifacts directory, where logs and other files are stored.
-	#[arg(long, default_value = "~/.discretionary_engine")]
-	artifacts: ExpandedPath,
 	/// Use testnet instead of mainnet
 	#[arg(long, global = true)]
 	testnet: bool,
@@ -124,17 +120,14 @@ async fn main() -> Result<()> {
 	// Validate positions_dir exists
 	let initial_config = live_settings.initial();
 	std::fs::create_dir_all(&initial_config.positions_dir).wrap_err_with(|| format!("Failed to create positions directory at {:?}", initial_config.positions_dir))?;
-	// ensure the artifacts directory exists, if it doesn't, create it.
-	match std::fs::create_dir_all(&cli.artifacts) {
-		Ok(_) => {}
-		Err(e) => {
-			eprintln!("Failed to create artifacts directory: {}", e);
-			std::process::exit(1);
-		}
-	}
+	// Create XDG state directory for logs and other state
+	let state_dir = dirs::state_dir()
+		.unwrap_or_else(|| dirs::home_dir().expect("Could not determine home directory").join(".local/state"))
+		.join(config::EXE_NAME);
+	std::fs::create_dir_all(&state_dir).wrap_err_with(|| format!("Failed to create state directory at {:?}", state_dir))?;
 	let log_path = match std::env::var("TEST_LOG") {
 		Ok(_) => None,
-		Err(_) => Some(cli.artifacts.0.join(".log").clone().into_boxed_path()),
+		Err(_) => Some(state_dir.join(".log").into_boxed_path()),
 	};
 	utils::init_subscriber(log_path);
 	let mut js = JoinSet::new();
