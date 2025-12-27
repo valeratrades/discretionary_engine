@@ -31,7 +31,7 @@ pub(crate) async fn main(args: NukeArgs, live_settings: Arc<LiveSettings>, testn
 
 	// Convert symbol format (twt-usdt.p -> TWTUSDT)
 	let symbol_raw = args.ticker.symbol.to_string();
-	let symbol = convert_symbol_to_bybit(&symbol_raw);
+	let symbol = convert_symbol_to_bybit(&symbol_raw); //wtf
 
 	if args.duration.is_some() {
 		log!("Duration: {:?} (chase-limit strategy)", args.duration);
