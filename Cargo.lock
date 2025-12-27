@@ -1143,6 +1143,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "discretionary_engine_strategy"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "color-eyre",
+ "futures-util",
+ "insta",
+ "nautilus-bybit",
+ "nautilus-model",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
