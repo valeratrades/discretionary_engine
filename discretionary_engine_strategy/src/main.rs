@@ -14,7 +14,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-	/// Start listening to BTC trades on Bybit
+	/// Start the strategy with live market data
 	Start,
 }
 

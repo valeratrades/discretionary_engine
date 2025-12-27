@@ -1,78 +1,40 @@
-use color_eyre::eyre::{Result, eyre};
-use futures_util::StreamExt;
-use nautilus_bybit::{
-	common::enums::{BybitEnvironment, BybitProductType},
-	http::client::BybitHttpClient,
-	websocket::{client::BybitWebSocketClient, messages::NautilusWsMessage},
-};
-use nautilus_model::data::Data;
-use tokio::{pin, signal};
+//! Start command implementation.
+//!
+//! This module wires together the exchange-specific data layer with the
+//! exchange-agnostic strategy layer.
+
+use color_eyre::eyre::Result;
+use tokio::{signal, sync::mpsc};
 use tracing::info;
 
+use crate::{
+	data::bybit::{BybitDataConfig, init_data},
+	strategy::PrintTradesStrategy,
+};
+
+/// Start the strategy with Bybit data feed.
 pub async fn start() -> Result<()> {
-	// Fetch instrument data via HTTP first
-	info!("Fetching BTCUSDT instrument data...");
-	let http_client = BybitHttpClient::new(None, Some(60), None, None, None, None, None)?;
-	let instruments = http_client
-		.request_instruments(BybitProductType::Linear, Some("BTCUSDT".to_string()))
-		.await
-		.map_err(|e| eyre!("Failed to fetch instruments from Bybit: {e}"))?;
+	// Create channel for trades (the bridge between data layer and strategy)
+	let (trade_tx, trade_rx) = mpsc::unbounded_channel();
 
-	if instruments.is_empty() {
-		return Err(color_eyre::eyre::eyre!("Failed to fetch BTCUSDT instrument"));
-	}
+	// Initialize exchange-specific data feed
+	// This is the ONLY place where we mention Bybit
+	let config = BybitDataConfig::default();
+	let data_handle = init_data(config, trade_tx).await?;
 
-	info!("Fetched {} instrument(s)", instruments.len());
+	// Create and run exchange-agnostic strategy
+	let strategy = PrintTradesStrategy::new(trade_rx);
 
-	// Create websocket client and cache the instrument
-	let mut client = BybitWebSocketClient::new_public_with(BybitProductType::Linear, BybitEnvironment::Mainnet, None, None);
+	info!("Press Ctrl+C to exit");
 
-	for instrument in instruments {
-		client.cache_instrument(instrument);
-	}
-
-	client.connect().await?;
-	client.subscribe(vec!["publicTrade.BTCUSDT".to_string()]).await?;
-
-	let stream = client.stream();
-	let shutdown = signal::ctrl_c();
-	pin!(stream);
-	pin!(shutdown);
-
-	info!("Streaming BTC trades from Bybit; press Ctrl+C to exit");
-
-	loop {
-		tokio::select! {
-			Some(event) = stream.next() => {
-				match event {
-					NautilusWsMessage::Data(data_vec) => {
-						for data in data_vec {
-							if let Data::Trade(trade) = data {
-								println!(
-									"[TRADE] {} | price: {} | size: {} | side: {:?}",
-									trade.instrument_id,
-									trade.price,
-									trade.size,
-									trade.aggressor_side
-								);
-							}
-						}
-					}
-					NautilusWsMessage::Error(err) => {
-						tracing::error!(code = err.code, message = %err.message, "websocket error");
-					}
-					NautilusWsMessage::Reconnected => {
-						tracing::warn!("WebSocket reconnected");
-					}
-					_ => {}
-				}
-			}
-			_ = &mut shutdown => {
-				info!("Received Ctrl+C, closing connection");
-				client.close().await?;
-				break;
-			}
-			else => break,
+	// Run strategy with graceful shutdown
+	tokio::select! {
+		_ = strategy.run() => {
+			info!("Strategy completed");
+		}
+		_ = signal::ctrl_c() => {
+			info!("Received Ctrl+C, shutting down");
+			data_handle.abort();
 		}
 	}
 
