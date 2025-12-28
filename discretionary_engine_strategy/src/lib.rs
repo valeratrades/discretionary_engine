@@ -10,16 +10,21 @@
 //! - **Strategy Layer** (`strategy.rs`): Exchange-agnostic strategy implementations that only
 //!   work with Nautilus types (`TradeTick`, `QuoteTick`, `Bar`, etc.).
 //!
+//! - **Protocols** (`protocols/`): Protocol definitions and deserialization.
+//!
 //! This separation ensures:
 //! 1. Strategies can be easily tested with mock data
 //! 2. Strategies can switch between exchanges without code changes
 //! 3. The same strategy code works for backtesting and live trading
 
 pub mod data;
+pub mod protocols;
 pub mod strategy;
 
 mod start;
 
 use clap as _;
+#[cfg(test)]
+use insta as _;
 pub use start::start;
 use tracing_subscriber as _;
