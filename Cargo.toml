@@ -18,16 +18,17 @@ undocumented_unsafe_blocks = "warn"
 tabs_in_doc_comments = "allow"
 
 [workspace.dependencies]
-clap = { version = "^4.5.53", features = ["derive"] }
+clap = { version = "^4.5.53", features = ["derive", "env"] }
 color-eyre = "^0.6.5"
 insta = { version = "1.45.0", features = ["json"] }
 jiff = "^0.2.17"
 secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "^1.0.228", features = ["derive"] }
 snapshot_fonts = "1.2.0"
 strum = { version = "0.27", features = ["derive"] }
 tracing = { version = "^0.1.44", features = ["log", "std", "async-await"] }
 v_exchanges = { version = "^0.16.7", features = ["full"] }
-v_utils = { version = "2.15.9", features = ["full"] }
+v_utils = { path = "../v_utils/v_utils", version = "2.15.9", features = ["full"] } #ga: rm path
 
 #[patch.crates-io]
 #v_utils = { path = "../v_utils/v_utils" }

@@ -601,6 +601,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "combine"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "config"
 version = "0.15.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1083,6 +1097,7 @@ dependencies = [
  "dirs",
  "discretionary_engine_macros",
  "discretionary_engine_risk",
+ "discretionary_engine_strategy",
  "eyre",
  "function_name",
  "futures-util",
@@ -1115,7 +1130,7 @@ dependencies = [
  "ustr",
  "uuid",
  "v_exchanges",
- "v_utils",
+ "v_utils 2.15.9",
 ]
 
 [[package]]
@@ -1139,7 +1154,7 @@ dependencies = [
  "strum",
  "tracing",
  "v_exchanges",
- "v_utils",
+ "v_utils 2.15.9",
 ]
 
 [[package]]
@@ -1152,9 +1167,11 @@ dependencies = [
  "insta",
  "nautilus-bybit",
  "nautilus-model",
+ "redis",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "v_utils 2.15.9",
 ]
 
 [[package]]
@@ -1913,7 +1930,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2",
+ "socket2 0.6.1",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -2686,6 +2703,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-bigint"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
+dependencies = [
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "num-complex"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2699,6 +2726,15 @@ name = "num-conv"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+
+[[package]]
+name = "num-integer"
+version = "0.1.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7969661fd2958a5cb096e56c8e1ad0444ac2bbcd0061bd28660485a44879858f"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "num-traits"
@@ -3240,6 +3276,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.3",
+]
+
+[[package]]
+name = "redis"
+version = "0.27.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09d8f99a4090c89cc489a94833c901ead69bfbf3877b4867d5482e321ee875bc"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "bytes",
+ "combine",
+ "futures-util",
+ "itertools 0.13.0",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "pin-project-lite",
+ "ryu",
+ "sha1_smol",
+ "socket2 0.5.10",
+ "tokio",
+ "tokio-util",
+ "url",
 ]
 
 [[package]]
@@ -3869,6 +3929,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3952,7 +4018,17 @@ dependencies = [
  "clap",
  "color-eyre",
  "derive-new",
- "v_utils",
+ "v_utils 2.15.9 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4327,7 +4403,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.6.1",
  "tokio-macros",
  "tracing",
  "windows-sys 0.61.2",
@@ -4517,7 +4593,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "socket2",
+ "socket2 0.6.1",
  "sync_wrapper",
  "tokio",
  "tokio-stream",
@@ -4907,7 +4983,7 @@ dependencies = [
  "tokio",
  "tracing",
  "v_exchanges_adapters",
- "v_utils",
+ "v_utils 2.15.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4934,7 +5010,7 @@ dependencies = [
  "tracing",
  "url",
  "v_exchanges_api_generics",
- "v_utils",
+ "v_utils 2.15.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4958,14 +5034,12 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "url",
- "v_utils",
+ "v_utils 2.15.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "v_utils"
 version = "2.15.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c72fde9b17ebe822878bf24618b8dffeb3b034cf45a73c60851cc2dad6722c2"
 dependencies = [
  "config",
  "console-subscriber",
@@ -4993,8 +5067,48 @@ dependencies = [
  "tracing-error",
  "tracing-log 0.2.0",
  "tracing-subscriber",
- "v_utils_macros",
+ "v_utils_macros 2.11.9",
  "xdg",
+]
+
+[[package]]
+name = "v_utils"
+version = "2.15.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c72fde9b17ebe822878bf24618b8dffeb3b034cf45a73c60851cc2dad6722c2"
+dependencies = [
+ "const_format",
+ "derive-new",
+ "derive_more",
+ "dirs",
+ "eyre",
+ "function_name",
+ "futures",
+ "jiff",
+ "macro-attr",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-error",
+ "tracing-log 0.2.0",
+ "tracing-subscriber",
+ "v_utils_macros 2.11.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "xdg",
+]
+
+[[package]]
+name = "v_utils_macros"
+version = "2.11.9"
+dependencies = [
+ "eyre",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "syn 2.0.111",
 ]
 
 [[package]]

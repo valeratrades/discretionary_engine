@@ -5,6 +5,7 @@ extern crate clap;
 pub const EXE_NAME: &str = "discretionary_engine";
 
 use color_eyre::eyre::{Result, eyre};
+pub use discretionary_engine_strategy::config::StrategyConfig;
 use secrecy::SecretString;
 use v_exchanges::ExchangeName;
 use v_utils::{Percent, macros as v_macros, percent::PercentU};
@@ -12,13 +13,17 @@ use v_utils::{Percent, macros as v_macros, percent::PercentU};
 fn __default_comparison_offset_h() -> u32 {
 	24
 }
+
 #[derive(Clone, Debug, v_macros::LiveSettings, v_macros::MyConfigPrimitives, v_macros::Settings)]
+#[settings(use_env = true)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	#[serde(default)]
 	pub exchanges: HashMap<String, ExchangeConfig>,
 	#[serde(default = "__default_comparison_offset_h")]
 	pub comparison_offset_h: u32,
+	#[settings(flatten)]
+	pub strategy: Option<StrategyConfig>,
 	#[settings(flatten)]
 	pub risk: Option<RiskConfig>,
 }

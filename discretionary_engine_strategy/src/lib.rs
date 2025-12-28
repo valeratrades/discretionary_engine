@@ -12,13 +12,18 @@
 //!
 //! - **Protocols** (`protocols/`): Protocol definitions and deserialization.
 //!
+//! - **Redis Bus** (`redis_bus.rs`): Redis pub/sub for CLI-to-strategy communication.
+//!
 //! This separation ensures:
 //! 1. Strategies can be easily tested with mock data
 //! 2. Strategies can switch between exchanges without code changes
 //! 3. The same strategy code works for backtesting and live trading
 
+pub mod commands;
+pub mod config;
 pub mod data;
 pub mod protocols;
+pub mod redis_bus;
 pub mod strategy;
 
 mod start;
@@ -26,5 +31,7 @@ mod start;
 use clap as _;
 #[cfg(test)]
 use insta as _;
+use redis as _;
 pub use start::start;
 use tracing_subscriber as _;
+use v_utils as _;
