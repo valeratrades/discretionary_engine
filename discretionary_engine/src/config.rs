@@ -54,7 +54,7 @@ pub struct SizeConfig {
 	pub risk_layers: Option<RiskLayersConfig>,
 }
 
-#[derive(Clone, Debug, smart_default::SmartDefault, v_macros::MyConfigPrimitives, v_macros::SettingsNested)]
+#[derive(Clone, Debug, v_macros::MyConfigPrimitives, v_macros::SettingsNested, smart_default::SmartDefault)]
 #[serde(default)]
 pub struct RiskLayersConfig {
 	#[default(true)]
