@@ -56,10 +56,10 @@ fn build_cli_string(args: &PositionArgs, testnet: bool) -> String {
 	parts.push(format!("-c {}", args.coin));
 
 	for proto in &args.acquisition_protocols {
-		parts.push(format!("-a {}", proto));
+		parts.push(format!("-a {proto}"));
 	}
 	for proto in &args.followup_protocols {
-		parts.push(format!("-f {}", proto));
+		parts.push(format!("-f {proto}"));
 	}
 
 	parts.join(" ")

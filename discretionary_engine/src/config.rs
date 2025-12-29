@@ -5,7 +5,7 @@ extern crate clap;
 pub const EXE_NAME: &str = "discretionary_engine";
 
 use color_eyre::eyre::{Result, eyre};
-pub use discretionary_engine_strategy::config::StrategyConfig;
+pub use discretionary_engine_strategy::config::*;
 use secrecy::SecretString;
 use v_exchanges::ExchangeName;
 use v_utils::{Percent, macros as v_macros, percent::PercentU};
@@ -54,13 +54,15 @@ pub struct SizeConfig {
 	pub risk_layers: Option<RiskLayersConfig>,
 }
 
-#[derive(Clone, Debug, Default, v_macros::MyConfigPrimitives, v_macros::SettingsNested)]
+#[derive(Clone, Debug, smart_default::SmartDefault, v_macros::MyConfigPrimitives, v_macros::SettingsNested)]
+#[serde(default)]
 pub struct RiskLayersConfig {
-	#[settings(default = "true")]
+	#[default(true)]
+	#[serde(default)]
 	pub stop_loss_proximity: bool,
-	#[settings(default = "false")]
+	#[serde(default)]
 	pub from_phone: bool,
-	#[settings(default = "false")]
+	#[serde(default)]
 	pub lost_last_trade: bool,
 }
 
