@@ -34,6 +34,10 @@
         rs = v-utils.rs {
           inherit pkgs;
           cranelift = false; # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
+          build = {
+            enable = true;
+            dirs = [ "discretionary_engine" ];
+          };
         };
         readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
       in

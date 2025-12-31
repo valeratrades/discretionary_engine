@@ -2,6 +2,7 @@
 name = "discretionary_engine"
 version = "1.0.0"
 authors = ["Valera <valeratrades@gmail.com>"]
+build = "build.rs"
 categories = ["finance"]
 description = "LaTeX of trading"
 documentation = "https://docs.rs/discretionary_engine"
