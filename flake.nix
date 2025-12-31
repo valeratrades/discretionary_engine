@@ -33,7 +33,7 @@
         };
         rs = v-utils.rs {
           inherit pkgs;
-          cranelift = false; # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
+          cranelift = false; # cranelift disabled due to aws-lc-rs incompatibility
           build = {
             enable = true;
             dirs = [ "discretionary_engine" ];
@@ -51,7 +51,7 @@
             };
           in
           {
-            default = rustPlatform.buildRustPackage rec {
+            default = rustPlatform.buildRustPackage {
               inherit pname;
               version = manifest.version;
 
