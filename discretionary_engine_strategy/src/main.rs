@@ -39,12 +39,11 @@ struct SubmitArgs {
 	//TODO!!!: allow providing a more precise primitive here (eg with Market, or with Market and Exchange); in which case it should understand that we want to skip engine suggestions for those, and for it to just accept the defined part of selection.
 	#[arg(short, long)]
 	coin: String,
-	/// acquisition protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	/// protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5".
+	/// Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
+	/// For more info, reference [CompactFormat](v_utils::macros::CompactFormat)
 	#[arg(short, long)]
-	acquisition_protocols: Vec<String>,
-	/// followup protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
-	#[arg(short, long)]
-	followup_protocols: Vec<String>,
+	protocols: Vec<String>,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -64,11 +63,8 @@ fn build_cli_string(args: &SubmitArgs, testnet: bool) -> String {
 	parts.push(format!("-s {}", args.size_usdt));
 	parts.push(format!("-c {}", args.coin));
 
-	for proto in &args.acquisition_protocols {
-		parts.push(format!("-a {proto}"));
-	}
-	for proto in &args.followup_protocols {
-		parts.push(format!("-f {proto}"));
+	for p in &args.protocols {
+		parts.push(format!("-a {p}"));
 	}
 
 	parts.join(" ")
@@ -99,15 +95,15 @@ async fn main() -> Result<()> {
 					result = subscriber.next() => {
 						match result {
 							Ok(Some((id, cmd))) => {
-								info!("Received command [{}]: {}", id, cmd);
+								info!("Received command [{id}]: {cmd}");
 								// TODO: Parse and forward to Nautilus Actor
-								println!("[STRATEGY] Received: {}", cmd);
+								println!("[STRATEGY] Received: {cmd}");
 							}
 							Ok(None) => {
 								// Timeout, continue waiting
 							}
 							Err(e) => {
-								tracing::error!("Error reading command: {}", e);
+								tracing::error!("Error reading command: {e}");
 							}
 						}
 					}
@@ -120,8 +116,7 @@ async fn main() -> Result<()> {
 		}
 		Commands::Submit(args) => {
 			// Validate protocols first
-			let _acquisition_protocols = interpret_protocol_specs(args.acquisition_protocols.clone()).wrap_err("Invalid acquisition protocols")?;
-			let _followup_protocols = interpret_protocol_specs(args.followup_protocols.clone()).wrap_err("Invalid followup protocols")?;
+			let _protocols = interpret_protocol_specs(args.protocols.clone()).wrap_err("Invalid protocols")?;
 
 			// Build CLI string and publish to Redis
 			let cli_string = build_cli_string(&args, cli.testnet);
