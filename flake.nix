@@ -4,7 +4,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks.url = "github:cachix/git-hooks.nix/ca5b894d3e3e151ffc1db040b6ce4dcc75d31c37";
-    v-utils.url = "github:valeratrades/.github?ref=v1.2";
+    v-utils.url = "github:valeratrades/.github?ref=v1.3";
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, pre-commit-hooks, v-utils, ... }:
@@ -30,6 +30,10 @@
           jobsOther = [ "loc-badge" ];
           langs = [ "rs" ];
           labels.extra = [{ name = "rm"; color = "0000ff"; }];
+        };
+        rs = v-utils.rs {
+          inherit pkgs;
+          cranelift = false; # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
         };
         readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
       in
@@ -62,15 +66,12 @@
           shellHook =
             pre-commit-check.shellHook +
             github.shellHook +
+            rs.shellHook +
             ''
               cp -f ${v-utils.files.licenses.blue_oak} ./LICENSE
 
               mkdir -p ./.cargo
               cp -f ${(v-utils.files.treefmt) {inherit pkgs;}} ./.treefmt.toml
-              cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
-              # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
-              cp -f ${(v-utils.files.rust.config {inherit pkgs; cranelift = false;})} ./.cargo/config.toml
-              cp -f ${(v-utils.files.rust.build {inherit pkgs;})} ./build.rs && chmod +xw ./build.rs
 
               cp -f ${readme} ./README.md
             '';
