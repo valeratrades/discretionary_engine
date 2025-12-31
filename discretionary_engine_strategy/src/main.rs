@@ -31,10 +31,12 @@ enum Commands {
 
 #[derive(Args, Clone, Debug)]
 struct SubmitArgs {
-	/// Target change in exposure. So positive for buying, negative for selling.
+	/// Target size of the position on the asset to establish. Signed.
 	#[arg(short, long, allow_hyphen_values = true)]
 	size_usdt: f64,
-	/// _only_ the coin name itself. e.g. "BTC" or "ETH". Providing full symbol currently will error on the stage of making price requests for the coin.
+	/// _only_ the coin name itself. e.g. "BTC" or "ETH".
+	/// It's engine's job to determine what pair and exchange to utilize
+	//TODO!!!: allow providing a more precise primitive here (eg with Market, or with Market and Exchange); in which case it should understand that we want to skip engine suggestions for those, and for it to just accept the defined part of selection.
 	#[arg(short, long)]
 	coin: String,
 	/// acquisition protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
@@ -43,6 +45,11 @@ struct SubmitArgs {
 	/// followup protocols parameters, in the format of "<protocol>-<params>", e.g. "ts:p0.5". Params consist of their starting letter followed by the value, e.g. "p0.5" for 0.5% offset. If multiple params are required, they are separated by '-'.
 	#[arg(short, long)]
 	followup_protocols: Vec<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+struct AdjustArgs {
+	sorry: (),
 }
 
 /// Reconstruct the CLI string from parsed args.
