@@ -70,6 +70,7 @@
               cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
               # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
               cp -f ${(v-utils.files.rust.config {inherit pkgs; cranelift = false;})} ./.cargo/config.toml
+              cp -f ${(v-utils.files.rust.build {inherit pkgs;})} ./build.rs && chmod +xw ./build.rs
 
               cp -f ${readme} ./README.md
             '';
