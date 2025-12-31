@@ -4,7 +4,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks.url = "github:cachix/git-hooks.nix/ca5b894d3e3e151ffc1db040b6ce4dcc75d31c37";
-    v-utils.url = "github:valeratrades/.github/v1.2.1";
+    v-utils.url = "github:valeratrades/.github/v1.2.2";
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, pre-commit-hooks, v-utils, ... }:
@@ -69,7 +69,7 @@
               cp -f ${(v-utils.files.treefmt) {inherit pkgs;}} ./.treefmt.toml
               cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
               # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
-              # cp -f ${(v-utils.files.rust.config {inherit pkgs;})} ./.cargo/config.toml
+              cp -f ${(v-utils.files.rust.config {inherit pkgs; cranelift = false;})} ./.cargo/config.toml
 
               cp -f ${readme} ./README.md
             '';
@@ -80,7 +80,7 @@
           };
 
           packages = [
-            mold-wrapped
+            mold
             openssl
             pkg-config
             rust
