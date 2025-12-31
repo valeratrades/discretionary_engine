@@ -38,7 +38,7 @@ pub static MAX_CONNECTION_FAILURES: u32 = 10;
 pub static MUT_CURRENT_CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"), about, long_about = None)]
 struct Cli {
 	#[command(subcommand)]
 	command: Commands,
@@ -63,8 +63,37 @@ enum Commands {
 		#[command(subcommand)]
 		command: risk::RiskCommands,
 	},
+	/// Strategy commands (nautilus-based)
+	Strategy {
+		#[command(subcommand)]
+		command: StrategyCommands,
+	},
 	/// Shell aliases and completions. Usage: `discretionary_engine init <shell> | source`
 	Init(shell_init::ShellInitArgs),
+}
+
+#[derive(Subcommand)]
+enum StrategyCommands {
+	/// Start the strategy listener
+	Start,
+	/// Submit a position request to the running strategy
+	Submit(StrategySubmitArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+struct StrategySubmitArgs {
+	/// Target change in exposure. So positive for buying, negative for selling.
+	#[arg(short, long, allow_hyphen_values = true)]
+	size_usdt: f64,
+	/// _only_ the coin name itself. e.g. "BTC" or "ETH".
+	#[arg(short, long)]
+	coin: String,
+	/// acquisition protocols parameters
+	#[arg(short, long)]
+	acquisition_protocols: Vec<String>,
+	/// followup protocols parameters
+	#[arg(short, long)]
+	followup_protocols: Vec<String>,
 }
 #[derive(Args, Clone, Debug)]
 struct PositionArgs {
@@ -142,6 +171,22 @@ async fn main() -> Result<()> {
 		Commands::Run(args) => command_new(args, live_settings.clone(), tx, exchanges_arc).await,
 		Commands::AdjustPos(adjust_pos_args) => adjust_pos::main(adjust_pos_args, live_settings.clone(), cli.testnet).await,
 		Commands::Nuke(nuke_args) => nuke::main(nuke_args, live_settings.clone(), cli.testnet).await,
+		Commands::Strategy { command } => {
+			let redis_port = live_settings.initial().strategy.as_ref().map(|s| s.redis_port).unwrap_or(6379);
+			match command {
+				StrategyCommands::Start => discretionary_engine_strategy::commands::start_listener(redis_port).await,
+				StrategyCommands::Submit(args) => {
+					let submit_args = discretionary_engine_strategy::commands::SubmitArgs {
+						size_usdt: args.size_usdt,
+						coin: args.coin,
+						acquisition_protocols: args.acquisition_protocols,
+						followup_protocols: args.followup_protocols,
+						testnet: cli.testnet,
+					};
+					discretionary_engine_strategy::commands::submit(submit_args, redis_port).await
+				}
+			}
+		}
 		Commands::Risk { .. } | Commands::Init(_) => unreachable!(),
 	});
 
