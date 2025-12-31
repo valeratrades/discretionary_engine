@@ -21,14 +21,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-	/// Submit a position request (sends to running strategy via Redis)
-	Submit(PositionArgs),
 	/// Start the strategy and listen for commands via Redis
-	Start,
+	Listen,
+	/// Submit a new position request (sends to running strategy via Redis)
+	Submit(SubmitArgs),
+	/// Adjust an existing position (target qty or protocols)
+	Adjust(AdjustArgs),
 }
 
 #[derive(Args, Clone, Debug)]
-struct PositionArgs {
+struct SubmitArgs {
 	/// Target change in exposure. So positive for buying, negative for selling.
 	#[arg(short, long, allow_hyphen_values = true)]
 	size_usdt: f64,
@@ -44,7 +46,7 @@ struct PositionArgs {
 }
 
 /// Reconstruct the CLI string from parsed args.
-fn build_cli_string(args: &PositionArgs, testnet: bool) -> String {
+fn build_cli_string(args: &SubmitArgs, testnet: bool) -> String {
 	let mut parts = Vec::new();
 
 	if testnet {
@@ -74,20 +76,7 @@ async fn main() -> Result<()> {
 	let cli = Cli::parse();
 
 	match cli.command {
-		Commands::Submit(args) => {
-			// Validate protocols first
-			let _acquisition_protocols = interpret_protocol_specs(args.acquisition_protocols.clone()).wrap_err("Invalid acquisition protocols")?;
-			let _followup_protocols = interpret_protocol_specs(args.followup_protocols.clone()).wrap_err("Invalid followup protocols")?;
-
-			// Build CLI string and publish to Redis
-			let cli_string = build_cli_string(&args, cli.testnet);
-			println!("Publishing command: {}", cli_string);
-
-			let mut conn = redis_bus::connect(cli.redis_port).await?;
-			let id = redis_bus::publish_command(&mut conn, &cli_string).await?;
-			println!("Command published with ID: {}", id);
-		}
-		Commands::Start => {
+		Commands::Listen => {
 			info!("Starting strategy, listening for commands on Redis port {}...", cli.redis_port);
 
 			// Generate a unique consumer name
@@ -121,6 +110,23 @@ async fn main() -> Result<()> {
 					}
 				}
 			}
+		}
+		Commands::Submit(args) => {
+			// Validate protocols first
+			let _acquisition_protocols = interpret_protocol_specs(args.acquisition_protocols.clone()).wrap_err("Invalid acquisition protocols")?;
+			let _followup_protocols = interpret_protocol_specs(args.followup_protocols.clone()).wrap_err("Invalid followup protocols")?;
+
+			// Build CLI string and publish to Redis
+			let cli_string = build_cli_string(&args, cli.testnet);
+			println!("Publishing command: {}", cli_string);
+
+			let mut conn = redis_bus::connect(cli.redis_port).await?;
+			let id = redis_bus::publish_command(&mut conn, &cli_string).await?;
+			println!("Command published with ID: {}", id);
+		}
+		Commands::Adjust(args) => {
+			//Q: think logic should be very similar right, - we just validate, then submit over into the actual execution. Just slightly different set of commands that could be passed here
+			todo!();
 		}
 	}
 

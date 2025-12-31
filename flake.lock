@@ -194,7 +194,7 @@
       },
       "original": {
         "owner": "valeratrades",
-        "ref": "v1.2.2",
+        "ref": "v1.2",
         "repo": ".github",
         "type": "github"
       }
