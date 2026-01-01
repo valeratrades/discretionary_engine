@@ -199,7 +199,10 @@ pub struct RecalculateOrdersPerOrderInfo {
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
 ///
-/// NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
+/// # Contract
+/// - [impl protocol.orders.id-stability]: Protocol must maintain stable order IDs - ordinal indices must remain constant
+/// - [impl protocol.orders.id-match]: ProtocolOrderId must match protocol signature and ordinal position
+/// - [impl protocol.orders.all-slots-initialized]: All possible orders must have slots, inactive ones as None
 #[derive(Clone, Debug, Default)]
 pub struct ProtocolOrders {
 	pub protocol_id: String,
@@ -208,6 +211,7 @@ pub struct ProtocolOrders {
 impl ProtocolOrders {
 	#[instrument(skip(orders))]
 	pub fn new(protocol_id: String, orders: Vec<Option<ConceptualOrderPercents>>) -> Self {
+		// [verify protocol.orders.all-slots-initialized]
 		assert_ne!(
 			orders.len(),
 			0,

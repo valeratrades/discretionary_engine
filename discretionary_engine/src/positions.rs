@@ -318,6 +318,7 @@ fn recalculate_protocol_orders(
 		}
 	}
 
+	// [impl protocol.orders.market-first]
 	/// NB: Market-like orders MUST be ran first
 	fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
 		for order in incoming {
