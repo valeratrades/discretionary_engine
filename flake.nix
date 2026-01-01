@@ -36,7 +36,9 @@
           cranelift = false; # cranelift disabled due to aws-lc-rs incompatibility
           build = {
             enable = true;
-            dirs = [ "discretionary_engine" ];
+            workspace = {
+              "./discretionary_engine" = [ "git_version" "log_directives" ];
+            };
           };
         };
         readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
@@ -74,7 +76,6 @@
             ''
               cp -f ${v-utils.files.licenses.blue_oak} ./LICENSE
 
-              mkdir -p ./.cargo
               cp -f ${(v-utils.files.treefmt) {inherit pkgs;}} ./.treefmt.toml
 
               cp -f ${readme} ./README.md
