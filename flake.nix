@@ -22,18 +22,10 @@
         pname = manifest.name;
         stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv;
 
-        github = v-utils.github {
-          inherit pkgs pname;
-          lastSupportedVersion = "nightly-2025-10-12";
-          jobsErrors = [ "rust-tests" ];
-          jobsWarnings = [ "rust-doc" "rust-clippy" "rust-machete" "rust-sorted" "rust-sorted-derives" "tokei" ];
-          jobsOther = [ "loc-badge" ];
-          langs = [ "rs" ];
-          labels.extra = [{ name = "rm"; color = "0000ff"; }];
-        };
         rs = v-utils.rs {
           inherit pkgs;
           cranelift = false; # cranelift disabled due to aws-lc-rs incompatibility
+          tracey = true;
           build = {
             enable = true;
             workspace = {
@@ -41,21 +33,17 @@
             };
           };
         };
-        readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
-
-        tracey = pkgs.rustPlatform.buildRustPackage {
-          pname = "tracey";
-          version = "1.0.0";
-          src = pkgs.fetchFromGitHub {
-            owner = "bearcove";
-            repo = "tracey";
-            rev = "71cfc9d4115612467b857c868a90cc6d90ed79f7";
-            hash = "sha256-maVPj9/PZzZDEmtMjemeuOCctDrU3JXaBNDwjFTRpks=";
-          };
-          cargoHash = "sha256-pk9Ky+/5P88zAbSJKbUwyvLNFIlHJzwqQCEQrorjlk0=";
-          cargoBuildFlags = [ "-p" "tracey" ];
-          doCheck = false;
+        github = v-utils.github {
+          inherit pkgs pname;
+          inherit (rs) traceyCheck;
+          lastSupportedVersion = "nightly-2025-10-12";
+          jobsErrors = [ "rust-tests" ];
+          jobsWarnings = [ "rust-doc" "rust-clippy" "rust-machete" "rust-sorted" "rust-sorted-derives" "tokei" ];
+          jobsOther = [ "loc-badge" ];
+          langs = [ "rs" ];
+          labels.extra = [{ name = "rm"; color = "0000ff"; }];
         };
+        readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
       in
       {
         packages =
@@ -105,8 +93,7 @@
             openssl
             pkg-config
             rust
-            tracey
-          ] ++ pre-commit-check.enabledPackages ++ github.enabledPackages;
+          ] ++ pre-commit-check.enabledPackages ++ github.enabledPackages ++ rs.enabledPackages;
         };
       }
     );
