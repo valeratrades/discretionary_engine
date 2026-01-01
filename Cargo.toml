@@ -31,9 +31,12 @@ tracing = { version = "^0.1.44", features = ["log", "std", "async-await"] }
 v_exchanges = { version = "^0.16.7", features = ["full"] }
 v_utils = { version = "2.15.11", features = ["full"] }
 
-#[patch.crates-io]
-#v_utils = { path = "../v_utils/v_utils" }
-#v_utils_macros = { path = "../v_utils/v_utils_macros" }
+[patch.crates-io]
+v_exchanges = { path = "../v_exchanges/v_exchanges" }
+v_exchanges_adapters = { path = "../v_exchanges/v_exchanges_adapters" }
+v_exchanges_api_generics = { path = "../v_exchanges/v_exchanges_api_generics" }
+v_utils = { path = "../v_utils/v_utils" }
+v_utils_macros = { path = "../v_utils/v_utils_macros" }
 
 [profile.dev]
 # codegen-backend = "cranelift"  # disabled due to aws-lc-rs incompatibility

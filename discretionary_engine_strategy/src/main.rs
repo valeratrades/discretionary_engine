@@ -120,11 +120,11 @@ async fn main() -> Result<()> {
 
 			// Build CLI string and publish to Redis
 			let cli_string = build_cli_string(&args, cli.testnet);
-			println!("Publishing command: {}", cli_string);
+			println!("Publishing command: {cli_string}");
 
 			let mut conn = redis_bus::connect(cli.redis_port).await?;
 			let id = redis_bus::publish_command(&mut conn, &cli_string).await?;
-			println!("Command published with ID: {}", id);
+			println!("Command published with ID: {id}");
 		}
 		Commands::Adjust(args) => {
 			//Q: think logic should be very similar right, - we just validate, then submit over into the actual execution. Just slightly different set of commands that could be passed here

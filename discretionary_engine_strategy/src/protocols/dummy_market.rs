@@ -1,70 +1,80 @@
 //! DummyMarket protocol - sends a single market order.
 
-use std::{fmt, str::FromStr};
+use color_eyre::eyre::Result;
+use discretionary_engine_macros::ProtocolWrapper;
+use tokio::{sync::mpsc, task::JoinSet};
+use v_exchanges::core::{Instrument, Symbol};
+use v_utils::{
+	Percent,
+	macros::CompactFormat,
+	trades::{Pair, Side},
+};
 
-use color_eyre::eyre::{Result, bail};
+use super::{ProtocolOrders, ProtocolTrait, ProtocolType};
+use crate::order_types::{ConceptualMarket, ConceptualOrderPercents, ConceptualOrderType};
 
-/// A protocol that simply sends one market order.
-///
-/// This is the simplest possible protocol, used for testing and debugging.
-#[derive(Clone, Debug, Default)]
-pub struct DummyMarket;
+/// Literally just sends one market order.
+#[derive(Clone, CompactFormat, Debug, Default, ProtocolWrapper, derive_new::new)]
+pub struct DummyMarket {}
 
-impl DummyMarket {
-	/// Protocol prefix used for parsing.
-	pub const PREFIX: &'static str = "dm";
-}
+impl ProtocolTrait for DummyMarketWrapper {
+	type Params = DummyMarket;
 
-impl fmt::Display for DummyMarket {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", Self::PREFIX)
-	}
-}
+	fn attach(&self, set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
+		let symbol = Symbol::new(Pair::new(asset, "USDT".to_string()), Instrument::Perp);
+		let m = ConceptualMarket::new(Percent(1.0));
+		let order = ConceptualOrderPercents::new(ConceptualOrderType::Market(m), symbol, protocol_side, Percent::new(1.0));
 
-impl FromStr for DummyMarket {
-	type Err = color_eyre::eyre::Report;
-
-	fn from_str(spec: &str) -> Result<Self> {
-		// Accept "dm" or "dm:" with no additional params
-		let trimmed = spec.trim();
-		if trimmed == Self::PREFIX || trimmed.starts_with(&format!("{}:", Self::PREFIX)) {
-			// For now, DummyMarket has no parameters
-			let after_prefix = trimmed.strip_prefix(Self::PREFIX).unwrap_or("");
-			let after_colon = after_prefix.strip_prefix(':').unwrap_or(after_prefix);
-			if after_colon.is_empty() {
-				return Ok(DummyMarket);
+		let protocol_spec = self.0.read().unwrap().to_string();
+		let protocol_orders = ProtocolOrders::new(protocol_spec, vec![Some(order)]);
+		set.spawn(async move {
+			tx_orders.send(protocol_orders).await.unwrap();
+			// LOOP: it's a dummy protocol, relax
+			loop {
+				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 			}
-			bail!("DummyMarket does not accept parameters, got: {after_colon}");
-		}
-		bail!("Expected protocol spec starting with '{}', got: {spec}", Self::PREFIX)
+			#[expect(unreachable_code)]
+			Ok(())
+		});
+		Ok(())
+	}
+
+	fn update_params(&self, _params: Self::Params) -> Result<()> {
+		unimplemented!()
+	}
+
+	fn get_type(&self) -> ProtocolType {
+		ProtocolType::StopEntry
 	}
 }
 
 #[cfg(test)]
 mod tests {
+	use std::str::FromStr;
+
 	use super::*;
 
 	#[test]
 	fn parse_dm() {
-		let dm = DummyMarket::from_str("dm").unwrap();
-		assert_eq!(dm.to_string(), "dm");
+		let dm = DummyMarketWrapper::from_str("dm").unwrap();
+		assert_eq!(dm.signature(), "dm");
 	}
 
 	#[test]
 	fn parse_dm_with_colon() {
-		let dm = DummyMarket::from_str("dm:").unwrap();
-		assert_eq!(dm.to_string(), "dm");
+		let dm = DummyMarketWrapper::from_str("dm:").unwrap();
+		assert_eq!(dm.signature(), "dm");
 	}
 
 	#[test]
 	fn parse_dm_with_params_fails() {
-		let result = DummyMarket::from_str("dm:p0.5");
+		let result = DummyMarketWrapper::from_str("dm:p0.5");
 		assert!(result.is_err());
 	}
 
 	#[test]
 	fn parse_wrong_prefix_fails() {
-		let result = DummyMarket::from_str("ts:p0.5");
+		let result = DummyMarketWrapper::from_str("ts:p0.5");
 		assert!(result.is_err());
 	}
 }

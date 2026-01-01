@@ -22,6 +22,7 @@
 pub mod commands;
 pub mod config;
 pub mod data;
+pub mod order_types;
 pub mod protocols;
 pub mod redis_bus;
 pub mod strategy;
