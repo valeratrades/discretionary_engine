@@ -27,6 +27,11 @@ pub struct AppConfig {
 	#[settings(flatten)]
 	pub risk: Option<RiskConfig>,
 }
+impl AppConfig {
+	pub fn get_exchange(&self, exchange: ExchangeName) -> Result<&ExchangeConfig> {
+		self.exchanges.get(&exchange.to_string()).ok_or_else(|| eyre!("{exchange} exchange config not found"))
+	}
+}
 
 #[derive(Clone, Debug, v_macros::MyConfigPrimitives)]
 pub struct ExchangeConfig {
@@ -64,10 +69,4 @@ pub struct RiskLayersConfig {
 	pub from_phone: bool,
 	#[serde(default)]
 	pub lost_last_trade: bool,
-}
-
-impl AppConfig {
-	pub fn get_exchange(&self, exchange: ExchangeName) -> Result<&ExchangeConfig> {
-		self.exchanges.get(&exchange.to_string()).ok_or_else(|| eyre!("{exchange} exchange config not found"))
-	}
 }

@@ -108,19 +108,18 @@ impl PositionAcquisition {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new)]
-pub struct PositionFollowup {
-	_acquisition: PositionAcquisition,
-	protocols_spec: Vec<Protocol>,
-	closed_notional: f64,
-}
-
 #[derive(Clone, Debug, derive_new::new)]
 pub struct HubToPosition {
 	pub sender: mpsc::Sender<ProtocolFills>,
 	pub position_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct PositionFollowup {
+	_acquisition: PositionAcquisition,
+	protocols_spec: Vec<Protocol>,
+	closed_notional: f64,
+}
 impl PositionFollowup {
 	#[instrument(skip(hub_tx, exchanges_arc))]
 	pub async fn do_followup(__acquisition: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
