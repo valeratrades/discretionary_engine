@@ -5,6 +5,7 @@ extern crate clap;
 pub const EXE_NAME: &str = "discretionary_engine";
 
 use color_eyre::eyre::{Result, eyre};
+pub use discretionary_engine_strategy::config::*;
 use secrecy::SecretString;
 use v_exchanges::ExchangeName;
 use v_utils::{Percent, macros as v_macros, percent::PercentU};
@@ -12,7 +13,9 @@ use v_utils::{Percent, macros as v_macros, percent::PercentU};
 fn __default_comparison_offset_h() -> u32 {
 	24
 }
+
 #[derive(Clone, Debug, v_macros::LiveSettings, v_macros::MyConfigPrimitives, v_macros::Settings)]
+#[settings(use_env = true)]
 pub struct AppConfig {
 	pub positions_dir: PathBuf,
 	#[serde(default)]
@@ -20,7 +23,14 @@ pub struct AppConfig {
 	#[serde(default = "__default_comparison_offset_h")]
 	pub comparison_offset_h: u32,
 	#[settings(flatten)]
+	pub strategy: Option<StrategyConfig>,
+	#[settings(flatten)]
 	pub risk: Option<RiskConfig>,
+}
+impl AppConfig {
+	pub fn get_exchange(&self, exchange: ExchangeName) -> Result<&ExchangeConfig> {
+		self.exchanges.get(&exchange.to_string()).ok_or_else(|| eyre!("{exchange} exchange config not found"))
+	}
 }
 
 #[derive(Clone, Debug, v_macros::MyConfigPrimitives)]
@@ -49,18 +59,14 @@ pub struct SizeConfig {
 	pub risk_layers: Option<RiskLayersConfig>,
 }
 
-#[derive(Clone, Debug, Default, v_macros::MyConfigPrimitives, v_macros::SettingsNested)]
+#[derive(Clone, Debug, v_macros::MyConfigPrimitives, v_macros::SettingsNested, smart_default::SmartDefault)]
+#[serde(default)]
 pub struct RiskLayersConfig {
-	#[settings(default = "true")]
+	#[default(true)]
+	#[serde(default)]
 	pub stop_loss_proximity: bool,
-	#[settings(default = "false")]
+	#[serde(default)]
 	pub from_phone: bool,
-	#[settings(default = "false")]
+	#[serde(default)]
 	pub lost_last_trade: bool,
-}
-
-impl AppConfig {
-	pub fn get_exchange(&self, exchange: ExchangeName) -> Result<&ExchangeConfig> {
-		self.exchanges.get(&exchange.to_string()).ok_or_else(|| eyre!("{exchange} exchange config not found"))
-	}
 }

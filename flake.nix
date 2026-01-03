@@ -4,7 +4,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks.url = "github:cachix/git-hooks.nix/ca5b894d3e3e151ffc1db040b6ce4dcc75d31c37";
-    v-utils.url = "github:valeratrades/.github/v1.2.0";
+    v-utils.url = "github:valeratrades/.github?ref=v1.4";
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, pre-commit-hooks, v-utils, ... }:
@@ -22,13 +22,23 @@
         pname = manifest.name;
         stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv;
 
+        rs = v-utils.rs {
+          inherit pkgs;
+          cranelift = false; # cranelift disabled due to aws-lc-rs incompatibility
+          tracey = true;
+          build = {
+            enable = true;
+            workspace = {
+              "./discretionary_engine" = [ "git_version" "log_directives" ];
+            };
+          };
+        };
         github = v-utils.github {
           inherit pkgs pname;
+          inherit (rs) traceyCheck;
           lastSupportedVersion = "nightly-2025-10-12";
-          jobsErrors = [ "rust-tests" ];
-          jobsWarnings = [ "rust-doc" "rust-clippy" "rust-machete" "rust-sorted" "rust-sorted-derives" "tokei" ];
-          jobsOther = [ "loc-badge" ];
           langs = [ "rs" ];
+          jobs.default = true;
           labels.extra = [{ name = "rm"; color = "0000ff"; }];
         };
         readme = v-utils.readme-fw { inherit pkgs pname; lastSupportedVersion = "nightly-1.92"; rootDir = ./.; licenses = [{ name = "Blue Oak 1.0.0"; outPath = "LICENSE"; }]; badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ]; };
@@ -43,7 +53,7 @@
             };
           in
           {
-            default = rustPlatform.buildRustPackage rec {
+            default = rustPlatform.buildRustPackage {
               inherit pname;
               version = manifest.version;
 
@@ -62,14 +72,11 @@
           shellHook =
             pre-commit-check.shellHook +
             github.shellHook +
+            rs.shellHook +
             ''
               cp -f ${v-utils.files.licenses.blue_oak} ./LICENSE
 
-              mkdir -p ./.cargo
               cp -f ${(v-utils.files.treefmt) {inherit pkgs;}} ./.treefmt.toml
-              cp -f ${(v-utils.files.rust.rustfmt {inherit pkgs;})} ./rustfmt.toml
-              # v-utils config disabled due to aws-lc-rs/mold incompatibility - using local config.toml
-              # cp -f ${(v-utils.files.rust.config {inherit pkgs;})} ./.cargo/config.toml
 
               cp -f ${readme} ./README.md
             '';
@@ -80,11 +87,11 @@
           };
 
           packages = [
-            mold-wrapped
+            mold
             openssl
             pkg-config
             rust
-          ] ++ pre-commit-check.enabledPackages ++ github.enabledPackages;
+          ] ++ pre-commit-check.enabledPackages ++ github.enabledPackages ++ rs.enabledPackages;
         };
       }
     );

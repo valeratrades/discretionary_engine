@@ -44,23 +44,6 @@ pub enum Protocol {
 	ApproachingLimit(ApproachingLimitWrapper),
 	DummyMarket(DummyMarketWrapper),
 }
-impl FromStr for Protocol {
-	type Err = eyre::Report;
-
-	fn from_str(spec: &str) -> Result<Self> {
-		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
-			Ok(Protocol::TrailingStop(ts))
-		} else if let Ok(sar) = SarWrapper::from_str(spec) {
-			Ok(Protocol::Sar(sar))
-		} else if let Ok(al) = ApproachingLimitWrapper::from_str(spec) {
-			Ok(Protocol::ApproachingLimit(al))
-		} else if let Ok(dm) = DummyMarketWrapper::from_str(spec) {
-			Ok(Protocol::DummyMarket(dm))
-		} else {
-			bail!("Could not convert string to any Protocol\nString: {spec}")
-		}
-	}
-}
 impl Protocol {
 	pub fn attach(&self, position_set: &mut JoinSet<Result<()>>, tx_orders: mpsc::Sender<ProtocolOrders>, asset: String, protocol_side: Side) -> Result<()> {
 		match self {
@@ -104,6 +87,23 @@ impl Protocol {
 			Protocol::Sar(sar) => sar.signature(),
 			Protocol::ApproachingLimit(al) => al.signature(),
 			Protocol::DummyMarket(dm) => dm.signature(),
+		}
+	}
+}
+impl FromStr for Protocol {
+	type Err = eyre::Report;
+
+	fn from_str(spec: &str) -> Result<Self> {
+		if let Ok(ts) = TrailingStopWrapper::from_str(spec) {
+			Ok(Protocol::TrailingStop(ts))
+		} else if let Ok(sar) = SarWrapper::from_str(spec) {
+			Ok(Protocol::Sar(sar))
+		} else if let Ok(al) = ApproachingLimitWrapper::from_str(spec) {
+			Ok(Protocol::ApproachingLimit(al))
+		} else if let Ok(dm) = DummyMarketWrapper::from_str(spec) {
+			Ok(Protocol::DummyMarket(dm))
+		} else {
+			bail!("Could not convert string to any Protocol\nString: {spec}")
 		}
 	}
 }
@@ -199,7 +199,10 @@ pub struct RecalculateOrdersPerOrderInfo {
 
 /// Wrapper around Orders, which allows for updating the target after a partial fill, without making a new request to the protocol.
 ///
-/// NB: the protocol itself must internally uphold the equality of ids attached to orders to corresponding fields of ProtocolOrders, as well as to ensure that all possible orders the protocol can ether request are initialized in every ProtocolOrders instance it outputs.
+/// # Contract
+/// - [impl protocol.orders.id-stability]: Protocol must maintain stable order IDs - ordinal indices must remain constant
+/// - [impl protocol.orders.id-match]: ProtocolOrderId must match protocol signature and ordinal position
+/// - [impl protocol.orders.all-slots-initialized]: All possible orders must have slots, inactive ones as None
 #[derive(Clone, Debug, Default)]
 pub struct ProtocolOrders {
 	pub protocol_id: String,
@@ -208,6 +211,7 @@ pub struct ProtocolOrders {
 impl ProtocolOrders {
 	#[instrument(skip(orders))]
 	pub fn new(protocol_id: String, orders: Vec<Option<ConceptualOrderPercents>>) -> Self {
+		// [verify protocol.orders.all-slots-initialized]
 		assert_ne!(
 			orders.len(),
 			0,

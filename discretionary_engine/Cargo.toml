@@ -2,6 +2,7 @@
 name = "discretionary_engine"
 version = "1.0.0"
 authors = ["Valera <valeratrades@gmail.com>"]
+build = "build.rs"
 categories = ["finance"]
 description = "LaTeX of trading"
 documentation = "https://docs.rs/discretionary_engine"
@@ -24,6 +25,7 @@ derive_more = { version = "2.0.1", features = ["from_str", "display"] }
 dirs = "6.0"
 discretionary_engine_macros = { path = "../discretionary_engine_macros", version = "^0.1.1" }
 discretionary_engine_risk = { path = "../discretionary_engine_risk", version = "1.0.0" }
+discretionary_engine_strategy = { path = "../discretionary_engine_strategy" }
 eyre = "0.6.12"
 function_name = "0.3.0"
 futures-util = "0.3.31"
@@ -41,6 +43,7 @@ serde_path_to_error = "0.1.20"
 serde_urlencoded = "^0.7.1"
 serde_with = "^3.16.0"
 sha2 = "^0.10.9"
+smart-default.workspace = true
 snapshot_fonts = { workspace = true }
 strum = { workspace = true }
 tokio = { version = "^1.48.0", features = ["full", "tracing"] }

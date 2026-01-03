@@ -108,19 +108,18 @@ impl PositionAcquisition {
 	}
 }
 
-#[derive(Clone, Debug, Default, derive_new::new)]
-pub struct PositionFollowup {
-	_acquisition: PositionAcquisition,
-	protocols_spec: Vec<Protocol>,
-	closed_notional: f64,
-}
-
 #[derive(Clone, Debug, derive_new::new)]
 pub struct HubToPosition {
 	pub sender: mpsc::Sender<ProtocolFills>,
 	pub position_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default, derive_new::new)]
+pub struct PositionFollowup {
+	_acquisition: PositionAcquisition,
+	protocols_spec: Vec<Protocol>,
+	closed_notional: f64,
+}
 impl PositionFollowup {
 	#[instrument(skip(hub_tx, exchanges_arc))]
 	pub async fn do_followup(__acquisition: PositionAcquisition, protocols: Vec<Protocol>, hub_tx: mpsc::Sender<PositionToHub>, exchanges_arc: Arc<Exchanges>) -> Result<Self> {
@@ -318,6 +317,7 @@ fn recalculate_protocol_orders(
 		}
 	}
 
+	// [impl protocol.orders.market-first]
 	/// NB: Market-like orders MUST be ran first
 	fn update_order_selection(extendable: &mut Vec<ConceptualOrder<ProtocolOrderId>>, incoming: &[ConceptualOrder<ProtocolOrderId>], left_to_target: &mut f64) {
 		for order in incoming {
